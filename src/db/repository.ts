@@ -136,7 +136,7 @@ export class SessionRepository {
     const stmt = this.db.prepare(`
       UPDATE sessions SET ${fields.join(", ")} WHERE id = ? RETURNING *
     `);
-    return stmt.get(...values) as Session | null;
+    return stmt.get(...(values as (string | null)[])) as Session | null;
   }
 
   getSession(id: string): Session | null {

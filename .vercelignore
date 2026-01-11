@@ -1,0 +1,27 @@
+# Development files
+*.md
+!README.md
+
+# Test files
+*.test.ts
+*.spec.ts
+__tests__
+
+# IDE and editor files
+.idea
+.vscode
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+
+# Database files (local dev only)
+*.db
+
+# Build artifacts
+coverage
+*.lcov
+
+# Lock files (Vercel will generate its own)
+bun.lock

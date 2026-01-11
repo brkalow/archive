@@ -360,12 +360,12 @@ function parseDiffData(content: string, sessionId: string): Omit<Diff, "id">[] {
     // Extract filename from diff header
     let filename: string | null = null;
     const filenameMatch = partTrimmed.match(/diff --git a\/(.+?) b\//);
-    if (filenameMatch) {
+    if (filenameMatch?.[1]) {
       filename = filenameMatch[1];
     } else {
       // Try to get filename from +++ line
       const plusMatch = partTrimmed.match(/\+\+\+ [ab]\/(.+)/);
-      if (plusMatch) {
+      if (plusMatch?.[1]) {
         filename = plusMatch[1];
       }
     }
