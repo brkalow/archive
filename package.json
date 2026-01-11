@@ -5,7 +5,8 @@
   "private": true,
   "scripts": {
     "start": "bun run index.ts",
-    "dev": "bun --watch run index.ts"
+    "dev": "bun --watch run index.ts",
+    "upload": "bun bin/upload-session.ts"
   },
   "devDependencies": {
     "@types/bun": "latest"

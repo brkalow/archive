@@ -1,5 +1,5 @@
 import { SessionRepository } from "../db/repository";
-import type { Message, Diff } from "../db/schema";
+import type { Message, Diff, ContentBlock, ToolUseBlock, ToolResultBlock, ImageBlock } from "../db/schema";
 
 // JSON response helper
 function json(data: unknown, status = 200, headers: Record<string, string> = {}): Response {
@@ -21,6 +21,55 @@ function isValidHttpUrl(urlString: string): boolean {
   } catch {
     return false;
   }
+}
+
+// Content block parsing helpers
+function parseContentBlock(block: Record<string, unknown>): ContentBlock | null {
+  switch (block.type) {
+    case "text":
+      return { type: "text", text: block.text as string };
+    case "tool_use":
+      return {
+        type: "tool_use",
+        id: block.id as string,
+        name: block.name as string,
+        input: block.input as Record<string, unknown>,
+      };
+    case "tool_result":
+      return {
+        type: "tool_result",
+        tool_use_id: block.tool_use_id as string,
+        content: typeof block.content === "string" ? block.content : JSON.stringify(block.content),
+        is_error: block.is_error as boolean | undefined,
+      };
+    case "thinking":
+      return {
+        type: "thinking",
+        thinking: block.thinking as string,
+        duration_ms: block.duration_ms as number | undefined,
+      };
+    case "image":
+      return {
+        type: "image",
+        source: block.source as ImageBlock["source"],
+        filename: block.filename as string | undefined,
+      };
+    default:
+      return null;
+  }
+}
+
+function deriveTextContent(blocks: ContentBlock[]): string {
+  return blocks
+    .map(block => {
+      if (block.type === "text") return block.text;
+      if (block.type === "tool_use") return `[Tool: ${block.name}]`;
+      if (block.type === "tool_result") return `[Tool Result]`;
+      if (block.type === "thinking") return `[Thinking]`;
+      return "";
+    })
+    .filter(Boolean)
+    .join("\n");
 }
 
 export function createApiRoutes(repo: SessionRepository) {
@@ -95,12 +144,15 @@ export function createApiRoutes(repo: SessionRepository) {
           messages = parseSessionData(sessionData, id);
         }
 
+        // Extract files touched in the conversation for diff relevance detection
+        const touchedFiles = extractTouchedFiles(messages);
+
         let diffs: Omit<Diff, "id">[] = [];
         if (diffFile && diffFile.size > 0) {
           const content = await diffFile.text();
-          diffs = parseDiffData(content, id);
+          diffs = parseDiffData(content, id, touchedFiles);
         } else if (diffData) {
-          diffs = parseDiffData(diffData, id);
+          diffs = parseDiffData(diffData, id, touchedFiles);
         }
 
         // Create session with all data in a transaction
@@ -174,6 +226,9 @@ export function createApiRoutes(repo: SessionRepository) {
           repo.addMessages(messages);
         }
 
+        // Extract files touched in the conversation for diff relevance detection
+        const touchedFiles = extractTouchedFiles(messages);
+
         // Process diff data
         const diffFile = formData.get("diff_file") as File | null;
         const diffData = formData.get("diff_data") as string;
@@ -182,9 +237,9 @@ export function createApiRoutes(repo: SessionRepository) {
 
         if (diffFile && diffFile.size > 0) {
           const content = await diffFile.text();
-          diffs = parseDiffData(content, sessionId);
+          diffs = parseDiffData(content, sessionId, touchedFiles);
         } else if (diffData) {
-          diffs = parseDiffData(diffData, sessionId);
+          diffs = parseDiffData(diffData, sessionId, touchedFiles);
         }
 
         if (diffs.length > 0) {
@@ -261,41 +316,69 @@ function generateShareToken(): string {
 
 function parseSessionData(content: string, sessionId: string): Omit<Message, "id">[] {
   const messages: Omit<Message, "id">[] = [];
-
-  // Try to detect if it's JSONL (Claude Code native format) or JSON array
   const trimmed = content.trim();
+  const items: Array<Record<string, unknown>> = [];
 
+  // Parse all items
   if (trimmed.startsWith("[")) {
-    // JSON array format
     try {
-      const data = JSON.parse(trimmed);
-      if (Array.isArray(data)) {
-        data.forEach((item, index) => {
-          const msg = extractMessage(item, sessionId, index);
-          if (msg) messages.push(msg);
-        });
-      }
+      items.push(...JSON.parse(trimmed));
     } catch (e) {
       console.error("Failed to parse JSON:", e);
     }
   } else {
     // JSONL format (one JSON object per line)
-    const lines = trimmed.split("\n");
-    let messageIndex = 0;
-
-    for (const line of lines) {
+    for (const line of trimmed.split("\n")) {
       if (!line.trim()) continue;
       try {
-        const item = JSON.parse(line);
-        const msg = extractMessage(item, sessionId, messageIndex);
-        if (msg) {
-          messages.push(msg);
-          messageIndex++;
-        }
+        items.push(JSON.parse(line));
       } catch {
         // Skip invalid lines
       }
     }
+  }
+
+  // Collect tool_results separately
+  const toolResults = new Map<string, ToolResultBlock>();
+
+  for (const item of items) {
+    if (item.type === "tool_result") {
+      const block: ToolResultBlock = {
+        type: "tool_result",
+        tool_use_id: item.tool_use_id as string,
+        content: typeof item.content === "string" ? item.content : JSON.stringify(item.content),
+        is_error: item.is_error as boolean | undefined,
+      };
+      toolResults.set(block.tool_use_id, block);
+    }
+  }
+
+  // Process messages and attach tool_results
+  let messageIndex = 0;
+  for (const item of items) {
+    if (item.type === "tool_result") continue;
+
+    const msg = extractMessage(item, sessionId, messageIndex);
+    if (!msg) continue;
+
+    // Find tool_use blocks and attach their results
+    const toolUseIds = msg.content_blocks
+      .filter((b): b is ToolUseBlock => b.type === "tool_use")
+      .map(b => b.id);
+
+    for (const id of toolUseIds) {
+      const result = toolResults.get(id);
+      if (result) {
+        msg.content_blocks.push(result);
+        toolResults.delete(id);
+      }
+    }
+
+    // Re-derive text content after adding results
+    msg.content = deriveTextContent(msg.content_blocks);
+
+    messages.push(msg);
+    messageIndex++;
   }
 
   return messages;
@@ -306,84 +389,86 @@ function extractMessage(
   sessionId: string,
   index: number
 ): Omit<Message, "id"> | null {
-  // Handle various Claude session formats
   let role: string | null = null;
-  let content: string | null = null;
+  let contentBlocks: ContentBlock[] = [];
   let timestamp: string | null = null;
 
-  // Direct role/content format
-  if (item.role && typeof item.role === "string") {
-    role = item.role === "human" ? "user" : item.role;
+  // Handle message wrapper format (Claude Code JSONL)
+  const msgData = (item.message as Record<string, unknown>) || item;
+
+  // Extract role
+  if (msgData.role === "human" || msgData.role === "user" || item.type === "human" || item.type === "user") {
+    role = "user";
+  } else if (msgData.role === "assistant" || item.type === "assistant") {
+    role = "assistant";
   }
 
-  if (item.content) {
-    if (typeof item.content === "string") {
-      content = item.content;
-    } else if (Array.isArray(item.content)) {
-      // Handle content array format (like Claude API format)
-      content = item.content
-        .map((c: Record<string, unknown>) => {
-          if (c.type === "text" && typeof c.text === "string") return c.text;
-          if (c.type === "tool_use") return `[Tool: ${c.name}]`;
-          if (c.type === "tool_result") return `[Tool Result]`;
-          return "";
-        })
-        .filter(Boolean)
-        .join("\n");
-    }
+  if (!role) return null;
+
+  // Extract content blocks
+  const content = msgData.content;
+  if (typeof content === "string") {
+    contentBlocks = [{ type: "text", text: content }];
+  } else if (Array.isArray(content)) {
+    contentBlocks = content.map(parseContentBlock).filter(Boolean) as ContentBlock[];
   }
 
-  // Handle message wrapper format
-  if (item.message && typeof item.message === "object") {
-    const msg = item.message as Record<string, unknown>;
-    if (msg.role && typeof msg.role === "string") {
-      role = msg.role === "human" ? "user" : msg.role;
-    }
-    if (msg.content) {
-      if (typeof msg.content === "string") {
-        content = msg.content;
-      } else if (Array.isArray(msg.content)) {
-        content = (msg.content as Array<Record<string, unknown>>)
-          .map((c) => {
-            if (c.type === "text" && typeof c.text === "string") return c.text;
-            return "";
-          })
-          .filter(Boolean)
-          .join("\n");
+  // Handle type-based format with text field
+  if (contentBlocks.length === 0 && typeof item.text === "string") {
+    contentBlocks = [{ type: "text", text: item.text }];
+  }
+
+  // Timestamp
+  if (item.timestamp) timestamp = String(item.timestamp);
+  else if (item.created_at) timestamp = String(item.created_at);
+
+  if (contentBlocks.length === 0) return null;
+
+  return {
+    session_id: sessionId,
+    role,
+    content: deriveTextContent(contentBlocks),
+    content_blocks: contentBlocks,
+    timestamp,
+    message_index: index,
+  };
+}
+
+// Diff relevance detection helpers
+function extractTouchedFiles(messages: Omit<Message, "id">[]): Set<string> {
+  const files = new Set<string>();
+
+  for (const msg of messages) {
+    for (const block of msg.content_blocks || []) {
+      if (block.type === "tool_use" && ["Write", "Edit", "NotebookEdit"].includes(block.name)) {
+        const input = block.input as Record<string, unknown>;
+        const path = (input.file_path || input.notebook_path) as string;
+        if (path) files.add(normalizePath(path));
       }
     }
   }
 
-  // Handle type-based format
-  if (item.type === "human" || item.type === "user") {
-    role = "user";
-    if (typeof item.text === "string") content = item.text;
-  } else if (item.type === "assistant") {
-    role = "assistant";
-    if (typeof item.text === "string") content = item.text;
-  }
-
-  // Timestamp handling
-  if (item.timestamp) {
-    timestamp = String(item.timestamp);
-  } else if (item.created_at) {
-    timestamp = String(item.created_at);
-  }
-
-  if (role && content) {
-    return {
-      session_id: sessionId,
-      role,
-      content,
-      timestamp,
-      message_index: index,
-    };
-  }
-
-  return null;
+  return files;
 }
 
-function parseDiffData(content: string, sessionId: string): Omit<Diff, "id">[] {
+function normalizePath(path: string): string {
+  return path.replace(/^\.\//, "").replace(/\/+/g, "/");
+}
+
+function countDiffStats(content: string): { additions: number; deletions: number } {
+  let additions = 0, deletions = 0;
+  for (const line of content.split("\n")) {
+    if (line.startsWith("+") && !line.startsWith("+++")) additions++;
+    else if (line.startsWith("-") && !line.startsWith("---")) deletions++;
+  }
+  return { additions, deletions };
+}
+
+function parseDiffData(
+  content: string,
+  sessionId: string,
+  touchedFiles?: Set<string>
+): Omit<Diff, "id">[] {
   const diffs: Omit<Diff, "id">[] = [];
   const trimmed = content.trim();
 
@@ -399,14 +484,26 @@ function parseDiffData(content: string, sessionId: string): Omit<Diff, "id">[] {
     // Extract filename from diff header
     let filename: string | null = null;
     const filenameMatch = partTrimmed.match(/diff --git a\/(.+?) b\//);
-    if (filenameMatch) {
+    if (filenameMatch?.[1]) {
       filename = filenameMatch[1];
     } else {
       // Try to get filename from +++ line
       const plusMatch = partTrimmed.match(/\+\+\+ [ab]\/(.+)/);
-      if (plusMatch) {
+      if (plusMatch?.[1]) {
         filename = plusMatch[1];
       }
+    }
+
+    // Calculate stats and relevance
+    const { additions, deletions } = countDiffStats(partTrimmed);
+    let isRelevant = true;
+
+    if (touchedFiles && filename) {
+      const normalized = normalizePath(filename);
+      isRelevant = touchedFiles.has(normalized) ||
+        Array.from(touchedFiles).some(f =>
+          f.endsWith(normalized) || normalized.endsWith(f)
+        );
     }
 
     diffs.push({
@@ -414,16 +511,23 @@ function parseDiffData(content: string, sessionId: string): Omit<Diff, "id">[] {
       filename,
       diff_content: partTrimmed,
       diff_index: index,
+      additions,
+      deletions,
+      is_session_relevant: isRelevant,
     });
   });
 
   // If no "diff --git" markers, treat as single diff
   if (diffs.length === 0 && trimmed) {
+    const { additions, deletions } = countDiffStats(trimmed);
     diffs.push({
       session_id: sessionId,
       filename: null,
       diff_content: trimmed,
       diff_index: 0,
+      additions,
+      deletions,
+      is_session_relevant: true,
     });
   }
 
