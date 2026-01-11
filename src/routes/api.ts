@@ -25,6 +25,45 @@ function isValidHttpUrl(urlString: string): boolean {
 
 export function createApiRoutes(repo: SessionRepository) {
   return {
+    // Get all sessions
+    getSessions(): Response {
+      const sessions = repo.getAllSessions();
+      return json({ sessions });
+    },
+
+    // Get session detail with messages and diffs
+    getSessionDetail(sessionId: string, baseUrl?: string): Response {
+      const session = repo.getSession(sessionId);
+      if (!session) {
+        return jsonError("Session not found", 404);
+      }
+
+      const messages = repo.getMessages(sessionId);
+      const diffs = repo.getDiffs(sessionId);
+
+      let shareUrl: string | null = null;
+      if (session.share_token && baseUrl) {
+        shareUrl = `${baseUrl}/s/${session.share_token}`;
+      }
+
+      return json({ session, messages, diffs, shareUrl });
+    },
+
+    // Get shared session detail
+    getSharedSessionDetail(shareToken: string, baseUrl?: string): Response {
+      const session = repo.getSessionByShareToken(shareToken);
+      if (!session) {
+        return jsonError("Session not found", 404);
+      }
+
+      const messages = repo.getMessages(session.id);
+      const diffs = repo.getDiffs(session.id);
+
+      const shareUrl = baseUrl ? `${baseUrl}/s/${session.share_token}` : null;
+
+      return json({ session, messages, diffs, shareUrl });
+    },
+
     // Create session
     async createSession(req: Request): Promise<Response> {
       try {

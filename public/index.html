@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en" class="antialiased">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Claude Session Archive</title>
+  <link rel="stylesheet" href="../src/styles/main.css">
+</head>
+<body class="min-h-screen bg-bg-primary text-text-primary">
+  <header class="sticky top-0 z-50 bg-bg-secondary/95 backdrop-blur-sm border-b border-bg-elevated">
+    <nav class="container flex items-center justify-between h-14">
+      <a href="/" class="text-lg font-semibold text-text-primary hover:text-accent-primary transition-colors">
+        Claude Session Archive
+      </a>
+    </nav>
+  </header>
+
+  <main class="container py-8">
+    <div id="app"></div>
+  </main>
+
+  <script type="module" src="../src/client/index.ts"></script>
+</body>
+</html>
