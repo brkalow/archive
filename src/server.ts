@@ -6,7 +6,7 @@ import { SessionDetail } from "./components/SessionDetail";
 import { join } from "path";
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
-const HOST = process.env.HOST || "localhost";
+const HOST = process.env.HOST || "0.0.0.0";
 
 // Initialize database and repository
 const db = initializeDatabase();
