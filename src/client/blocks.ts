@@ -161,8 +161,11 @@ function formatMarkdown(text: string): string {
   const codeBlocks: string[] = [];
   let processed = text.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) => {
     const index = codeBlocks.length;
+    // Store code in data attribute for client-side syntax highlighting
+    // Use base64 encoding to safely store code with special characters
+    const encodedCode = btoa(encodeURIComponent(code));
     codeBlocks.push(
-      `<pre class="my-2 p-3 bg-bg-primary rounded-md overflow-x-auto relative group"><button class="copy-code absolute top-2 right-2 p-1 text-text-muted hover:text-text-primary opacity-0 group-hover:opacity-100 transition-opacity" title="Copy code"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg></button><code class="text-[13px] language-${escapeHtml(lang)}">${escapeHtml(code)}</code></pre>`
+      `<div class="code-block-container my-2 rounded-md overflow-hidden" data-code-content="${encodedCode}" data-language="${escapeHtml(lang || "")}"><pre class="p-3 bg-bg-primary overflow-x-auto relative group"><button class="copy-code absolute top-2 right-2 p-1 text-text-muted hover:text-text-primary opacity-0 group-hover:opacity-100 transition-opacity" title="Copy code"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg></button><code class="text-[13px]">${escapeHtml(code)}</code></pre></div>`
     );
     return `\x00CODE_BLOCK_${index}\x00`;
   });
@@ -231,8 +234,8 @@ function renderGenericToolBlock(
       <button class="tool-header flex items-center gap-1.5 pr-1.5 py-0.5 -ml-0.5 rounded hover:bg-bg-elevated transition-colors"
               data-toggle-tool="${blockId}"
               ${fullPath ? `title="${escapeHtml(fullPath)}"` : ""}>
-        <span class="text-accent-primary">${icon}</span>
-        <span class="font-medium text-accent-primary">${escapeHtml(block.name)}</span>
+        <span class="text-text-primary">${icon}</span>
+        <span class="text-[13px] font-medium text-text-primary">${escapeHtml(block.name)}</span>
         <span class="font-mono text-[13px] text-text-muted">${escapeHtml(summary)}</span>
         ${status}
         <span class="toggle-icon text-text-muted text-[10px]">&#9654;</span>
@@ -240,7 +243,7 @@ function renderGenericToolBlock(
       <div id="${blockId}" class="tool-content hidden pl-6 mt-1">
         ${fullPath && fullPath !== summary ? `<div class="text-xs text-text-muted font-mono mb-2 break-all">${escapeHtml(fullPath)}</div>` : ""}
         ${renderToolInput(block, fullPath)}
-        ${result ? renderToolResult(result) : '<div class="text-text-muted text-sm italic">... pending</div>'}
+        ${result ? renderToolResult(result, block.name, fullPath) : '<div class="text-text-muted text-sm italic">... pending</div>'}
       </div>
     </div>
   `;
@@ -318,8 +321,7 @@ function getToolStatus(result?: ToolResultBlock): string {
     return '<span class="text-text-muted">...</span>';
   }
   if (result.is_error) {
-    const errorText = extractErrorSummary(result.content);
-    return `<span class="text-diff-del">&#10007; ${escapeHtml(errorText)}</span>`;
+    return '<span class="text-diff-del">&#10007;</span>';
   }
   return '<span class="text-diff-add">&#10003;</span>';
 }
@@ -367,13 +369,67 @@ function truncateValue(value: unknown): string {
   return str.length > 100 ? str.slice(0, 100) + "..." : str;
 }
 
-function renderToolResult(result: ToolResultBlock): string {
-  const content = result.content;
+// Get language from file extension
+function getLanguageFromPath(filePath: string | null): string {
+  if (!filePath) return "";
+  const ext = filePath.split(".").pop()?.toLowerCase() || "";
+  const extToLang: Record<string, string> = {
+    ts: "typescript",
+    tsx: "tsx",
+    js: "javascript",
+    jsx: "jsx",
+    json: "json",
+    md: "markdown",
+    py: "python",
+    rb: "ruby",
+    go: "go",
+    rs: "rust",
+    css: "css",
+    scss: "scss",
+    html: "html",
+    yaml: "yaml",
+    yml: "yaml",
+    sh: "bash",
+    bash: "bash",
+    sql: "sql",
+  };
+  return extToLang[ext] || "";
+}
+
+// Strip line number prefixes from Read tool output
+// Format: "     1→content" (spaces + number + arrow + content)
+function stripLineNumbers(content: string): string {
+  const lines = content.split("\n");
+  // Check if first line matches the pattern
+  if (!/^\s*\d+→/.test(lines[0])) {
+    return content; // No line numbers to strip
+  }
+  return lines.map((line) => line.replace(/^\s*\d+→/, "")).join("\n");
+}
+
+function renderToolResult(result: ToolResultBlock, toolName?: string, filePath?: string | null): string {
+  // Strip system tags from tool result content (e.g., <system-reminder> tags in Read output)
+  const content = stripSystemTags(result.content);
   const lines = content.split("\n");
   const lineCount = lines.length;
   const isLarge = lineCount > 100;
-  const displayContent = isLarge ? lines.slice(0, 50).join("\n") : content;
   const resultId = `result-${result.tool_use_id}`;
+
+  // Determine if this result should have syntax highlighting
+  const shouldHighlight = !result.is_error && (toolName === "Read" || toolName === "Edit") && filePath;
+  const language = shouldHighlight ? getLanguageFromPath(filePath) : "";
+
+  // Strip line numbers from Read/Edit tool output (they add "     1→" prefixes)
+  // Always strip for these tools regardless of syntax highlighting
+  const shouldStripLineNumbers = !result.is_error && (toolName === "Read" || toolName === "Edit");
+  const strippedContent = shouldStripLineNumbers ? stripLineNumbers(content) : content;
+  const strippedLines = strippedContent.split("\n");
+  const displayContent = isLarge ? strippedLines.slice(0, 50).join("\n") : strippedContent;
+
+  // For syntax-highlighted content, we use data attributes for client-side highlighting
+  const codeAttrs = shouldHighlight && language
+    ? `data-code-content="${btoa(encodeURIComponent(displayContent))}" data-language="${escapeHtml(language)}"`
+    : "";
 
   return `
     <div class="tool-result">
@@ -387,12 +443,12 @@ function renderToolResult(result: ToolResultBlock): string {
           </svg>
         </button>
       </div>
-      <div class="bg-bg-primary rounded p-2 overflow-x-auto max-h-64 overflow-y-auto group">
-        <pre id="${resultId}" class="text-xs font-mono whitespace-pre-wrap">${escapeHtml(displayContent)}</pre>
+      <div class="tool-result-content bg-bg-primary rounded overflow-hidden max-h-64 overflow-y-auto group" ${codeAttrs}>
+        <pre id="${resultId}" class="p-2 text-xs font-mono whitespace-pre-wrap overflow-x-auto">${escapeHtml(displayContent)}</pre>
         ${
           isLarge
             ? `
-          <button class="text-accent-primary text-xs hover:underline mt-2" data-show-all-result="${resultId}" data-full-content="${escapeHtml(content)}">
+          <button class="text-accent-primary text-xs hover:underline mt-2 px-2 pb-2" data-show-all-result="${resultId}" data-full-content="${escapeHtml(strippedContent)}">
             Show all ${lineCount} lines
           </button>
         `
@@ -426,7 +482,7 @@ function renderAskUserQuestion(
   return `
     <div class="bg-bg-tertiary/30 rounded py-1.5 pr-2 -ml-1 pl-1">
       <div class="flex items-center gap-1.5 text-[13px] font-medium mb-1">
-        <span class="text-accent-primary">${toolIcons.question}</span>
+        <span class="text-text-primary">${toolIcons.question}</span>
         <span>Question</span>
       </div>
       ${questions
@@ -472,7 +528,7 @@ function renderTodoWrite(block: ToolUseBlock): string {
   return `
     <div class="bg-bg-tertiary/30 rounded py-1.5 pr-2 -ml-1 pl-1">
       <div class="flex items-center gap-1.5 text-[13px] font-medium mb-1">
-        <span class="text-accent-primary">${toolIcons.todo}</span>
+        <span class="text-text-primary">${toolIcons.todo}</span>
         <span>Tasks</span>
       </div>
       <div class="space-y-0.5 pl-5">
@@ -504,8 +560,8 @@ function renderTaskBlock(
     <div class="tool-block border-l-2 border-bg-elevated ml-4">
       <button class="tool-header flex items-center gap-1.5 py-0.5 pl-2 pr-1.5 rounded hover:bg-bg-elevated transition-colors"
               data-toggle-tool="${blockId}">
-        <span class="text-accent-primary">${toolIcons.task}</span>
-        <span class="font-medium text-accent-primary text-[13px]">Task</span>
+        <span class="text-text-primary">${toolIcons.task}</span>
+        <span class="text-[13px] font-medium text-text-primary">Task</span>
         <span class="text-[13px] text-text-muted">${escapeHtml(description.slice(0, 50))}</span>
         ${status}
         <span class="toggle-icon text-text-muted text-[10px]">&#9654;</span>

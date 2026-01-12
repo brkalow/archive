@@ -2,7 +2,8 @@ import { Router } from "./router";
 import { renderSessionList, renderSessionDetail, renderNotFound } from "./views";
 import type { Session, Message, Diff } from "../db/schema";
 // Import @pierre/diffs - this registers the web component and provides FileDiff class
-import { FileDiff, getSingularPatch } from "@pierre/diffs";
+import { FileDiff, getSingularPatch, File } from "@pierre/diffs";
+import type { SupportedLanguages } from "@pierre/diffs";
 
 // Initialize router
 const router = new Router();
@@ -171,6 +172,9 @@ function attachSessionDetailHandlers(sessionId: string) {
   // Initialize diff rendering
   initializeDiffs();
 
+  // Initialize code block syntax highlighting
+  initializeCodeBlocks();
+
   // Attach block interaction handlers
   attachBlockHandlers();
 }
@@ -272,6 +276,9 @@ function attachBlockHandlers() {
 // Track FileDiff instances for cleanup
 const diffInstances: FileDiff[] = [];
 
+// Track File instances for cleanup
+const fileInstances: File[] = [];
+
 function initializeDiffs() {
   // Clean up previous instances
   diffInstances.forEach((instance) => instance.cleanUp());
@@ -312,6 +319,77 @@ function initializeDiffs() {
       } catch (err) {
         console.error("Failed to render diff:", err);
         htmlEl.innerHTML = `<pre class="p-3 text-diff-del text-sm">Failed to render diff</pre>`;
+      }
+    }
+  });
+}
+
+function initializeCodeBlocks() {
+  // Clean up previous instances
+  fileInstances.forEach((instance) => instance.cleanUp());
+  fileInstances.length = 0;
+
+  document.querySelectorAll("[data-code-content]").forEach((el) => {
+    const htmlEl = el as HTMLElement;
+    const encodedContent = htmlEl.dataset.codeContent;
+    const language = htmlEl.dataset.language || "";
+
+    if (encodedContent) {
+      try {
+        // Decode base64-encoded content
+        const code = decodeURIComponent(atob(encodedContent));
+
+        // Create File instance with options matching diff styling
+        const fileInstance = new File({
+          theme: { dark: "pierre-dark", light: "pierre-light" },
+          themeType: "dark",
+          overflow: "scroll",
+          disableFileHeader: true,
+        });
+
+        // Create a container element for the highlighted code
+        const container = document.createElement("diffs-container");
+
+        // Check if this is a tool result content (has .tool-result-content class)
+        const isToolResult = htmlEl.classList.contains("tool-result-content");
+
+        // Preserve the copy button (different class for tool results vs code blocks)
+        const copyBtn = htmlEl.querySelector(".copy-code");
+
+        // For tool results, we need to preserve the pre element's id for copy functionality
+        const preEl = htmlEl.querySelector("pre");
+        const preId = preEl?.id;
+
+        htmlEl.innerHTML = "";
+        htmlEl.appendChild(container);
+
+        // Re-add the copy button if it existed (for markdown code blocks)
+        if (copyBtn) {
+          container.appendChild(copyBtn);
+        }
+
+        // Render the highlighted code
+        fileInstance.render({
+          file: {
+            name: "code",
+            contents: code,
+            lang: language as SupportedLanguages || undefined,
+          },
+          fileContainer: container,
+        });
+
+        // For tool results, add an id to the rendered content for copy functionality
+        if (isToolResult && preId) {
+          const renderedPre = container.querySelector("pre");
+          if (renderedPre) {
+            renderedPre.id = preId;
+          }
+        }
+
+        fileInstances.push(fileInstance);
+      } catch (err) {
+        console.error("Failed to render code block:", err);
+        // Leave the fallback content in place
       }
     }
   });

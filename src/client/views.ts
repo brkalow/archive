@@ -114,7 +114,7 @@ export function renderSessionDetail({ session, messages, diffs, shareUrl }: Sess
 
       <!-- Content -->
       <div class="max-w-[1800px] mx-auto px-6 lg:px-10 py-6">
-        <div class="${hasDiffs ? "grid grid-cols-1 lg:grid-cols-[1fr_2fr] gap-6" : "max-w-4xl"}">
+        <div class="${hasDiffs ? "grid grid-cols-1 lg:grid-cols-[2fr_3fr] gap-6" : "max-w-4xl"}">
           <!-- Conversation: main content, scrolls with page -->
           ${renderConversationPanel(messages)}
 
@@ -388,7 +388,7 @@ function renderMessageBlock(message: Message, allMessages: Message[], index: num
       <div class="flex items-center justify-between mb-0.5">
         <div class="flex items-center gap-1.5">
           <span class="${roleColor}">${icon}</span>
-          <span class="text-[10px] font-semibold uppercase tracking-wide ${roleColor}">
+          <span class="text-[13px] font-semibold uppercase tracking-wide ${roleColor}">
             ${roleLabel}
           </span>
         </div>
