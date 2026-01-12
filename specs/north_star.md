@@ -10,10 +10,15 @@ A platform for sharing, reviewing, and eventually interacting with Claude Code s
 
 ## Roadmap
 
-### Phase 1: Sharing & Review (now)
+### Phase 1: Sharing & Review (current)
 - Read-only session viewer
 - Shareable links
 - Diff visualization
+
+### Phase 1.5: Live Streaming
+- Daemon watches AI coding sessions and streams to server (harness-agnostic)
+- Real-time session viewing via WebSocket
+- See [live_streaming.md](./live_streaming.md) for specification
 
 ### Phase 2: Access Control
 - GitHub-based permissions: only show sessions for repos a user has access to

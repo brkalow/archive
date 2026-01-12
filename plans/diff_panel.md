@@ -6,6 +6,22 @@ Enhance the diff panel with relevance grouping, collapsible large diffs, and con
 
 **Depends on:** `plans/schema_migration.md` (needs `is_session_relevant`, `additions`, `deletions`)
 
+## Status
+
+**Phase A: Complete** (Steps 1-3)
+- Diffs grouped by relevance (session vs other branch changes)
+- "Other branch changes" collapsed by default
+- Large diffs (>300 lines) collapsed by default
+- Lazy diff loading when expanding
+- Sticky file headers (with site header offset)
+- Document-level scrolling (diffs scroll with page)
+- Raw diff fallback on parse error
+
+**Phase B: Deferred** (Steps 4-5)
+- Conversation-to-diff linking requires implementing structured content block rendering first
+- Currently, messages render flat text, not `content_blocks` with tool_use/tool_result
+- Prerequisite: Create `src/client/blocks.ts` for rendering content blocks
+
 ## Overview
 
 **Current state:**

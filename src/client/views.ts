@@ -338,18 +338,77 @@ function renderConversationPanel(messages: Message[]): string {
 }
 
 function renderDiffPanel(diffs: Diff[]): string {
-  // Diff panel: main content area, scrolls with page
+  // Separate diffs by relevance
+  const sessionDiffs = diffs.filter((d) => d.is_session_relevant);
+  const otherDiffs = diffs.filter((d) => !d.is_session_relevant);
+
+  const sessionCount = sessionDiffs.length;
+  const otherCount = otherDiffs.length;
+  const totalCount = diffs.length;
+
   return `
-    <div class="min-w-0 space-y-4">
-      <div class="flex items-center justify-between">
+    <div class="min-w-0">
+      <div class="flex items-center justify-between mb-4">
         <h2 class="text-sm font-semibold text-text-primary">Code Changes</h2>
-        <span class="text-xs text-text-muted tabular-nums">${diffs.length} file${diffs.length !== 1 ? "s" : ""}</span>
+        <span class="text-xs text-text-muted tabular-nums">${totalCount} file${totalCount !== 1 ? "s" : ""}</span>
       </div>
-      <div id="diffs-container" class="space-y-4">
-        ${diffs.map(renderDiffBlock).join("")}
+      <div id="diffs-container" class="bg-bg-secondary border border-bg-elevated rounded-lg">
+        ${
+          sessionCount > 0
+            ? `
+          <div class="diff-group">
+            <div class="px-3 py-2 text-xs font-medium text-text-secondary bg-bg-tertiary border-b border-bg-elevated">
+              Changed in this session (${sessionCount})
+            </div>
+            ${sessionDiffs.map((d) => renderDiffBlock(d)).join("")}
+          </div>
+        `
+            : ""
+        }
+
+        ${
+          otherCount > 0
+            ? `
+          <div class="diff-group">
+            <button class="w-full px-3 py-2 text-xs font-medium text-text-muted bg-bg-tertiary border-b border-bg-elevated flex items-center gap-2 hover:bg-bg-elevated transition-colors"
+                    data-toggle-other-diffs>
+              <span class="toggle-icon transition-transform">▶</span>
+              <span>Other branch changes (${otherCount})</span>
+              <span class="text-text-muted/60 ml-auto truncate max-w-[200px]">
+                ${summarizeOtherFiles(otherDiffs)}
+              </span>
+            </button>
+            <div id="other-diffs-content" class="hidden">
+              ${otherDiffs.map((d) => renderDiffBlock(d)).join("")}
+            </div>
+          </div>
+        `
+            : ""
+        }
+
+        ${
+          totalCount === 0
+            ? `
+          <div class="flex items-center justify-center h-full text-text-muted text-sm py-8">
+            No code changes
+          </div>
+        `
+            : ""
+        }
       </div>
     </div>
   `;
+}
+
+function summarizeOtherFiles(diffs: Diff[]): string {
+  const names = diffs
+    .map((d) => d.filename?.split("/").pop() || "unknown")
+    .slice(0, 3);
+
+  if (diffs.length > 3) {
+    return names.join(", ") + "...";
+  }
+  return names.join(", ");
 }
 
 // Message role icons
@@ -464,29 +523,37 @@ function formatMessageContent(content: string): string {
 
 function renderDiffBlock(diff: Diff): string {
   const filename = diff.filename || "Unknown file";
-  const lines = diff.diff_content.split("\n");
+  // Use pre-computed stats from database
+  const additions = diff.additions || 0;
+  const deletions = diff.deletions || 0;
+  const totalChanges = additions + deletions;
 
-  // Count additions and deletions
-  let additions = 0;
-  let deletions = 0;
-  lines.forEach((line) => {
-    if (line.startsWith("+") && !line.startsWith("+++")) additions++;
-    else if (line.startsWith("-") && !line.startsWith("---")) deletions++;
-  });
+  // Large diff threshold - collapse by default if >300 lines changed
+  const isLarge = totalChanges > 300;
+  const isCollapsed = isLarge;
+  const blockId = `diff-${diff.diff_index}`;
 
   return `
-    <div class="bg-bg-secondary border border-bg-elevated rounded-lg overflow-hidden">
-      <div class="flex items-center justify-between px-4 py-2.5 bg-bg-tertiary border-b border-bg-elevated">
-        <span class="text-[13px] font-mono text-text-primary truncate">${escapeHtml(filename)}</span>
-        <div class="flex items-center gap-3 text-xs font-mono shrink-0 tabular-nums">
+    <div class="diff-file border-b border-bg-elevated last:border-b-0"
+         data-filename="${escapeHtml(filename)}">
+      <button class="diff-file-header flex items-center justify-between w-full px-3 py-2 bg-bg-tertiary border-b border-bg-elevated hover:bg-bg-elevated transition-colors text-left sticky top-14 z-10"
+              data-toggle-diff="${blockId}"
+              data-collapsed="${isCollapsed}">
+        <div class="flex items-center gap-2 min-w-0">
+          <span class="toggle-icon text-text-muted text-xs transition-transform">${isCollapsed ? "▶" : "▼"}</span>
+          <span class="text-[13px] font-mono text-text-primary truncate">${escapeHtml(filename)}</span>
+        </div>
+        <div class="flex items-center gap-2 text-xs font-mono shrink-0 tabular-nums">
           ${deletions > 0 ? `<span class="text-diff-del">-${deletions}</span>` : ""}
           ${additions > 0 ? `<span class="text-diff-add">+${additions}</span>` : ""}
+          ${isLarge ? `<span class="collapse-label text-text-muted ml-2">${isCollapsed ? "Show" : "Hide"}</span>` : ""}
         </div>
-      </div>
-      <div class="overflow-x-auto"
+      </button>
+      <div id="${blockId}" class="diff-content ${isCollapsed ? "hidden" : ""}"
            data-diff-content="${escapeHtml(diff.diff_content)}"
-           data-filename="${escapeHtml(filename)}">
-        <div class="px-4 py-3 text-text-muted text-sm">Loading diff...</div>
+           data-filename="${escapeHtml(filename)}"
+           data-needs-render="${isCollapsed ? "true" : "false"}">
+        ${isCollapsed ? "" : '<div class="px-4 py-3 text-text-muted text-sm">Loading diff...</div>'}
       </div>
     </div>
   `;

@@ -135,13 +135,13 @@ archive config server https://archive.example.com
 archive config --list
 ```
 
-## Future: Daemon Mode
+## Daemon Mode
 
-> Not in initial scope, but the CLI architecture should accommodate this.
+> See [live_streaming.md](./live_streaming.md) for the full streaming specification.
 
 ### `archive daemon`
 
-Start a background daemon that watches for Claude sessions and streams live updates.
+Start a background daemon that watches for AI coding sessions and streams live updates. The daemon is **harness-agnostic** and uses pluggable adapters to support different tools.
 
 ```sh
 archive daemon start [options]
@@ -150,30 +150,40 @@ archive daemon status
 ```
 
 **Options:**
-- `--watch <paths>` - Directories to watch for Claude sessions (default: all projects)
-- `--live` - Stream live updates as sessions progress (default: true)
+- `--harness <name>` - Which harness adapter(s) to enable (default: all). Can specify multiple: `--harness claude-code --harness cursor`
+- `--watch <paths>` - Additional directories to watch (supplements harness defaults)
 - `--server <url>` - Archive server URL
+- `--idle-timeout <seconds>` - Seconds of inactivity before marking session complete (default: 60)
+
+**Supported Harnesses:**
+| Harness | ID | Watch Path |
+|---------|-----|------------|
+| Claude Code | `claude-code` | `~/.claude/projects/` |
+| Cursor | `cursor` | `~/.cursor/conversations/` |
+| (more to come) | | |
 
 **Behavior:**
-- Watches `~/.claude/projects/` for session file changes
-- **Live streaming**: Pushes incremental updates to the server as the session progresses
+- Watches session directories for all enabled harness adapters
+- Uses harness-specific parsers to normalize session data
+- **Live streaming**: Pushes incremental updates to the server as sessions progress
   - New messages appear in the UI in real-time
-  - Enables "watching" an active Claude Code session from the web UI
-- Detects session start (new JSONL file created)
-- Detects session end (no writes for N seconds)
-- Maintains WebSocket connection to server for live push (bidirectional, enables future feedback flow)
+  - Enables "watching" an active coding session from the web UI
+- Detects session start (new session file created)
+- Detects session end (no writes for N seconds, or harness-specific signals)
 
 **Live Session Flow:**
-1. Daemon detects new session file created in `~/.claude/projects/`
-2. Creates session record on server, gets session ID
-3. Tails the JSONL file, pushing new messages as they're appended
-4. Optionally captures live git diff on session end
-5. Marks session as "complete" when idle
+1. Daemon detects new session file in a watched directory
+2. Matches file to a harness adapter via `adapter.canHandle()`
+3. Creates session record on server, gets session ID and stream token
+4. Tails the session file, parsing via adapter and pushing normalized messages
+5. Captures git diff on session end
+6. Marks session as "complete" when idle or harness signals completion
 
 **Use Cases:**
 - Team members can watch an active coding session in real-time
 - Enables Phase 3 "in-the-loop review" - give feedback while Claude is working
 - Debugging/monitoring long-running sessions
+- Works with any supported AI coding tool
 
 **Privacy:**
 - Live sessions are visible by default (no explicit share step needed)
