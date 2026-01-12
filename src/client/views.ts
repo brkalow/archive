@@ -1,16 +1,7 @@
 import type { Session, Message, Diff } from "../db/schema";
+import { escapeHtml, renderContentBlocks, buildToolResultMap } from "./blocks";
 
-// HTML escaping utility
-export function escapeHtml(str: string): string {
-  const htmlEscapes: Record<string, string> = {
-    "&": "&amp;",
-    "<": "&lt;",
-    ">": "&gt;",
-    '"': "&quot;",
-    "'": "&#39;",
-  };
-  return str.replace(/[&<>"']/g, (char) => htmlEscapes[char]);
-}
+export { escapeHtml };
 
 // Session List View
 export function renderSessionList(sessions: Session[]): string {
@@ -192,7 +183,7 @@ function getHarnessIcon(harness: string): string {
 function extractRepoName(repoUrl: string): string {
   // Extract user/repo from GitHub URL
   const match = repoUrl.match(/github\.com\/([^\/]+\/[^\/]+)/);
-  return match ? match[1] : repoUrl;
+  return match?.[1] ?? repoUrl;
 }
 
 function renderHeader(session: Session, date: string, resumeCommand: string): string {
@@ -329,7 +320,7 @@ function renderConversationPanel(messages: Message[]): string {
       </div>
       <div class="flex flex-col bg-bg-secondary border border-bg-elevated rounded-lg overflow-hidden" style="height: calc(100vh - 12rem);">
         <div class="flex-1 overflow-y-auto divide-y divide-bg-elevated">
-          ${messages.map(renderMessageBlock).join("")}
+          ${messages.map((msg, idx) => renderMessageBlock(msg, messages, idx)).join("")}
         </div>
       </div>
     </div>
@@ -351,24 +342,83 @@ function renderDiffPanel(diffs: Diff[]): string {
   `;
 }
 
-function renderMessageBlock(message: Message): string {
+// Message role icons
+const messageIcons = {
+  user: `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>`,
+  assistant: `<svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M13.827 3.52h3.603L24 20h-3.603l-6.57-16.48zm-7.258 0h3.767L16.906 20h-3.674l-1.343-3.461H5.017L3.592 20H0l6.569-16.48zm2.327 5.14l-2.36 6.076h4.873l-2.513-6.077z"/></svg>`,
+  system: `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>`,
+};
+
+function renderMessageBlock(message: Message, allMessages: Message[], index: number): string {
   const isUser = message.role === "user";
-  const roleLabel = isUser ? "You" : "Claude";
-  const bgClass = isUser ? "" : "bg-bg-tertiary";
-  const roleColor = isUser ? "text-role-user" : "text-role-assistant";
+  const isSystem = message.role === "system";
+  const roleLabel = isUser ? "You" : isSystem ? "System" : "Claude";
+  const bgClass = isUser ? "" : isSystem ? "bg-bg-elevated" : "bg-bg-tertiary";
+  const roleColor = isUser ? "text-role-user" : isSystem ? "text-text-muted" : "text-role-assistant";
+  const icon = isUser ? messageIcons.user : isSystem ? messageIcons.system : messageIcons.assistant;
+
+  // Build tool result map from this and next messages
+  const toolResults = buildToolResultMapFromMessages(message, allMessages, index);
+
+  // Render content blocks if available, otherwise fall back to legacy content
+  const hasBlocks = message.content_blocks && message.content_blocks.length > 0;
+  const content = hasBlocks
+    ? renderContentBlocks(message.content_blocks, toolResults)
+    : formatMessageContent(message.content);
+
+  // Skip rendering if content is empty (e.g., all system tags stripped)
+  if (!content.trim()) return "";
 
   return `
-    <div class="px-4 py-4 ${bgClass}">
-      <div class="mb-2">
-        <span class="text-[11px] font-semibold uppercase tracking-wider ${roleColor}">
-          ${roleLabel}
-        </span>
+    <div class="message px-4 py-4 ${bgClass} group relative" data-message-index="${message.message_index}">
+      <div class="flex items-center justify-between mb-2">
+        <div class="flex items-center gap-2">
+          <span class="${roleColor}">${icon}</span>
+          <span class="text-[11px] font-semibold uppercase tracking-wider ${roleColor}">
+            ${roleLabel}
+          </span>
+        </div>
+        <button class="copy-message p-1 text-text-muted hover:text-text-primary opacity-0 group-hover:opacity-100 transition-opacity"
+                title="Copy message">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+          </svg>
+        </button>
       </div>
       <div class="text-sm text-text-primary leading-relaxed">
-        ${formatMessageContent(message.content)}
+        ${content}
       </div>
     </div>
   `;
+}
+
+function buildToolResultMapFromMessages(
+  message: Message,
+  allMessages: Message[],
+  currentIndex: number
+): Map<string, import("../db/schema").ToolResultBlock> {
+  const map = buildToolResultMap(message.content_blocks || []);
+
+  // Scan forward through subsequent messages to find tool results
+  // Tool results are in user messages, but they may be spread across multiple messages
+  for (let i = currentIndex + 1; i < allMessages.length && i <= currentIndex + 10; i++) {
+    const nextMsg = allMessages[i];
+    if (!nextMsg?.content_blocks) continue;
+
+    // Only user messages contain tool_result blocks
+    if (nextMsg.role !== "user") continue;
+
+    const nextResults = buildToolResultMap(nextMsg.content_blocks);
+    for (const [id, result] of nextResults) {
+      if (!map.has(id)) {
+        map.set(id, result);
+      }
+    }
+    // Don't break early - tool results may be spread across multiple user messages
+  }
+
+  return map;
 }
 
 function formatMessageContent(content: string): string {

@@ -170,6 +170,103 @@ function attachSessionDetailHandlers(sessionId: string) {
 
   // Initialize diff rendering
   initializeDiffs();
+
+  // Attach block interaction handlers
+  attachBlockHandlers();
+}
+
+function attachBlockHandlers() {
+  // Tool/thinking block collapse/expand toggle
+  document.addEventListener("click", (e) => {
+    const target = e.target as HTMLElement;
+    const toggleBtn = target.closest("[data-toggle-tool]") as HTMLElement;
+
+    if (toggleBtn) {
+      const contentId = toggleBtn.dataset.toggleTool;
+      const content = document.getElementById(contentId!);
+      const icon = toggleBtn.querySelector(".toggle-icon");
+
+      if (content && icon) {
+        const isHidden = content.classList.contains("hidden");
+        content.classList.toggle("hidden");
+        // Toggle between right-pointing (collapsed) and down-pointing (expanded) triangles
+        icon.innerHTML = isHidden ? "&#9660;" : "&#9654;";
+      }
+    }
+  });
+
+  // Copy message handler
+  document.addEventListener("click", async (e) => {
+    const target = e.target as HTMLElement;
+    const copyBtn = target.closest(".copy-message") as HTMLElement;
+
+    if (copyBtn) {
+      const message = copyBtn.closest(".message");
+      if (message) {
+        // Get text content only (from text-block elements, exclude tool blocks)
+        const textBlocks = message.querySelectorAll(".text-block");
+        const text = Array.from(textBlocks)
+          .map((b) => b.textContent)
+          .join("\n")
+          .trim();
+
+        if (text) {
+          await window.copyToClipboard(text);
+          copyBtn.classList.add("text-diff-add");
+          setTimeout(() => copyBtn.classList.remove("text-diff-add"), 1000);
+        }
+      }
+    }
+  });
+
+  // Copy code block handler
+  document.addEventListener("click", async (e) => {
+    const target = e.target as HTMLElement;
+    const copyBtn = target.closest(".copy-code") as HTMLElement;
+
+    if (copyBtn) {
+      const pre = copyBtn.closest("pre");
+      const code = pre?.querySelector("code");
+      if (code) {
+        await window.copyToClipboard(code.textContent || "");
+        copyBtn.classList.add("text-diff-add");
+        setTimeout(() => copyBtn.classList.remove("text-diff-add"), 1000);
+      }
+    }
+  });
+
+  // Copy tool result handler
+  document.addEventListener("click", async (e) => {
+    const target = e.target as HTMLElement;
+    const copyBtn = target.closest("[data-copy-result]") as HTMLElement;
+
+    if (copyBtn) {
+      const resultId = copyBtn.dataset.copyResult;
+      const resultEl = document.getElementById(resultId!);
+      if (resultEl) {
+        await window.copyToClipboard(resultEl.textContent || "");
+        copyBtn.classList.add("text-diff-add");
+        setTimeout(() => copyBtn.classList.remove("text-diff-add"), 1000);
+      }
+    }
+  });
+
+  // Show all result handler
+  document.addEventListener("click", (e) => {
+    const target = e.target as HTMLElement;
+    const showAllBtn = target.closest("[data-show-all-result]") as HTMLElement;
+
+    if (showAllBtn) {
+      const resultId = showAllBtn.dataset.showAllResult;
+      const fullContent = showAllBtn.dataset.fullContent;
+      const resultEl = document.getElementById(resultId!);
+
+      if (resultEl && fullContent) {
+        resultEl.textContent = fullContent;
+        showAllBtn.remove();
+      }
+    }
+  });
 }
 
 // Track FileDiff instances for cleanup
