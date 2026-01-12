@@ -982,6 +982,39 @@ Apply rate limits to prevent abuse:
 - Connections closed after 1 hour (client should reconnect)
 - Idle connections (no messages for 5 minutes) may be closed
 
+### Sensitive Data Scrubbing
+
+> **Important:** Session content may contain sensitive data that should not be stored or transmitted.
+
+Tool results and message content may inadvertently contain:
+- API keys and tokens (e.g., from environment variables, config files)
+- Passwords and credentials
+- Private keys and certificates
+- Personal identifiable information (PII)
+- Internal URLs and endpoints
+
+**Mitigation strategies:**
+
+1. **Daemon-side scrubbing**: Before pushing messages, the daemon should scan tool results for common secret patterns:
+   - Environment variable values matching `*_KEY`, `*_SECRET`, `*_TOKEN`, `*_PASSWORD`
+   - Base64-encoded strings that look like keys
+   - Known secret formats (AWS keys, GitHub tokens, etc.)
+
+2. **Configurable redaction**: Allow users to specify additional patterns to redact via daemon config:
+   ```typescript
+   interface DaemonConfig {
+     // ... existing fields
+     redactPatterns?: RegExp[];  // Additional patterns to scrub
+     redactEnvVars?: string[];   // Env var names to always redact
+   }
+   ```
+
+3. **User awareness**: Display a warning when starting the daemon that session content will be transmitted to the server.
+
+4. **Phase 2 consideration**: When access control is implemented, ensure sensitive sessions can be restricted to authorized viewers only.
+
+**Implementation note:** Start with a basic set of well-known secret patterns. This is not foolproof—users should be aware that sessions may contain sensitive data and configure access controls appropriately.
+
 ---
 
 ## Implementation Phases
