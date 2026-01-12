@@ -2,7 +2,7 @@
 
 ## Overview
 
-A command-line interface for Claude Session Archive that enables uploading sessions from any project directory and running the archive UI locally.
+A command-line interface for uploading AI coding sessions and running the archive UI locally. While initially built for Claude Code, the design should be **harness-agnostic** to support other AI coding tools in the future.
 
 ## Commands
 
@@ -141,7 +141,7 @@ archive config --list
 
 ### `archive daemon`
 
-Start a background daemon that automatically uploads sessions.
+Start a background daemon that watches for Claude sessions and streams live updates.
 
 ```sh
 archive daemon start [options]
@@ -151,14 +151,33 @@ archive daemon status
 
 **Options:**
 - `--watch <paths>` - Directories to watch for Claude sessions (default: all projects)
-- `--auto-upload` - Automatically upload sessions on completion
+- `--live` - Stream live updates as sessions progress (default: true)
 - `--server <url>` - Archive server URL
 
 **Behavior:**
-- Watches `~/.claude/projects/` for session changes
-- Detects when a session is "complete" (no writes for N seconds)
-- Optionally prompts before uploading or auto-uploads
-- Runs as a background process
+- Watches `~/.claude/projects/` for session file changes
+- **Live streaming**: Pushes incremental updates to the server as the session progresses
+  - New messages appear in the UI in real-time
+  - Enables "watching" an active Claude Code session from the web UI
+- Detects session start (new JSONL file created)
+- Detects session end (no writes for N seconds)
+- Maintains WebSocket connection to server for live push (bidirectional, enables future feedback flow)
+
+**Live Session Flow:**
+1. Daemon detects new session file created in `~/.claude/projects/`
+2. Creates session record on server, gets session ID
+3. Tails the JSONL file, pushing new messages as they're appended
+4. Optionally captures live git diff on session end
+5. Marks session as "complete" when idle
+
+**Use Cases:**
+- Team members can watch an active coding session in real-time
+- Enables Phase 3 "in-the-loop review" - give feedback while Claude is working
+- Debugging/monitoring long-running sessions
+
+**Privacy:**
+- Live sessions are visible by default (no explicit share step needed)
+- Phase 2 access control (GitHub-based permissions) will scope visibility to repo collaborators
 
 ## Installation & Distribution
 
@@ -225,18 +244,18 @@ The `serve` command reuses the existing server code but configures it for local-
 
 ## Open Questions
 
-1. **Binary name**: `archive` is generic. Should we use `claude-archive` or similar?
+1. **Binary name**: `archive` is generic but we want harness-agnostic naming. TBD.
 
 2. **Session selection UI**: Should `archive upload` show a picker if multiple recent sessions exist?
 
 3. **Daemon triggers**: What should trigger an upload in daemon mode?
-   - Session file unchanged for N seconds?
-   - Git commit detected?
-   - Explicit command/hook?
+   - Likely via harness-specific plugins (e.g., Claude Code hook, Cursor extension, etc.)
+   - Could also support file watching as fallback
 
 4. **Authentication**: For remote servers with auth (Phase 2), how should credentials be stored?
-   - OS keychain?
-   - Config file?
-   - Environment variables?
+   - Likely OS-specific keychain (macOS Keychain, Windows Credential Manager, etc.)
 
-5. **Conflict with existing session**: Should uploading the same session ID update or create new?
+5. **Session updates & streaming**: API needs work to support:
+   - Updating an existing session (re-upload same session ID)
+   - Appending messages to a live session (for daemon streaming)
+   - Distinguishing "in-progress" vs "complete" sessions
