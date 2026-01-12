@@ -6,6 +6,8 @@ A read-only web application for storing and viewing Claude Code sessions.
 
 ## Quick Start
 
+When running the dev server, use a different PORT than the default one to avoid overlap with parallel agents. Use `$PORT`.
+
 ```sh
 bun run start  # Start server on http://localhost:3000
 bun run dev    # Start with hot reload
