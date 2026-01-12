@@ -10,6 +10,8 @@ interface AnnotationMetadata {
   type: AnnotationType;
   content: string;
   model: string | null;
+  filename: string;
+  lineNumber: number;
 }
 
 // Initialize router
@@ -199,30 +201,56 @@ function attachSessionDetailHandlers(sessionId: string) {
 // Track FileDiff instances for cleanup
 const diffInstances: FileDiff<AnnotationMetadata>[] = [];
 
-// Icon map for annotation types
-function getAnnotationIcon(type: AnnotationType): string {
-  switch (type) {
-    case "suggestion": return "💡";
-    case "issue": return "⚠️";
-    case "praise": return "✓";
-    case "question": return "?";
-    default: return "•";
-  }
-}
+// Annotation type config
+const annotationConfig: Record<AnnotationType, { label: string; badgeClass: string }> = {
+  suggestion: { label: "suggestion", badgeClass: "bg-accent-primary/20 text-accent-primary" },
+  issue: { label: "issue", badgeClass: "bg-diff-del/20 text-diff-del" },
+  praise: { label: "good", badgeClass: "bg-diff-add/20 text-diff-add" },
+  question: { label: "question", badgeClass: "bg-accent-secondary/20 text-accent-secondary" },
+};
 
 // Create annotation element for @pierre/diffs
 function createAnnotationElement(metadata: AnnotationMetadata): HTMLElement {
+  const config = annotationConfig[metadata.type] || annotationConfig.suggestion;
+  const locationText = `${metadata.filename}:${metadata.lineNumber}`;
+  const copyText = `${locationText}\n\n${metadata.content}`;
+
   const wrapper = document.createElement("div");
-  wrapper.className = `annotation annotation--${metadata.type}`;
+  wrapper.className = "bg-bg-tertiary border border-bg-elevated rounded-lg p-4 my-3 mx-4";
 
   wrapper.innerHTML = `
-    <div class="annotation__pointer"></div>
-    <div class="annotation__body">
-      <span class="annotation__icon">${getAnnotationIcon(metadata.type)}</span>
-      <span class="annotation__content">${escapeHtml(metadata.content)}</span>
-      ${metadata.model ? `<span class="annotation__meta">${escapeHtml(metadata.model)}</span>` : ""}
+    <div class="flex items-center gap-3 mb-3">
+      <div class="w-8 h-8 rounded-full bg-gradient-to-br from-accent-secondary to-accent-primary flex items-center justify-center text-white text-sm font-semibold shrink-0">C</div>
+      <span class="font-semibold text-text-primary">Claude</span>
+      <span class="text-xs text-text-muted font-mono">${escapeHtml(locationText)}</span>
+      <div class="ml-auto flex items-center gap-2">
+        <span class="px-2 py-0.5 rounded text-xs font-medium ${config.badgeClass}">${config.label}</span>
+        <button class="flex items-center gap-1.5 px-2 py-1 text-xs text-text-muted hover:text-text-primary hover:bg-bg-elevated rounded transition-colors copy-btn">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+          </svg>
+          copy prompt
+        </button>
+      </div>
     </div>
+    <p class="text-[15px] text-text-primary leading-relaxed font-sans">${escapeHtml(metadata.content)}</p>
   `;
+
+  // Add copy handler
+  const copyBtn = wrapper.querySelector(".copy-btn") as HTMLButtonElement | null;
+  copyBtn?.addEventListener("click", async () => {
+    const originalHtml = copyBtn.innerHTML;
+    await window.copyToClipboard(copyText);
+    copyBtn.innerHTML = `
+      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+      </svg>
+      copied!
+    `;
+    setTimeout(() => {
+      copyBtn.innerHTML = originalHtml;
+    }, 1500);
+  });
 
   return wrapper;
 }
@@ -261,6 +289,8 @@ async function initializeDiffs(sessionId: string) {
             type: a.annotation_type,
             content: a.content,
             model: reviewModel,
+            filename,
+            lineNumber: a.line_number,
           },
         }));
 
