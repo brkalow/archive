@@ -59,12 +59,61 @@ export class SessionTracker {
     this.idleTimeoutMs = idleTimeoutSeconds * 1000;
   }
 
+  /**
+   * Check if a session file has any parseable content.
+   * Returns false for empty files or files with no valid JSON lines.
+   */
+  private async sessionFileHasContent(filePath: string): Promise<boolean> {
+    try {
+      const content = await Bun.file(filePath).text();
+      if (!content.trim()) {
+        return false;
+      }
+
+      // Check if there's at least one valid JSON line
+      const lines = content.split("\n");
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+
+        try {
+          const parsed = JSON.parse(trimmed);
+          // Check if it looks like a message (has role or message.role)
+          if (parsed && typeof parsed === "object") {
+            const data = parsed as Record<string, unknown>;
+            const messageData = data.message ?? data;
+            if (
+              messageData &&
+              typeof messageData === "object" &&
+              "role" in (messageData as object)
+            ) {
+              return true;
+            }
+          }
+        } catch {
+          // Invalid JSON line, continue checking
+        }
+      }
+
+      return false;
+    } catch {
+      return false;
+    }
+  }
+
   async startSession(filePath: string, adapter: HarnessAdapter): Promise<void> {
     if (this.sessions.has(filePath)) {
       return; // Already tracking
     }
 
     const sessionInfo = adapter.getSessionInfo(filePath);
+
+    // Check if the session file has any parseable content
+    // Skip empty files to avoid creating empty server sessions
+    if (!(await this.sessionFileHasContent(filePath))) {
+      debug(`Skipping empty session file: ${filePath}`);
+      return;
+    }
 
     console.log(`[${adapter.name}] Session detected: ${filePath}`);
 
