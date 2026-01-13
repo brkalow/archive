@@ -216,6 +216,37 @@ export class SessionRepository {
     return this.stmts.getSessionByShareToken.get(token) as Session | null;
   }
 
+  /**
+   * Find a live session by harness session ID.
+   * Used to resume streaming to an existing session after daemon restart.
+   */
+  getLiveSessionByHarnessId(harnessSessionId: string, harness: string): Session | null {
+    const stmt = this.db.prepare(`
+      SELECT * FROM sessions
+      WHERE claude_session_id = ? AND harness = ? AND status = 'live'
+      ORDER BY created_at DESC
+      LIMIT 1
+    `);
+    return stmt.get(harnessSessionId, harness) as Session | null;
+  }
+
+  /**
+   * Find any session by harness session ID (regardless of status).
+   * Used to restore a completed session back to live streaming.
+   * Prefers live sessions, then archived/completed by most recent.
+   */
+  getSessionByHarnessId(harnessSessionId: string, harness: string): Session | null {
+    const stmt = this.db.prepare(`
+      SELECT * FROM sessions
+      WHERE claude_session_id = ? AND harness = ?
+      ORDER BY
+        CASE WHEN status = 'live' THEN 0 ELSE 1 END,
+        created_at DESC
+      LIMIT 1
+    `);
+    return stmt.get(harnessSessionId, harness) as Session | null;
+  }
+
   getAllSessions(): Session[] {
     return this.stmts.getAllSessions.all() as Session[];
   }
@@ -378,6 +409,36 @@ export class SessionRepository {
     // Bun supports crypto.timingSafeEqual
     const crypto = require('crypto');
     return crypto.timingSafeEqual(storedBuffer, providedBuffer);
+  }
+
+  /**
+   * Update the stream token hash for an existing live session.
+   * Used when resuming a session after daemon restart.
+   */
+  updateStreamToken(sessionId: string, newTokenHash: string): boolean {
+    const stmt = this.db.prepare(`
+      UPDATE sessions SET stream_token_hash = ?, updated_at = datetime('now')
+      WHERE id = ? AND status = 'live'
+    `);
+    const result = stmt.run(newTokenHash, sessionId);
+    return result.changes > 0;
+  }
+
+  /**
+   * Restore a session to live status and update its stream token.
+   * Used to resume streaming to a completed/archived session.
+   */
+  restoreSessionToLive(sessionId: string, newTokenHash: string): boolean {
+    const stmt = this.db.prepare(`
+      UPDATE sessions SET
+        stream_token_hash = ?,
+        status = 'live',
+        last_activity_at = datetime('now'),
+        updated_at = datetime('now')
+      WHERE id = ?
+    `);
+    const result = stmt.run(newTokenHash, sessionId);
+    return result.changes > 0;
   }
 
   getMessagesFromIndex(sessionId: string, fromIndex: number): Message[] {

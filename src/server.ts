@@ -45,6 +45,7 @@ const server = Bun.serve({
         return api.getSessionDetail(req.params.id, baseUrl);
       },
       POST: (req) => api.updateSession(req, req.params.id),
+      PATCH: (req) => api.patchSession(req, req.params.id),
       DELETE: (req) => api.deleteSession(req.params.id),
     },
 

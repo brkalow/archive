@@ -350,6 +350,47 @@ export function createApiRoutes(repo: SessionRepository) {
       return json({ success: true });
     },
 
+    // Patch session (JSON body for partial updates, used by daemon for title updates)
+    async patchSession(req: Request, sessionId: string): Promise<Response> {
+      try {
+        // Verify stream token if provided (for live sessions)
+        const authHeader = req.headers.get("Authorization");
+        if (authHeader?.startsWith("Bearer ")) {
+          const token = authHeader.slice(7);
+          const tokenHash = await hashToken(token);
+          if (!repo.verifyStreamToken(sessionId, tokenHash)) {
+            return jsonError("Invalid stream token", 401);
+          }
+        }
+
+        const session = repo.getSession(sessionId);
+        if (!session) {
+          return jsonError("Session not found", 404);
+        }
+
+        const body = await req.json();
+        const updates: Partial<{ title: string; description: string }> = {};
+
+        if (typeof body.title === "string") {
+          updates.title = body.title;
+        }
+        if (typeof body.description === "string") {
+          updates.description = body.description;
+        }
+
+        if (Object.keys(updates).length === 0) {
+          return jsonError("No valid fields to update", 400);
+        }
+
+        repo.updateSession(sessionId, updates);
+
+        return json({ updated: true, ...updates });
+      } catch (error) {
+        console.error("Error patching session:", error);
+        return jsonError("Failed to patch session", 500);
+      }
+    },
+
     // Create share link
     shareSession(sessionId: string): Response {
       const session = repo.getSession(sessionId);
@@ -405,16 +446,76 @@ export function createApiRoutes(repo: SessionRepository) {
       });
     },
 
-    // Create a live session
+    // Create or resume a live session
     async createLiveSession(req: Request): Promise<Response> {
       try {
         const body = await req.json();
-        const { title, project_path, claude_session_id, harness, model, repo_url } = body;
+        const { title, project_path, harness_session_id, harness, model, repo_url } = body;
+        // Support both old and new field names for backwards compatibility
+        const harnessSessionId = harness_session_id || body.claude_session_id;
 
         if (!title) {
           return jsonError("Title is required", 400);
         }
 
+        // Check if we can resume an existing session (live or completed)
+        if (harnessSessionId && harness) {
+          // First check for an already-live session
+          let existingSession = repo.getLiveSessionByHarnessId(harnessSessionId, harness);
+
+          if (existingSession) {
+            // Generate new stream token for the resumed session
+            const streamToken = generateStreamToken();
+            const streamTokenHash = await hashToken(streamToken);
+            repo.updateStreamToken(existingSession.id, streamTokenHash);
+
+            // Update last activity
+            repo.updateSession(existingSession.id, {
+              last_activity_at: new Date().toISOString(),
+            });
+
+            const messageCount = repo.getMessageCount(existingSession.id);
+            const lastIndex = repo.getLastMessageIndex(existingSession.id);
+
+            console.log(`Resumed existing session: ${existingSession.id} (${messageCount} messages)`);
+
+            return json({
+              id: existingSession.id,
+              stream_token: streamToken,
+              status: "live",
+              resumed: true,
+              restored: false,
+              message_count: messageCount,
+              last_index: lastIndex,
+            });
+          }
+
+          // No live session, check for completed/archived session to restore
+          existingSession = repo.getSessionByHarnessId(harnessSessionId, harness);
+          if (existingSession) {
+            // Restore the session to live status
+            const streamToken = generateStreamToken();
+            const streamTokenHash = await hashToken(streamToken);
+            repo.restoreSessionToLive(existingSession.id, streamTokenHash);
+
+            const messageCount = repo.getMessageCount(existingSession.id);
+            const lastIndex = repo.getLastMessageIndex(existingSession.id);
+
+            console.log(`Restored session to live: ${existingSession.id} (${messageCount} messages)`);
+
+            return json({
+              id: existingSession.id,
+              stream_token: streamToken,
+              status: "live",
+              resumed: true,
+              restored: true,
+              message_count: messageCount,
+              last_index: lastIndex,
+            });
+          }
+        }
+
+        // Create new session
         const id = generateId();
         const streamToken = generateStreamToken();
         const streamTokenHash = await hashToken(streamToken);
@@ -425,7 +526,7 @@ export function createApiRoutes(repo: SessionRepository) {
             id,
             title,
             description: null,
-            claude_session_id: claude_session_id || null,
+            claude_session_id: harnessSessionId || null,
             pr_url: null,
             share_token: null,
             project_path: project_path || null,
@@ -442,6 +543,9 @@ export function createApiRoutes(repo: SessionRepository) {
           id,
           stream_token: streamToken,
           status: "live",
+          resumed: false,
+          message_count: 0,
+          last_index: -1,
         });
       } catch (error) {
         console.error("Error creating live session:", error);
@@ -921,8 +1025,8 @@ function extractMessageData(
 
   if (!role) return null;
 
-  // Extract content blocks
-  const content = msgData.content;
+  // Extract content blocks (handle both "content" and "content_blocks" field names)
+  const content = msgData.content || msgData.content_blocks;
   if (typeof content === "string") {
     contentBlocks = [{ type: "text", text: content }];
   } else if (Array.isArray(content)) {

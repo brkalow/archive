@@ -3,10 +3,14 @@
   "module": "index.ts",
   "type": "module",
   "private": true,
+  "bin": {
+    "archive": "./cli/index.ts"
+  },
   "scripts": {
     "start": "bun run index.ts",
     "dev": "bun --watch run index.ts",
-    "upload": "bun bin/upload-session.ts"
+    "cli": "bun run ./cli/index.ts",
+    "upload": "bun run ./cli/index.ts upload"
   },
   "devDependencies": {
     "@types/bun": "latest"

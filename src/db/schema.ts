@@ -1,4 +1,6 @@
 import { Database } from "bun:sqlite";
+import { mkdirSync, existsSync } from "fs";
+import { dirname } from "path";
 
 function safeAddColumn(db: Database, table: string, column: string, definition: string): void {
   try {
@@ -8,7 +10,12 @@ function safeAddColumn(db: Database, table: string, column: string, definition: 
   }
 }
 
-export function initializeDatabase(dbPath: string = "sessions.db"): Database {
+export function initializeDatabase(dbPath: string = "data/sessions.db"): Database {
+  const dir = dirname(dbPath);
+  if (dir && !existsSync(dir)) {
+    mkdirSync(dir, { recursive: true });
+  }
+
   const db = new Database(dbPath);
 
   // Enable foreign key enforcement
