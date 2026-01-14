@@ -234,7 +234,7 @@ function stripSystemTags(text: string): string {
   return cleaned.trim();
 }
 
-function formatMarkdown(text: string): string {
+export function formatMarkdown(text: string): string {
   // Process code blocks first (preserve their content)
   const codeBlocks: string[] = [];
   let processed = text.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) => {
@@ -704,18 +704,33 @@ function renderTaskBlock(
   block: ToolUseBlock,
   result?: ToolResultBlock
 ): string {
-  const input = block.input as { description?: string; prompt?: string };
+  const input = block.input as {
+    description?: string;
+    prompt?: string;
+    subagent_type?: string;
+    model?: string;
+  };
   const description = input.description || input.prompt || "Sub-task";
+  const agentType = input.subagent_type || "general-purpose";
   const status = getToolStatus(result);
   const blockId = `task-${block.id}`;
 
+  // Get display name for agent type
+  const agentDisplayName = getAgentDisplayName(agentType);
+
+  // Format result content with markdown if present
+  const resultContent = result?.content || "";
+  const isLarge = resultContent.length > 2000;
+  const displayContent = isLarge ? resultContent.slice(0, 2000) : resultContent;
+  const formattedResult = result ? formatMarkdown(displayContent) : "";
+
   return `
-    <div class="tool-block border-l-2 border-bg-elevated ml-4">
+    <div class="tool-block border-l-2 border-accent-primary/30 ml-4" data-tool-id="${escapeHtml(block.id)}">
       <button class="tool-header flex items-center gap-1.5 py-0.5 pl-2 pr-1.5 rounded hover:bg-bg-elevated transition-colors"
               data-toggle-tool="${blockId}">
-        <span class="text-text-primary">${toolIcons.task}</span>
-        <span class="text-[13px] font-medium text-text-primary">Task</span>
-        <span class="text-[13px] text-text-muted">${escapeHtml(description.slice(0, 50))}</span>
+        <span class="text-accent-primary">${toolIcons.task}</span>
+        <span class="text-[13px] font-medium text-text-primary">${escapeHtml(agentDisplayName)}</span>
+        <span class="text-[13px] text-text-muted truncate max-w-[300px]">${escapeHtml(description.slice(0, 60))}</span>
         ${status}
         <span class="toggle-icon text-text-muted text-[10px]">&#9654;</span>
       </button>
@@ -723,9 +738,9 @@ function renderTaskBlock(
         ${
           result
             ? `
-          <div class="text-sm text-text-secondary whitespace-pre-wrap">
-            ${escapeHtml(result.content.slice(0, 2000))}
-            ${result.content.length > 2000 ? "..." : ""}
+          <div id="${blockId}-result" class="text-sm text-text-secondary leading-relaxed" data-format-markdown="true">
+            ${formattedResult}
+            ${isLarge ? `<button class="text-accent-primary text-xs hover:underline mt-2 block" data-show-all-result="${blockId}-result" data-full-content="${escapeHtml(resultContent)}">Show all (${Math.round(resultContent.length / 1000)}k chars)</button>` : ""}
           </div>
         `
             : '<div class="text-text-muted text-sm italic">... running</div>'
@@ -733,6 +748,20 @@ function renderTaskBlock(
       </div>
     </div>
   `;
+}
+
+// Get human-readable display name for agent types
+function getAgentDisplayName(agentType: string): string {
+  const typeMap: Record<string, string> = {
+    Bash: "Bash Agent",
+    "general-purpose": "Agent",
+    Explore: "Explorer",
+    Plan: "Planner",
+    "feature-dev:code-reviewer": "Code Reviewer",
+    "feature-dev:code-explorer": "Code Explorer",
+    "feature-dev:code-architect": "Architect",
+  };
+  return typeMap[agentType] || agentType;
 }
 
 function renderThinkingBlock(block: ThinkingBlock): string {

@@ -248,29 +248,38 @@ export function createApiRoutes(repo: SessionRepository) {
         // Get client ID from request header
         const clientId = getClientId(req);
 
-        // Create session with all data in a transaction
-        repo.createSessionWithDataAndReview(
+        const claudeSessionId = (formData.get("claude_session_id") as string) || null;
+
+        // Upsert session: if claude_session_id exists, update existing session
+        const { session, isUpdate } = repo.upsertSessionWithDataAndReview(
           {
             id,
             title,
             description: (formData.get("description") as string) || null,
-            claude_session_id: (formData.get("claude_session_id") as string) || null,
+            claude_session_id: claudeSessionId,
             pr_url: prUrl || null,
             share_token: null,
             project_path: (formData.get("project_path") as string) || null,
             model: (formData.get("model") as string) || null,
             harness: (formData.get("harness") as string) || null,
             repo_url: (formData.get("repo_url") as string) || null,
+            status: "archived",
+            last_activity_at: null,
           },
           messages,
           diffs,
           reviewData,
-          clientId || undefined
+          clientId || undefined,
+          touchedFiles
         );
+
+        if (isUpdate) {
+          console.log(`Updated existing session ${session.id} (claude_session_id: ${claudeSessionId})`);
+        }
 
         return new Response(null, {
           status: 303,
-          headers: { Location: `/sessions/${id}` },
+          headers: { Location: `/sessions/${session.id}` },
         });
       } catch (error) {
         console.error("Error creating session:", error);
