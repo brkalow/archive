@@ -36,12 +36,24 @@ export async function isGitRepo(projectPath: string): Promise<boolean> {
   }
 }
 
+export interface CaptureGitDiffOptions {
+  /**
+   * If provided, only include untracked files that are in this set.
+   * File paths should be absolute paths.
+   * This prevents accidentally uploading unrelated untracked files.
+   */
+  allowedUntrackedFiles?: Set<string>;
+}
+
 /**
  * Capture the current git diff for a project.
- * Returns the combined diff of staged, unstaged, and untracked files.
+ * Returns the combined diff of staged, unstaged, and (optionally filtered) untracked files.
  * Returns null if the directory is not a git repo or an error occurs.
  */
-export async function captureGitDiff(projectPath: string): Promise<string | null> {
+export async function captureGitDiff(
+  projectPath: string,
+  options?: CaptureGitDiffOptions
+): Promise<string | null> {
   try {
     // Check if it's a git repo
     if (!(await isGitRepo(projectPath))) {
@@ -59,10 +71,19 @@ export async function captureGitDiff(projectPath: string): Promise<string | null
     if (untrackedFiles.trim()) {
       const files = untrackedFiles.trim().split("\n");
       for (const file of files) {
+        // Construct the absolute path for this file
+        const absolutePath = join(projectPath, file);
+
+        // If allowedUntrackedFiles is provided, only include files in the set
+        if (options?.allowedUntrackedFiles) {
+          if (!options.allowedUntrackedFiles.has(absolutePath)) {
+            continue; // Skip untracked files not modified by the session
+          }
+        }
+
         try {
           // Read file content and generate a "new file" diff
-          const filePath = join(projectPath, file);
-          const content = await Bun.file(filePath).text();
+          const content = await Bun.file(absolutePath).text();
 
           // Split into lines, handling trailing newline properly
           let lines = content.split("\n");

@@ -13,6 +13,7 @@ import type {
   HarnessAdapter,
   ParseContext,
   NormalizedMessage,
+  ContentBlock,
 } from "../adapters/types";
 import { isRepoAllowed } from "../lib/config";
 import { debug } from "../lib/debug";
@@ -46,6 +47,8 @@ interface ActiveSession {
   diffDebounceTimer: ReturnType<typeof setTimeout> | null;
   // Count of messages pushed to server (for detecting empty sessions)
   messagesPushed: number;
+  // Files explicitly modified by this session (for filtering untracked files in diff)
+  modifiedFiles: Set<string>;
 }
 
 export class SessionTracker {
@@ -59,6 +62,48 @@ export class SessionTracker {
     this.api = new ApiClient(serverUrl);
     this.serverUrl = serverUrl;
     this.idleTimeoutMs = idleTimeoutSeconds * 1000;
+  }
+
+  /**
+   * Check if a session file has any parseable content.
+   * Returns false for empty files or files with no valid JSON lines.
+   */
+  private async sessionFileHasContent(filePath: string): Promise<boolean> {
+    try {
+      const content = await Bun.file(filePath).text();
+      if (!content.trim()) {
+        return false;
+      }
+
+      // Check if there's at least one valid JSON line
+      const lines = content.split("\n");
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+
+        try {
+          const parsed = JSON.parse(trimmed);
+          // Check if it looks like a message (has role or message.role)
+          if (parsed && typeof parsed === "object") {
+            const data = parsed as Record<string, unknown>;
+            const messageData = data.message ?? data;
+            if (
+              messageData &&
+              typeof messageData === "object" &&
+              "role" in (messageData as object)
+            ) {
+              return true;
+            }
+          }
+        } catch {
+          // Invalid JSON line, continue checking
+        }
+      }
+
+      return false;
+    } catch {
+      return false;
+    }
   }
 
   async startSession(filePath: string, adapter: HarnessAdapter): Promise<void> {
@@ -78,6 +123,13 @@ export class SessionTracker {
       console.log(`To allow this repository, run:`);
       console.log(`  archive repo allow ${sessionInfo.projectPath}`);
       console.log();
+      return;
+    }
+
+    // Check if the session file has any parseable content
+    // Skip empty files to avoid creating empty server sessions
+    if (!(await this.sessionFileHasContent(filePath))) {
+      debug(`Skipping empty session file: ${filePath}`);
       return;
     }
 
@@ -124,6 +176,7 @@ export class SessionTracker {
         isProcessing: false,
         diffDebounceTimer: null,
         messagesPushed: 0,
+        modifiedFiles: new Set(),
       };
 
       this.sessions.set(filePath, session);
@@ -142,6 +195,10 @@ export class SessionTracker {
 
       // Capture initial diff state (useful when picking up in-progress sessions)
       if (session.projectPath) {
+        // First, scan existing session content for files already modified
+        // (handles case where we pick up a session mid-way)
+        await this.scanExistingSessionForModifiedFiles(session);
+
         this.captureAndPushDiff(session).catch(() => {
           // Non-critical, continue
         });
@@ -239,12 +296,14 @@ export class SessionTracker {
 
   /**
    * Check if any messages contain file-modifying tool calls.
-   * If so, schedule a debounced diff capture.
+   * If so, track the modified file and schedule a debounced diff capture.
    */
   private checkForFileModifications(
     session: ActiveSession,
     messages: NormalizedMessage[]
   ): void {
+    let shouldCaptureDiff = false;
+
     for (const msg of messages) {
       for (const block of msg.content_blocks) {
         if (
@@ -253,10 +312,104 @@ export class SessionTracker {
           FILE_MODIFYING_TOOLS.includes(block.name)
         ) {
           debug(`File-modifying tool detected: ${block.name}`);
-          this.scheduleDiffCapture(session);
-          return; // Only need to schedule once per batch
+          shouldCaptureDiff = true;
+
+          // Extract file path from tool input
+          const filePath = this.extractFilePathFromToolUse(block);
+          if (filePath) {
+            session.modifiedFiles.add(filePath);
+            debug(`Tracked modified file: ${filePath}`);
+          }
         }
       }
+    }
+
+    if (shouldCaptureDiff) {
+      this.scheduleDiffCapture(session);
+    }
+  }
+
+  /**
+   * Extract file path from a file-modifying tool_use block.
+   */
+  private extractFilePathFromToolUse(block: ContentBlock): string | null {
+    const input = block.input as Record<string, unknown> | undefined;
+    if (!input || typeof input !== "object") {
+      return null;
+    }
+
+    // Write and Edit use file_path
+    if (typeof input.file_path === "string") {
+      return input.file_path;
+    }
+
+    // NotebookEdit uses notebook_path
+    if (typeof input.notebook_path === "string") {
+      return input.notebook_path;
+    }
+
+    return null;
+  }
+
+  /**
+   * Scan existing session file content for file-modifying tool calls.
+   * This is used when picking up a session mid-way to capture files
+   * that were already modified before we started watching.
+   */
+  private async scanExistingSessionForModifiedFiles(
+    session: ActiveSession
+  ): Promise<void> {
+    try {
+      const content = await Bun.file(session.localPath).text();
+      const lines = content.split("\n");
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(trimmed);
+        } catch {
+          continue;
+        }
+
+        if (!parsed || typeof parsed !== "object") continue;
+
+        const data = parsed as Record<string, unknown>;
+        const messageData = data.message
+          ? (data.message as Record<string, unknown>)
+          : data;
+
+        // Look for content blocks with file-modifying tool calls
+        const rawContent = messageData.content;
+        if (!Array.isArray(rawContent)) continue;
+
+        for (const block of rawContent) {
+          if (
+            block &&
+            typeof block === "object" &&
+            block.type === "tool_use" &&
+            typeof block.name === "string" &&
+            FILE_MODIFYING_TOOLS.includes(block.name)
+          ) {
+            const filePath = this.extractFilePathFromToolUse(
+              block as ContentBlock
+            );
+            if (filePath) {
+              session.modifiedFiles.add(filePath);
+            }
+          }
+        }
+      }
+
+      if (session.modifiedFiles.size > 0) {
+        debug(
+          `Scanned existing session: found ${session.modifiedFiles.size} modified files`
+        );
+      }
+    } catch (err) {
+      debug(`Failed to scan existing session file: ${err}`);
     }
   }
 
@@ -279,6 +432,7 @@ export class SessionTracker {
 
   /**
    * Capture the current git diff and push it to the server.
+   * Only includes untracked files that the session has explicitly modified.
    */
   private async captureAndPushDiff(session: ActiveSession): Promise<void> {
     if (!session.projectPath) {
@@ -287,7 +441,9 @@ export class SessionTracker {
     }
 
     try {
-      const diff = await captureGitDiff(session.projectPath);
+      const diff = await captureGitDiff(session.projectPath, {
+        allowedUntrackedFiles: session.modifiedFiles,
+      });
       if (!diff) {
         debug("No diff to capture (not a git repo or no changes)");
         return;
@@ -335,11 +491,13 @@ export class SessionTracker {
       return;
     }
 
-    // Capture final diff
+    // Capture final diff (only tracked files + untracked files modified by session)
     let finalDiff: string | undefined;
     if (session.projectPath) {
       try {
-        const diff = await captureGitDiff(session.projectPath);
+        const diff = await captureGitDiff(session.projectPath, {
+          allowedUntrackedFiles: session.modifiedFiles,
+        });
         if (diff) {
           finalDiff = diff;
           debug(`Final diff captured (${diff.length} chars)`);

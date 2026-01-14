@@ -139,8 +139,86 @@ function renderTextBlock(text: string): string {
   // Strip system tags that shouldn't be displayed
   const cleaned = stripSystemTags(text);
   if (!cleaned.trim()) return ""; // Don't render empty text blocks
+
+  // Check if this is a command/skill prompt message
+  const commandInfo = extractCommandInfo(cleaned);
+  if (commandInfo) {
+    return renderCommandBlock(commandInfo.name, commandInfo.output, cleaned);
+  }
+
   const formatted = formatMarkdown(cleaned);
   return `<div class="text-block">${formatted}</div>`;
+}
+
+// Extract command info from text if it's a command/skill prompt
+function extractCommandInfo(text: string): { name: string; output: string } | null {
+  // Match command-name tag
+  const nameMatch = text.match(/<command-name>([^<]+)<\/command-name>/);
+  if (!nameMatch) return null;
+
+  const name = nameMatch[1];
+  let output = "";
+
+  // Extract local-command-stdout content if present
+  const stdoutMatch = text.match(/<local-command-stdout>([\s\S]*?)<\/local-command-stdout>/);
+  if (stdoutMatch) {
+    output = stdoutMatch[1].trim();
+  }
+
+  return { name, output };
+}
+
+// Render a collapsed command block
+function renderCommandBlock(commandName: string, output: string, fullContent: string): string {
+  const blockId = `cmd-${Math.random().toString(36).slice(2, 10)}`;
+  const hasOutput = output.length > 0;
+
+  // Format the output with markdown if present
+  const formattedOutput = hasOutput ? formatMarkdown(output) : "";
+
+  // Strip all command tags to get clean remaining content
+  let remainingContent = fullContent
+    .replace(/<command-name>[^<]*<\/command-name>/g, "")
+    .replace(/<command-message>[^<]*<\/command-message>/g, "")
+    .replace(/<command-args>[^<]*<\/command-args>/g, "")
+    .replace(/<local-command-stdout>[\s\S]*?<\/local-command-stdout>/g, "")
+    .trim();
+
+  const hasRemainingContent = remainingContent.length > 0;
+
+  return `
+    <div class="command-block bg-bg-tertiary/30 rounded py-1.5 pr-2 -ml-1 pl-1">
+      <button class="flex items-center gap-1.5 text-[13px] hover:bg-bg-elevated rounded px-1 py-0.5 transition-colors w-full text-left"
+              data-toggle-tool="${blockId}">
+        <span class="text-text-muted">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+          </svg>
+        </span>
+        <span class="font-medium text-text-primary">Ran</span>
+        <code class="px-1.5 py-0.5 bg-bg-elevated rounded text-accent-primary text-[13px]">${escapeHtml(commandName)}</code>
+        <span class="toggle-icon text-text-muted text-[10px] ml-auto">&#9654;</span>
+      </button>
+      <div id="${blockId}" class="hidden mt-2 pl-5">
+        ${formattedOutput ? `<div class="text-sm text-text-secondary">${formattedOutput}</div>` : ""}
+        ${hasRemainingContent ? `<div class="text-sm text-text-secondary mt-2">${formatMarkdown(remainingContent)}</div>` : ""}
+      </div>
+    </div>
+  `;
+}
+
+// Strip line number prefixes from code blocks (for markdown code blocks that may contain line-numbered output)
+function stripLineNumbersFromCode(code: string): string {
+  const lines = code.split("\n");
+  const firstNonEmpty = lines.find(l => l.trim().length > 0);
+  if (!firstNonEmpty) return code;
+
+  // Match line number formats: "  1→", "  1:", "  1|", "  1\t"
+  const lineNumberPattern = /^\s*\d+[→:\|\t]/;
+  if (!lineNumberPattern.test(firstNonEmpty)) {
+    return code;
+  }
+  return lines.map((line) => line.replace(/^\s*\d+[→:\|\t]\s?/, "")).join("\n");
 }
 
 function stripSystemTags(text: string): string {
@@ -161,13 +239,57 @@ function formatMarkdown(text: string): string {
   const codeBlocks: string[] = [];
   let processed = text.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) => {
     const index = codeBlocks.length;
+    // Strip line number prefixes that may appear in code blocks (e.g., from Read tool output)
+    const cleanedCode = stripLineNumbersFromCode(code);
     // Store code in data attribute for client-side syntax highlighting
     // Use base64 encoding to safely store code with special characters
-    const encodedCode = btoa(encodeURIComponent(code));
+    const encodedCode = btoa(encodeURIComponent(cleanedCode));
     codeBlocks.push(
-      `<div class="code-block-container my-2 rounded-md overflow-hidden" data-code-content="${encodedCode}" data-language="${escapeHtml(lang || "")}"><pre class="p-3 bg-bg-primary overflow-x-auto relative group"><button class="copy-code absolute top-2 right-2 p-1 text-text-muted hover:text-text-primary opacity-0 group-hover:opacity-100 transition-opacity" title="Copy code"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg></button><code class="text-[13px]">${escapeHtml(code)}</code></pre></div>`
+      `<div class="code-block-container my-2 rounded-md overflow-hidden" data-code-content="${encodedCode}" data-language="${escapeHtml(lang || "")}"><pre class="p-3 bg-bg-primary overflow-x-auto relative group"><button class="copy-code absolute top-2 right-2 p-1 text-text-muted hover:text-text-primary opacity-0 group-hover:opacity-100 transition-opacity" title="Copy code"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg></button><code class="text-[13px]">${escapeHtml(cleanedCode)}</code></pre></div>`
     );
     return `\x00CODE_BLOCK_${index}\x00`;
+  });
+
+  // Process markdown tables before inline code (tables use | which could be in code)
+  const tables: string[] = [];
+  processed = processed.replace(/(?:^|\n)((?:\|[^\n]+\|\n)+)/g, (match, tableContent) => {
+    const lines = tableContent.trim().split("\n");
+    if (lines.length < 2) return match;
+
+    // Check if second line is a separator row (|---|---|)
+    const separatorLine = lines[1];
+    if (!/^\|[\s-:|]+\|$/.test(separatorLine)) return match;
+
+    const index = tables.length;
+    const headerCells = parsePipedRow(lines[0]);
+    const alignments = parseSeparatorRow(separatorLine);
+    const bodyRows = lines.slice(2);
+
+    let tableHtml = '<div class="my-2 overflow-x-auto"><table class="min-w-full text-sm border-collapse">';
+
+    // Header
+    tableHtml += '<thead><tr class="border-b border-bg-elevated">';
+    headerCells.forEach((cell, i) => {
+      const align = alignments[i] || "left";
+      tableHtml += `<th class="px-3 py-1.5 text-left font-medium text-text-primary" style="text-align: ${align}">${escapeHtml(cell.trim())}</th>`;
+    });
+    tableHtml += "</tr></thead>";
+
+    // Body
+    tableHtml += "<tbody>";
+    for (const row of bodyRows) {
+      const cells = parsePipedRow(row);
+      tableHtml += '<tr class="border-b border-bg-elevated/50">';
+      cells.forEach((cell, i) => {
+        const align = alignments[i] || "left";
+        tableHtml += `<td class="px-3 py-1.5 text-text-secondary" style="text-align: ${align}">${escapeHtml(cell.trim())}</td>`;
+      });
+      tableHtml += "</tr>";
+    }
+    tableHtml += "</tbody></table></div>";
+
+    tables.push(tableHtml);
+    return `\x00TABLE_${index}\x00`;
   });
 
   // Process inline code
@@ -193,12 +315,37 @@ function formatMarkdown(text: string): string {
     return codeBlocks[parseInt(index, 10)] ?? match;
   });
 
+  // Restore tables
+  processed = processed.replace(/\x00TABLE_(\d+)\x00/g, (match, index) => {
+    return tables[parseInt(index, 10)] ?? match;
+  });
+
   // Restore inline code
   processed = processed.replace(/\x00INLINE_CODE_(\d+)\x00/g, (match, index) => {
     return inlineCodes[parseInt(index, 10)] ?? match;
   });
 
   return processed;
+}
+
+// Parse a markdown table row like "| cell1 | cell2 | cell3 |" into cells
+function parsePipedRow(row: string): string[] {
+  // Remove leading and trailing pipes, then split by pipe
+  const trimmed = row.replace(/^\||\|$/g, "");
+  return trimmed.split("|");
+}
+
+// Parse separator row like "|:---|---:|:---:|" to get alignments
+function parseSeparatorRow(row: string): string[] {
+  const cells = parsePipedRow(row);
+  return cells.map(cell => {
+    const trimmed = cell.trim();
+    const leftColon = trimmed.startsWith(":");
+    const rightColon = trimmed.endsWith(":");
+    if (leftColon && rightColon) return "center";
+    if (rightColon) return "right";
+    return "left";
+  });
 }
 
 function renderToolUseBlock(
@@ -398,13 +545,19 @@ function getLanguageFromPath(filePath: string | null): string {
 
 // Strip line number prefixes from Read tool output
 // Format: "     1→content" (spaces + number + arrow + content)
+// Also handles variations like "  1:" or "  1|" for diff-style output
 function stripLineNumbers(content: string): string {
   const lines = content.split("\n");
-  // Check if first line matches the pattern
-  if (!/^\s*\d+→/.test(lines[0])) {
+  // Check if first non-empty line matches the pattern (handles leading empty lines)
+  const firstNonEmpty = lines.find(l => l.trim().length > 0);
+  if (!firstNonEmpty) return content;
+
+  // Match various line number formats: "  1→", "  1:", "  1|", "  1 " (with tab after)
+  const lineNumberPattern = /^\s*\d+[→:\|\t]/;
+  if (!lineNumberPattern.test(firstNonEmpty)) {
     return content; // No line numbers to strip
   }
-  return lines.map((line) => line.replace(/^\s*\d+→/, "")).join("\n");
+  return lines.map((line) => line.replace(/^\s*\d+[→:\|\t]\s?/, "")).join("\n");
 }
 
 function renderToolResult(result: ToolResultBlock, toolName?: string, filePath?: string | null): string {
