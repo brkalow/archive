@@ -234,7 +234,7 @@ function stripSystemTags(text: string): string {
   return cleaned.trim();
 }
 
-function formatMarkdown(text: string): string {
+export function formatMarkdown(text: string): string {
   // Process code blocks first (preserve their content)
   const codeBlocks: string[] = [];
   let processed = text.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) => {
@@ -738,9 +738,9 @@ function renderTaskBlock(
         ${
           result
             ? `
-          <div class="text-sm text-text-secondary leading-relaxed">
+          <div id="${blockId}-result" class="text-sm text-text-secondary leading-relaxed" data-format-markdown="true">
             ${formattedResult}
-            ${isLarge ? `<button class="text-accent-primary text-xs hover:underline mt-2 block" data-show-all-result="${blockId}-full" data-full-content="${escapeHtml(resultContent)}">Show all (${Math.round(resultContent.length / 1000)}k chars)</button>` : ""}
+            ${isLarge ? `<button class="text-accent-primary text-xs hover:underline mt-2 block" data-show-all-result="${blockId}-result" data-full-content="${escapeHtml(resultContent)}">Show all (${Math.round(resultContent.length / 1000)}k chars)</button>` : ""}
           </div>
         `
             : '<div class="text-text-muted text-sm italic">... running</div>'

@@ -1,5 +1,6 @@
 import { Router } from "./router";
 import { renderSessionList, renderSessionDetail, renderNotFound, renderSingleMessage, renderConnectionStatusHtml, renderDiffPanel, escapeHtml } from "./views";
+import { formatMarkdown } from "./blocks";
 import type { Session, Message, Diff, Review, Annotation, AnnotationType } from "../db/schema";
 // Import @pierre/diffs - this registers the web component and provides FileDiff class
 import { FileDiff, getSingularPatch, File } from "@pierre/diffs";
@@ -318,7 +319,13 @@ function attachBlockHandlers() {
       const resultEl = document.getElementById(resultId!);
 
       if (resultEl && fullContent) {
-        resultEl.textContent = fullContent;
+        // Check if the content should be formatted as markdown
+        const useMarkdown = resultEl.dataset.formatMarkdown === "true";
+        if (useMarkdown) {
+          resultEl.innerHTML = formatMarkdown(fullContent);
+        } else {
+          resultEl.textContent = fullContent;
+        }
         showAllBtn.remove();
       }
     }
