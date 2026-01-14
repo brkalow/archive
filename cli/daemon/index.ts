@@ -9,8 +9,9 @@
  */
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync } from "fs";
-import { dirname, join } from "path";
+import { join } from "path";
 import { getEnabledAdapters } from "../adapters";
+import { getAllowedRepos } from "../lib/config";
 import { setVerbose } from "../lib/debug";
 import { SessionTracker } from "./session-tracker";
 import { SessionWatcher } from "./watcher";
@@ -62,6 +63,21 @@ export async function startDaemon(options: DaemonOptions): Promise<void> {
   }
 
   console.log(`Enabled adapters: ${adapters.map((a) => a.name).join(", ")}`);
+
+  // Show first-run message if allowlist is empty
+  const allowedRepos = getAllowedRepos(options.server);
+  if (allowedRepos.length === 0) {
+    console.log(`
+No repositories allowed for automatic upload.
+
+The daemon only uploads sessions from explicitly allowed repositories.
+To allow the current repository:
+  archive repo allow
+
+To allow a specific repository:
+  archive repo allow /path/to/repo
+`);
+  }
 
   // Create tracker and watcher
   tracker = new SessionTracker(options.server, options.idleTimeout);

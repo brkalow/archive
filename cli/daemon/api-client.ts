@@ -3,6 +3,8 @@
  * Includes retry logic with exponential backoff for resilience.
  */
 
+import { getClientId } from "../lib/client-id";
+
 interface RetryOptions {
   maxRetries?: number;
   initialDelayMs?: number;
@@ -102,11 +104,23 @@ export interface UpdateSessionResponse {
 export class ApiClient {
   private baseUrl: string;
   private retryOptions: RetryOptions;
+  private clientId: string;
 
   constructor(baseUrl: string, retryOptions: RetryOptions = DEFAULT_RETRY) {
     // Remove trailing slash if present
     this.baseUrl = baseUrl.replace(/\/$/, "");
     this.retryOptions = retryOptions;
+    this.clientId = getClientId();
+  }
+
+  /**
+   * Get common headers for all requests.
+   */
+  private getHeaders(additionalHeaders: Record<string, string> = {}): Record<string, string> {
+    return {
+      "X-Archive-Client-ID": this.clientId,
+      ...additionalHeaders,
+    };
   }
 
   /**
@@ -119,9 +133,9 @@ export class ApiClient {
       `${this.baseUrl}/api/sessions/live`,
       {
         method: "POST",
-        headers: {
+        headers: this.getHeaders({
           "Content-Type": "application/json",
-        },
+        }),
         body: JSON.stringify(data),
       },
       this.retryOptions
@@ -147,10 +161,10 @@ export class ApiClient {
       `${this.baseUrl}/api/sessions/${sessionId}/messages`,
       {
         method: "POST",
-        headers: {
+        headers: this.getHeaders({
           "Content-Type": "application/json",
           Authorization: `Bearer ${streamToken}`,
-        },
+        }),
         body: JSON.stringify({ messages }),
       },
       this.retryOptions
@@ -176,10 +190,10 @@ export class ApiClient {
       `${this.baseUrl}/api/sessions/${sessionId}/tool-results`,
       {
         method: "POST",
-        headers: {
+        headers: this.getHeaders({
           "Content-Type": "application/json",
           Authorization: `Bearer ${streamToken}`,
-        },
+        }),
         body: JSON.stringify({ results }),
       },
       this.retryOptions
@@ -205,10 +219,10 @@ export class ApiClient {
       `${this.baseUrl}/api/sessions/${sessionId}/diff`,
       {
         method: "PUT",
-        headers: {
+        headers: this.getHeaders({
           "Content-Type": "text/plain",
           Authorization: `Bearer ${streamToken}`,
-        },
+        }),
         body: diff,
       },
       this.retryOptions
@@ -234,10 +248,10 @@ export class ApiClient {
       `${this.baseUrl}/api/sessions/${sessionId}/complete`,
       {
         method: "POST",
-        headers: {
+        headers: this.getHeaders({
           "Content-Type": "application/json",
           Authorization: `Bearer ${streamToken}`,
-        },
+        }),
         body: JSON.stringify(data),
       },
       this.retryOptions
@@ -263,10 +277,10 @@ export class ApiClient {
       `${this.baseUrl}/api/sessions/${sessionId}`,
       {
         method: "PATCH",
-        headers: {
+        headers: this.getHeaders({
           "Content-Type": "application/json",
           Authorization: `Bearer ${streamToken}`,
-        },
+        }),
         body: JSON.stringify({ title }),
       },
       this.retryOptions
@@ -278,5 +292,29 @@ export class ApiClient {
     }
 
     return res.json();
+  }
+
+  /**
+   * Delete a session (used for empty sessions that have no messages).
+   */
+  async deleteSession(
+    sessionId: string,
+    streamToken: string
+  ): Promise<void> {
+    const res = await fetchWithRetry(
+      `${this.baseUrl}/api/sessions/${sessionId}`,
+      {
+        method: "DELETE",
+        headers: this.getHeaders({
+          Authorization: `Bearer ${streamToken}`,
+        }),
+      },
+      this.retryOptions
+    );
+
+    if (!res.ok) {
+      const error = await res.text();
+      throw new Error(`Failed to delete session: ${res.status} - ${error}`);
+    }
   }
 }

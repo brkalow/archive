@@ -7,16 +7,24 @@
  *   daemon    Manage the background daemon (start/stop/status)
  *   upload    Upload a session to the archive
  *   config    Manage CLI configuration
+ *   repo      Manage repository access control
+ *   session   Manage sessions (list/delete)
+ *   list      Alias for 'session list'
  */
 
 import { daemon } from "./commands/daemon";
 import { upload } from "./commands/upload";
 import { config } from "./commands/config";
+import { repo } from "./commands/repo";
+import { session } from "./commands/session";
 
 const commands: Record<string, (args: string[]) => Promise<void>> = {
   daemon,
   upload,
   config,
+  repo,
+  session,
+  list: (args) => session(["list", ...args]),
 };
 
 async function main() {
@@ -30,6 +38,9 @@ Commands:
   daemon    Manage the background daemon (start/stop/status)
   upload    Upload a session to the archive
   config    Manage CLI configuration
+  repo      Manage repository access control
+  session   Manage sessions (list/delete)
+  list      Alias for 'session list'
 
 Run 'archive <command> --help' for more information.
     `);

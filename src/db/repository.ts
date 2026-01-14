@@ -33,8 +33,8 @@ export class SessionRepository {
     // Initialize cached prepared statements
     this.stmts = {
       createSession: db.prepare(`
-        INSERT INTO sessions (id, title, description, claude_session_id, pr_url, share_token, project_path, model, harness, repo_url, status, last_activity_at, stream_token_hash)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO sessions (id, title, description, claude_session_id, pr_url, share_token, project_path, model, harness, repo_url, status, last_activity_at, stream_token_hash, client_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         RETURNING *
       `),
       getSession: db.prepare("SELECT * FROM sessions WHERE id = ?"),
@@ -97,7 +97,8 @@ export class SessionRepository {
     };
   }
 
-  createSession(session: Omit<Session, "created_at" | "updated_at">, streamTokenHash?: string): Session {
+  // Note: client_id is passed separately to avoid duplication in session object
+  createSession(session: Omit<Session, "created_at" | "updated_at" | "client_id">, streamTokenHash?: string, clientId?: string): Session {
     return this.stmts.createSession.get(
       session.id,
       session.title,
@@ -111,15 +112,18 @@ export class SessionRepository {
       session.repo_url,
       session.status || "archived",
       session.last_activity_at,
-      streamTokenHash || null
+      streamTokenHash || null,
+      clientId || null
     ) as Session;
   }
 
   // Create session with messages and diffs in a single transaction
+  // Note: client_id is passed separately to avoid duplication in session object
   createSessionWithData(
-    session: Omit<Session, "created_at" | "updated_at">,
+    session: Omit<Session, "created_at" | "updated_at" | "client_id">,
     messages: Omit<Message, "id">[],
-    diffs: Omit<Diff, "id">[]
+    diffs: Omit<Diff, "id">[],
+    clientId?: string
   ): Session {
     const transaction = this.db.transaction(() => {
       const created = this.stmts.createSession.get(
@@ -135,7 +139,8 @@ export class SessionRepository {
         session.repo_url,
         session.status || "archived",
         session.last_activity_at,
-        null // stream_token_hash not used for batch uploads
+        null, // stream_token_hash not used for batch uploads
+        clientId || null
       ) as Session;
 
       for (const msg of messages) {
@@ -255,6 +260,14 @@ export class SessionRepository {
 
   getAllSessions(): Session[] {
     return this.stmts.getAllSessions.all() as Session[];
+  }
+
+  /**
+   * Get sessions filtered by client ID (uses database index for efficiency).
+   */
+  getSessionsByClientId(clientId: string): Session[] {
+    const stmt = this.db.prepare("SELECT * FROM sessions WHERE client_id = ? ORDER BY created_at DESC");
+    return stmt.all(clientId) as Session[];
   }
 
   deleteSession(id: string): boolean {
@@ -523,8 +536,9 @@ export class SessionRepository {
   }
 
   // Input type for annotations during upload (uses filename instead of diff_id)
+  // Note: client_id is passed separately to avoid duplication in session object
   createSessionWithDataAndReview(
-    session: Omit<Session, "created_at" | "updated_at">,
+    session: Omit<Session, "created_at" | "updated_at" | "client_id">,
     messages: Omit<Message, "id">[],
     diffs: Omit<Diff, "id">[],
     reviewData?: {
@@ -537,7 +551,8 @@ export class SessionRepository {
         annotation_type: AnnotationType;
         content: string;
       }>;
-    }
+    },
+    clientId?: string
   ): Session {
     const transaction = this.db.transaction(() => {
       // Create session
@@ -554,7 +569,8 @@ export class SessionRepository {
         session.repo_url,
         session.status || "archived",
         session.last_activity_at,
-        null // stream_token_hash not used for batch uploads
+        null, // stream_token_hash not used for batch uploads
+        clientId || null
       ) as Session;
 
       // Insert messages

@@ -1,3 +1,4 @@
+import { existsSync } from "fs";
 import type {
   HarnessAdapter,
   NormalizedMessage,
@@ -211,8 +212,8 @@ export const claudeCodeAdapter: HarnessAdapter = {
  * - Hyphens within path components are encoded as %2D
  * - Path separators become hyphens
  *
- * Fallback: If no URL encoding detected, use simple hyphen replacement
- * (this may incorrectly decode paths that contain actual hyphens)
+ * Fallback: If no URL encoding detected, use filesystem validation to
+ * disambiguate hyphens that are path separators vs literal hyphens.
  */
 function decodeProjectPath(encoded: string): string {
   if (!encoded) {
@@ -222,16 +223,83 @@ function decodeProjectPath(encoded: string): string {
   // Check if URL encoding is present (look for %XX patterns)
   if (/%[0-9A-Fa-f]{2}/.test(encoded)) {
     // URL encoded format: replace hyphens with slashes, then URL decode
-    const withSlashes = "/" + encoded.replace(/-/g, "/");
+    // The leading hyphen represents root /, so just replace all hyphens with slashes
+    const withSlashes = encoded.replace(/-/g, "/");
     try {
       return decodeURIComponent(withSlashes);
     } catch {
-      // Fall through to simple replacement
+      // Fall through to filesystem validation
     }
   }
 
-  // Simple hyphen replacement (imperfect for paths containing hyphens)
-  return "/" + encoded.replace(/-/g, "/");
+  // No URL encoding - use filesystem validation to find the correct path
+  // This handles cases where directory names contain literal hyphens
+  return decodeProjectPathWithValidation(encoded);
+}
+
+/**
+ * Decode project path by validating against the filesystem.
+ * Uses recursive backtracking to find a segmentation where all path
+ * components exist on the filesystem.
+ *
+ * Example: "-Users-bryce-my-project" with directory "my-project"
+ * - Try "/Users" - exists, recurse with "bryce-my-project"
+ * - Try "/Users/bryce" - exists, recurse with "my-project"
+ * - Try "/Users/bryce/my" - exists but "/Users/bryce/my/project" doesn't
+ * - Backtrack, try "/Users/bryce/my-project" - exists! done
+ *
+ * If no complete valid path is found, falls back to simple hyphen replacement.
+ */
+function decodeProjectPathWithValidation(encoded: string): string {
+  // Split into segments (filter out empty from leading hyphen)
+  const segments = encoded.split("-").filter((s) => s);
+
+  if (segments.length === 0) {
+    return "/";
+  }
+
+  // Try to find a complete valid path using backtracking
+  const result = tryDecodePath(segments, 0, "");
+  if (result !== null) {
+    return result;
+  }
+
+  // Fallback: simple hyphen replacement (imperfect for paths containing hyphens)
+  return "/" + encoded.replace(/-/g, "/").replace(/\/+/g, "/");
+}
+
+/**
+ * Recursively try to decode path segments into a valid filesystem path.
+ * Returns null if no valid complete path can be found from this state.
+ */
+function tryDecodePath(
+  segments: string[],
+  startIndex: number,
+  currentPath: string
+): string | null {
+  // Base case: all segments consumed
+  if (startIndex >= segments.length) {
+    return currentPath || "/";
+  }
+
+  // Try progressively longer combinations of segments as a single component
+  let candidateName = "";
+  for (let endIndex = startIndex; endIndex < segments.length; endIndex++) {
+    candidateName += (candidateName ? "-" : "") + segments[endIndex];
+    const testPath = currentPath + "/" + candidateName;
+
+    if (existsSync(testPath)) {
+      // This path exists, try to continue from here
+      const result = tryDecodePath(segments, endIndex + 1, testPath);
+      if (result !== null) {
+        return result;
+      }
+      // Continuation failed, try a longer component name
+    }
+  }
+
+  // No valid path found from this state
+  return null;
 }
 
 /**

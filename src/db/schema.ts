@@ -107,8 +107,12 @@ export function initializeDatabase(dbPath: string = "data/sessions.db"): Databas
   safeAddColumn(db, "sessions", "last_activity_at", "TEXT");
   safeAddColumn(db, "sessions", "stream_token_hash", "TEXT");
 
+  // Client-based session ownership
+  safeAddColumn(db, "sessions", "client_id", "TEXT");
+
   // Index for live session queries
   db.run(`CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_sessions_client_id ON sessions(client_id)`);
 
   return db;
 }
@@ -128,6 +132,7 @@ export type Session = {
   repo_url: string | null;
   status: SessionStatus;
   last_activity_at: string | null;
+  client_id: string | null;
   created_at: string;
   updated_at: string;
 };

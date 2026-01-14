@@ -5,6 +5,7 @@
 import { $ } from "bun";
 import { existsSync } from "fs";
 import { basename, join } from "path";
+import { getClientId } from "../lib/client-id";
 import { loadConfig } from "../lib/config";
 
 // Review types
@@ -275,6 +276,29 @@ function extractModel(sessionContent: string): string | null {
   return null;
 }
 
+function countMessages(sessionContent: string): number {
+  // Count actual user/assistant messages (not metadata like file-history-snapshot)
+  const lines = sessionContent.split("\n").filter(Boolean);
+  let count = 0;
+
+  for (const line of lines) {
+    try {
+      const item = JSON.parse(line);
+      const msg = item.message || item;
+      const role = msg.role;
+
+      // Count user and assistant messages
+      if (role === "human" || role === "user" || role === "assistant") {
+        count++;
+      }
+    } catch {
+      continue;
+    }
+  }
+
+  return count;
+}
+
 function extractTitle(sessionContent: string): string {
   // Parse JSONL and find first user message
   const lines = sessionContent.split("\n").filter(Boolean);
@@ -368,12 +392,17 @@ async function uploadSession(options: UploadOptions): Promise<void> {
     method: "POST",
     body: formData,
     redirect: "manual",
+    headers: {
+      "X-Archive-Client-ID": getClientId(),
+    },
   });
 
   if (response.status === 303) {
     const location = response.headers.get("Location");
     console.log(`Session uploaded successfully!`);
-    console.log(`View at: ${serverUrl}${location}`);
+    // Remove trailing slash from serverUrl to avoid double slashes
+    const baseUrl = serverUrl.replace(/\/$/, "");
+    console.log(`View at: ${baseUrl}${location}`);
   } else if (response.ok) {
     console.log("Session uploaded successfully!");
   } else {
@@ -431,6 +460,14 @@ export async function upload(args: string[]): Promise<void> {
 
   // Read session content
   const sessionContent = await Bun.file(sessionPath).text();
+
+  // Check for actual messages (skip sessions with only metadata)
+  const messageCount = countMessages(sessionContent);
+  if (messageCount === 0) {
+    console.error("Session has no messages (only metadata). Skipping upload.");
+    process.exit(1);
+  }
+  console.log(`Messages: ${messageCount}`);
 
   // Extract or use provided title
   const title = options.title || extractTitle(sessionContent);

@@ -34,7 +34,7 @@ const server = Bun.serve({
 
     // API routes for data
     "/api/sessions": {
-      GET: () => api.getSessions(),
+      GET: (req) => api.getSessions(req),
       POST: (req) => api.createSession(req),
     },
 
@@ -46,7 +46,7 @@ const server = Bun.serve({
       },
       POST: (req) => api.updateSession(req, req.params.id),
       PATCH: (req) => api.patchSession(req, req.params.id),
-      DELETE: (req) => api.deleteSession(req.params.id),
+      DELETE: (req) => api.deleteSession(req.params.id, req),
     },
 
     "/api/sessions/:id/share": {

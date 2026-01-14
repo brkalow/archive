@@ -15,8 +15,9 @@ import type {
   NormalizedMessage,
   ContentBlock,
 } from "../adapters/types";
+import { isRepoAllowed } from "../lib/config";
 import { debug } from "../lib/debug";
-import { captureGitDiff } from "../lib/git";
+import { captureGitDiff, getRepoIdentifier } from "../lib/git";
 import { Tail } from "../lib/tail";
 import { ApiClient } from "./api-client";
 
@@ -44,6 +45,8 @@ interface ActiveSession {
   isProcessing: boolean;
   // Timer for debounced diff capture
   diffDebounceTimer: ReturnType<typeof setTimeout> | null;
+  // Count of messages pushed to server (for detecting empty sessions)
+  messagesPushed: number;
   // Files explicitly modified by this session (for filtering untracked files in diff)
   modifiedFiles: Set<string>;
 }
@@ -51,11 +54,13 @@ interface ActiveSession {
 export class SessionTracker {
   private sessions = new Map<string, ActiveSession>();
   private api: ApiClient;
+  private serverUrl: string;
   private idleTimeoutMs: number;
   private idleCheckInterval: ReturnType<typeof setInterval> | null = null;
 
   constructor(serverUrl: string, idleTimeoutSeconds: number) {
     this.api = new ApiClient(serverUrl);
+    this.serverUrl = serverUrl;
     this.idleTimeoutMs = idleTimeoutSeconds * 1000;
   }
 
@@ -108,6 +113,19 @@ export class SessionTracker {
 
     const sessionInfo = adapter.getSessionInfo(filePath);
 
+    // Check if repository is in allowlist for automatic uploads
+    const repoId = await getRepoIdentifier(sessionInfo.projectPath);
+    if (!repoId || !isRepoAllowed(this.serverUrl, repoId)) {
+      console.log(`Session skipped: Repository not in allowlist`);
+      console.log(`  Path: ${sessionInfo.projectPath}`);
+      console.log(`  Repo: ${repoId || "(not a git repo)"}`);
+      console.log();
+      console.log(`To allow this repository, run:`);
+      console.log(`  archive repo allow ${sessionInfo.projectPath}`);
+      console.log();
+      return;
+    }
+
     // Check if the session file has any parseable content
     // Skip empty files to avoid creating empty server sessions
     if (!(await this.sessionFileHasContent(filePath))) {
@@ -157,6 +175,7 @@ export class SessionTracker {
         lineQueue: [],
         isProcessing: false,
         diffDebounceTimer: null,
+        messagesPushed: 0,
         modifiedFiles: new Set(),
       };
 
@@ -237,6 +256,7 @@ export class SessionTracker {
         session.streamToken,
         messages
       );
+      session.messagesPushed += result.appended;
       debug(`Push result: appended=${result.appended}, total=${result.message_count}`);
     } catch (err) {
       console.error(`  Failed to push messages:`, err);
@@ -457,6 +477,19 @@ export class SessionTracker {
     }
 
     session.tail.stop();
+
+    // If no messages were pushed, delete the empty session instead of completing it
+    if (session.messagesPushed === 0) {
+      console.log(`  No messages captured, deleting empty session: ${session.sessionId}`);
+      try {
+        await this.api.deleteSession(session.sessionId, session.streamToken);
+        console.log(`  Deleted: ${session.sessionId}`);
+      } catch (err) {
+        // Non-critical - empty session will just remain on server
+        debug(`Failed to delete empty session: ${err}`);
+      }
+      return;
+    }
 
     // Capture final diff (only tracked files + untracked files modified by session)
     let finalDiff: string | undefined;

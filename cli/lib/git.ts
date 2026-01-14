@@ -14,8 +14,8 @@ function isValidProjectPath(projectPath: string): boolean {
   if (!projectPath || !isAbsolute(projectPath)) {
     return false;
   }
-  // Reject paths with shell metacharacters
-  if (/[;&|`$(){}[\]<>!*?#~]/.test(projectPath)) {
+  // Reject paths with shell metacharacters, newlines, and null bytes
+  if (/[;&|`$(){}[\]<>!*?#~\r\n\0]/.test(projectPath)) {
     return false;
   }
   return existsSync(projectPath);
@@ -118,4 +118,110 @@ export async function captureGitDiff(
   } catch {
     return null;
   }
+}
+
+/**
+ * Get the normalized repository identifier for access control.
+ * Returns the normalized git remote URL, or the absolute repo root path for local repos.
+ * Parallelizes git subprocess calls for better performance.
+ */
+export async function getRepoIdentifier(projectPath: string): Promise<string | null> {
+  if (!isValidProjectPath(projectPath)) {
+    return null;
+  }
+
+  // Run git commands in parallel for better performance
+  // Both commands will fail if not a git repo, so we don't need separate isGitRepo check
+  const [remoteUrl, rootPath] = await Promise.all([
+    getGitRemoteUrl(projectPath),
+    getGitRootPath(projectPath),
+  ]);
+
+  // If remote URL exists, prefer it (normalized)
+  if (remoteUrl) {
+    return normalizeRemoteUrl(remoteUrl);
+  }
+
+  // Fallback: use repository root path for local-only repos
+  // (null if not a git repo)
+  return rootPath;
+}
+
+/**
+ * Get the origin remote URL for a repository.
+ */
+export async function getGitRemoteUrl(projectPath: string): Promise<string | null> {
+  if (!isValidProjectPath(projectPath)) {
+    return null;
+  }
+
+  try {
+    const result = await $`git -C ${projectPath} remote get-url origin`.quiet();
+    if (result.exitCode === 0) {
+      return result.text().trim();
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Get the root path of a git repository.
+ */
+export async function getGitRootPath(projectPath: string): Promise<string | null> {
+  if (!isValidProjectPath(projectPath)) {
+    return null;
+  }
+
+  try {
+    const result = await $`git -C ${projectPath} rev-parse --show-toplevel`.quiet();
+    if (result.exitCode === 0) {
+      return result.text().trim();
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Normalize a git remote URL to a canonical identifier.
+ *
+ * Examples:
+ *   git@github.com:org/repo.git -> github.com/org/repo
+ *   https://github.com/org/repo.git -> github.com/org/repo
+ *   ssh://git@github.com/org/repo -> github.com/org/repo
+ */
+export function normalizeRemoteUrl(remoteUrl: string): string {
+  let url = remoteUrl.trim();
+
+  // Handle SSH format: git@hostname:path
+  const sshMatch = url.match(/^git@([^:]+):(.+)$/);
+  if (sshMatch) {
+    const [, hostname, path] = sshMatch;
+    url = `${hostname.toLowerCase()}/${path}`;
+  } else {
+    // Handle HTTPS/SSH URL format
+    // Remove protocol
+    url = url.replace(/^(https?|ssh|git):\/\//, "");
+    // Remove user@ prefix (e.g., git@)
+    url = url.replace(/^[^@]+@/, "");
+
+    // Lowercase hostname (first segment before /)
+    const slashIndex = url.indexOf("/");
+    if (slashIndex > 0) {
+      const hostname = url.slice(0, slashIndex).toLowerCase();
+      const path = url.slice(slashIndex + 1);
+      url = `${hostname}/${path}`;
+    } else {
+      // No slash found - entire string is hostname, lowercase it
+      url = url.toLowerCase();
+    }
+  }
+
+  // Strip .git suffix
+  url = url.replace(/\.git$/, "");
+
+  return url;
 }

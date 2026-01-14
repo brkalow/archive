@@ -29,6 +29,11 @@ function jsonError(error: string, status: number): Response {
   return json({ error }, status);
 }
 
+// Extract client ID from request header
+function getClientId(req: Request): string | null {
+  return req.headers.get("X-Archive-Client-ID");
+}
+
 // URL validation
 function isValidHttpUrl(urlString: string): boolean {
   try {
@@ -98,8 +103,16 @@ function deriveTextContent(blocks: ContentBlock[]): string {
 export function createApiRoutes(repo: SessionRepository) {
   return {
     // Get all sessions
-    getSessions(): Response {
-      const sessions = repo.getAllSessions();
+    getSessions(req: Request): Response {
+      const url = new URL(req.url);
+      const mine = url.searchParams.get("mine") === "true";
+      const clientId = getClientId(req);
+
+      // Use database-level filtering when filtering by client ID (more efficient)
+      const sessions = mine && clientId
+        ? repo.getSessionsByClientId(clientId)
+        : repo.getAllSessions();
+
       return json({ sessions });
     },
 
@@ -232,6 +245,9 @@ export function createApiRoutes(repo: SessionRepository) {
           };
         }
 
+        // Get client ID from request header
+        const clientId = getClientId(req);
+
         // Create session with all data in a transaction
         repo.createSessionWithDataAndReview(
           {
@@ -248,7 +264,8 @@ export function createApiRoutes(repo: SessionRepository) {
           },
           messages,
           diffs,
-          reviewData
+          reviewData,
+          clientId || undefined
         );
 
         return new Response(null, {
@@ -342,7 +359,29 @@ export function createApiRoutes(repo: SessionRepository) {
     },
 
     // Delete session
-    deleteSession(sessionId: string): Response {
+    async deleteSession(sessionId: string, req: Request): Promise<Response> {
+      const session = repo.getSession(sessionId);
+      if (!session) {
+        return jsonError("Session not found", 404);
+      }
+
+      // Check authorization: either stream token or client ID ownership
+      const authHeader = req.headers.get("Authorization");
+      if (authHeader?.startsWith("Bearer ")) {
+        // Stream token auth (used by daemon for live sessions)
+        const token = authHeader.slice(7);
+        const tokenHash = await hashToken(token);
+        if (!repo.verifyStreamToken(sessionId, tokenHash)) {
+          return jsonError("Invalid stream token", 401);
+        }
+      } else {
+        // Client ID auth (legacy sessions without client_id can be deleted by anyone)
+        const clientId = getClientId(req);
+        if (session.client_id && session.client_id !== clientId) {
+          return jsonError("Permission denied - session owned by different client", 403);
+        }
+      }
+
       const deleted = repo.deleteSession(sessionId);
       if (!deleted) {
         return jsonError("Session not found", 404);
@@ -523,6 +562,7 @@ export function createApiRoutes(repo: SessionRepository) {
         const streamToken = generateStreamToken();
         const streamTokenHash = await hashToken(streamToken);
         const now = new Date().toISOString();
+        const clientId = getClientId(req);
 
         repo.createSession(
           {
@@ -539,7 +579,8 @@ export function createApiRoutes(repo: SessionRepository) {
             status: "live" as SessionStatus,
             last_activity_at: now,
           },
-          streamTokenHash
+          streamTokenHash,
+          clientId || undefined
         );
 
         return json({
