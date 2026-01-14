@@ -1,5 +1,6 @@
 import { Router } from "./router";
 import { renderSessionList, renderSessionDetail, renderNotFound, renderSingleMessage, renderConnectionStatusHtml, renderDiffPanel, escapeHtml } from "./views";
+import { formatMarkdown } from "./blocks";
 import type { Session, Message, Diff, Review, Annotation, AnnotationType } from "../db/schema";
 // Import @pierre/diffs - this registers the web component and provides FileDiff class
 import { FileDiff, getSingularPatch, File } from "@pierre/diffs";
@@ -318,7 +319,13 @@ function attachBlockHandlers() {
       const resultEl = document.getElementById(resultId!);
 
       if (resultEl && fullContent) {
-        resultEl.textContent = fullContent;
+        // Check if the content should be formatted as markdown
+        const useMarkdown = resultEl.dataset.formatMarkdown === "true";
+        if (useMarkdown) {
+          resultEl.innerHTML = formatMarkdown(fullContent);
+        } else {
+          resultEl.textContent = fullContent;
+        }
         showAllBtn.remove();
       }
     }
@@ -697,11 +704,20 @@ function initializeLiveSession(sessionId: string, initialMessages: Message[]): v
   liveSessionManager = new LiveSessionManager(sessionId, {
     onMessage: (messages, _index) => {
       for (const message of messages) {
-        // Track pending tool calls
+        // Track pending tool calls from assistant messages
         if (message.role === "assistant" && message.content_blocks) {
           for (const block of message.content_blocks) {
             if (block.type === "tool_use") {
               pendingToolCalls.add(block.id);
+            }
+          }
+        }
+
+        // Clear pending tool calls when results arrive in user messages
+        if (message.role === "user" && message.content_blocks) {
+          for (const block of message.content_blocks) {
+            if (block.type === "tool_result") {
+              pendingToolCalls.delete(block.tool_use_id);
             }
           }
         }
@@ -730,11 +746,13 @@ function initializeLiveSession(sessionId: string, initialMessages: Message[]): v
             showNewMessagesButton();
           }
         }
+      }
 
-        // Show typing indicator if there are pending tool calls
-        if (pendingToolCalls.size > 0) {
-          showTypingIndicator();
-        }
+      // Update typing indicator based on final pending state after processing all messages
+      if (pendingToolCalls.size > 0) {
+        showTypingIndicator();
+      } else {
+        hideTypingIndicator();
       }
     },
 
@@ -789,6 +807,15 @@ function initializeLiveSession(sessionId: string, initialMessages: Message[]): v
 
         // Re-attach diff toggle handlers
         attachDiffToggleHandlers();
+
+        // Render diff content for non-collapsed diffs
+        diffPanelContainer.querySelectorAll("[data-diff-content]").forEach((el) => {
+          const htmlEl = el as HTMLElement;
+          // Only render if not collapsed (needs-render=false means it should be visible)
+          if (htmlEl.dataset.needsRender !== "true") {
+            renderDiffContent(htmlEl);
+          }
+        });
 
         // Flash to indicate update
         const newDiffPanel = document.getElementById("diffs-container");
