@@ -115,8 +115,6 @@ interface SessionDetailData {
 export function renderSessionDetail({ session, messages, diffs, shareUrl, review }: SessionDetailData): string {
   const hasDiffs = diffs.length > 0;
   const isLive = session.status === "live";
-  // Use two-column layout if there are diffs OR if it's a live session (diffs may come later)
-  const useTwoColumnLayout = hasDiffs || isLive;
   const date = formatDate(session.created_at);
 
   const resumeCommand = session.claude_session_id
@@ -125,19 +123,33 @@ export function renderSessionDetail({ session, messages, diffs, shareUrl, review
       ? `cd ${session.project_path} && claude --continue`
       : "claude --continue";
 
+  // Determine layout classes
+  // - For sessions with diffs: two-column layout, diff panel visible
+  // - For live sessions without diffs: single-column layout, diff panel hidden (will animate in when diffs arrive)
+  // - For non-live sessions without diffs: single-column centered, no diff panel
+  const gridClass = hasDiffs ? "session-content-grid two-column" : (isLive ? "session-content-grid single-column" : "");
+  const conversationClass = !hasDiffs && !isLive ? "" : "conversation-panel-container";
+  const diffPanelClass = hasDiffs ? "diff-panel-container visible" : "diff-panel-container hidden";
+
   return `
-    <div class="session-detail">
+    <div class="session-detail" data-session-is-live="${isLive}" data-session-has-diffs="${hasDiffs}">
       <!-- Header -->
       ${renderHeader(session, date, resumeCommand)}
 
       <!-- Content -->
       <div class="max-w-[1800px] mx-auto px-6 lg:px-10 py-6">
-        <div class="${useTwoColumnLayout ? "grid grid-cols-1 lg:grid-cols-[2fr_3fr] gap-6" : "max-w-4xl"}">
+        <div class="${gridClass || ""}" data-content-grid>
           <!-- Conversation: main content, scrolls with page -->
-          ${renderConversationPanel(messages)}
+          <div class="${conversationClass}" data-conversation-panel>
+            ${renderConversationPanel(messages)}
+          </div>
 
-          <!-- Diffs: sticky sidebar on right -->
-          <div data-diff-panel>${hasDiffs ? renderDiffPanel(diffs, review) : (isLive ? renderEmptyDiffPlaceholder() : "")}</div>
+          ${isLive || hasDiffs ? `
+            <!-- Diffs: sticky sidebar on right -->
+            <div class="${diffPanelClass}" data-diff-panel>
+              ${hasDiffs ? renderDiffPanel(diffs, review) : renderEmptyDiffPlaceholder()}
+            </div>
+          ` : ""}
         </div>
       </div>
     </div>

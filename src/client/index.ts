@@ -754,11 +754,42 @@ function initializeLiveSession(sessionId: string, initialMessages: Message[]): v
     onDiff: async (_files) => {
       // Fetch and re-render diffs
       const diffs = await fetchDiffs(sessionId);
-      const diffPanelContainer = document.querySelector('[data-diff-panel]');
-      if (diffPanelContainer) {
+      const diffPanelContainer = document.querySelector('[data-diff-panel]') as HTMLElement;
+      const contentGrid = document.querySelector('[data-content-grid]') as HTMLElement;
+      const conversationPanel = document.querySelector('[data-conversation-panel]') as HTMLElement;
+
+      if (diffPanelContainer && diffs.length > 0) {
+        // Check if this is the first diff (panel was hidden)
+        const wasHidden = diffPanelContainer.classList.contains('hidden');
+
+        // Update the panel content
         diffPanelContainer.innerHTML = renderDiffPanel(diffs);
+
+        // If this is the first diff, animate the panel in
+        if (wasHidden) {
+          // Update grid to two-column layout
+          if (contentGrid) {
+            contentGrid.classList.remove('single-column');
+            contentGrid.classList.add('two-column');
+          }
+
+          // Remove full-width from conversation panel
+          if (conversationPanel) {
+            conversationPanel.classList.remove('full-width');
+          }
+
+          // Trigger the slide-in animation (use requestAnimationFrame to ensure DOM has updated)
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+              diffPanelContainer.classList.remove('hidden');
+              diffPanelContainer.classList.add('visible');
+            });
+          });
+        }
+
         // Re-attach diff toggle handlers
         attachDiffToggleHandlers();
+
         // Flash to indicate update
         const newDiffPanel = document.getElementById("diffs-container");
         if (newDiffPanel) {

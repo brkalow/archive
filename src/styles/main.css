@@ -165,3 +165,54 @@ code, pre {
 #new-messages-btn:not(.hidden) {
   animation: slide-up 0.2s ease-out;
 }
+
+/* === Diff Panel Animations === */
+
+/* Container for the two-column layout with smooth transitions */
+.session-content-grid {
+  display: grid;
+  gap: 1.5rem;
+  transition: grid-template-columns 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Single column (no diffs) */
+.session-content-grid.single-column {
+  grid-template-columns: 1fr;
+}
+
+/* Two column (with diffs) */
+.session-content-grid.two-column {
+  grid-template-columns: 2fr 3fr;
+}
+
+@media (max-width: 1024px) {
+  .session-content-grid.two-column {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Diff panel slide-in animation */
+.diff-panel-container {
+  overflow: hidden;
+  transition: opacity 0.4s cubic-bezier(0.4, 0, 0.2, 1),
+              transform 0.4s cubic-bezier(0.4, 0, 0.2, 1),
+              max-width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.diff-panel-container.hidden {
+  opacity: 0;
+  transform: translateX(2rem);
+  max-width: 0;
+  pointer-events: none;
+}
+
+.diff-panel-container.visible {
+  opacity: 1;
+  transform: translateX(0);
+  max-width: none;
+}
+
+/* Conversation panel transition */
+.conversation-panel-container {
+  transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
