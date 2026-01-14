@@ -269,7 +269,8 @@ export function createApiRoutes(repo: SessionRepository) {
           messages,
           diffs,
           reviewData,
-          clientId || undefined
+          clientId || undefined,
+          touchedFiles
         );
 
         if (isUpdate) {

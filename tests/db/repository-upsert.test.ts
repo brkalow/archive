@@ -208,5 +208,214 @@ describe("SessionRepository upsert", () => {
       expect(isUpdate).toBe(false);
       expect(session.id).toBe("sess_no_uuid");
     });
+
+    test("preserves existing diffs for touched files not covered by new diffs", () => {
+      // First, create session with 4 diffs (simulating full diff from first upload)
+      repo.upsertSessionWithDataAndReview(
+        {
+          id: "sess_diffs",
+          title: "Session with Diffs",
+          description: null,
+          claude_session_id: "uuid-diffs-test",
+          pr_url: null,
+          share_token: null,
+          project_path: "/project",
+          model: null,
+          harness: "claude-code",
+          repo_url: null,
+          status: "archived",
+          last_activity_at: null,
+        },
+        [],
+        [
+          {
+            session_id: "sess_diffs",
+            filename: "src/db/schema.ts",
+            diff_content: "diff --git a/src/db/schema.ts b/src/db/schema.ts\n+// schema changes",
+            diff_index: 0,
+            additions: 1,
+            deletions: 0,
+            is_session_relevant: true,
+          },
+          {
+            session_id: "sess_diffs",
+            filename: "src/db/repository.ts",
+            diff_content: "diff --git a/src/db/repository.ts b/src/db/repository.ts\n+// repo changes",
+            diff_index: 1,
+            additions: 1,
+            deletions: 0,
+            is_session_relevant: true,
+          },
+          {
+            session_id: "sess_diffs",
+            filename: "src/routes/api.ts",
+            diff_content: "diff --git a/src/routes/api.ts b/src/routes/api.ts\n+// api changes",
+            diff_index: 2,
+            additions: 1,
+            deletions: 0,
+            is_session_relevant: true,
+          },
+          {
+            session_id: "sess_diffs",
+            filename: "tests/db/test.ts",
+            diff_content: "diff --git a/tests/db/test.ts b/tests/db/test.ts\n+// test changes",
+            diff_index: 3,
+            additions: 1,
+            deletions: 0,
+            is_session_relevant: true,
+          },
+        ],
+        undefined,
+        "client-123"
+      );
+
+      // Verify initial state: 4 diffs
+      let diffs = repo.getDiffs("sess_diffs");
+      expect(diffs.length).toBe(4);
+
+      // Now upsert with only 1 diff (simulating re-upload after some files were committed)
+      // But we pass touchedFiles indicating all 4 files were modified in the session
+      const touchedFiles = new Set([
+        "src/db/schema.ts",
+        "src/db/repository.ts",
+        "src/routes/api.ts",
+        "tests/db/test.ts",
+      ]);
+
+      const { session, isUpdate } = repo.upsertSessionWithDataAndReview(
+        {
+          id: "sess_new_id",
+          title: "Updated Session",
+          description: null,
+          claude_session_id: "uuid-diffs-test",
+          pr_url: null,
+          share_token: null,
+          project_path: "/project",
+          model: null,
+          harness: "claude-code",
+          repo_url: null,
+          status: "archived",
+          last_activity_at: null,
+        },
+        [],
+        [
+          // Only 1 diff in new upload (repository.ts with updated content)
+          {
+            session_id: "sess_new_id",
+            filename: "src/db/repository.ts",
+            diff_content: "diff --git a/src/db/repository.ts b/src/db/repository.ts\n+// newer repo changes",
+            diff_index: 0,
+            additions: 2,
+            deletions: 0,
+            is_session_relevant: true,
+          },
+        ],
+        undefined,
+        "client-123",
+        touchedFiles
+      );
+
+      expect(isUpdate).toBe(true);
+      expect(session.id).toBe("sess_diffs");
+
+      // Should have 4 diffs total:
+      // - 1 new diff (repository.ts with updated content)
+      // - 3 preserved diffs (schema.ts, api.ts, test.ts from existing)
+      diffs = repo.getDiffs("sess_diffs");
+      expect(diffs.length).toBe(4);
+
+      // The new repository.ts diff should have the updated content
+      const repoDiff = diffs.find(d => d.filename === "src/db/repository.ts");
+      expect(repoDiff).toBeDefined();
+      expect(repoDiff!.diff_content).toContain("newer repo changes");
+      expect(repoDiff!.additions).toBe(2);
+
+      // The preserved diffs should still be there
+      const schemaDiff = diffs.find(d => d.filename === "src/db/schema.ts");
+      expect(schemaDiff).toBeDefined();
+      expect(schemaDiff!.diff_content).toContain("schema changes");
+
+      const apiDiff = diffs.find(d => d.filename === "src/routes/api.ts");
+      expect(apiDiff).toBeDefined();
+      expect(apiDiff!.diff_content).toContain("api changes");
+
+      const testDiff = diffs.find(d => d.filename === "tests/db/test.ts");
+      expect(testDiff).toBeDefined();
+      expect(testDiff!.diff_content).toContain("test changes");
+    });
+
+    test("does not preserve diffs for files not in touchedFiles", () => {
+      // Create session with a diff for a file that won't be in touchedFiles
+      repo.upsertSessionWithDataAndReview(
+        {
+          id: "sess_extra",
+          title: "Session with Extra Diff",
+          description: null,
+          claude_session_id: "uuid-extra-test",
+          pr_url: null,
+          share_token: null,
+          project_path: "/project",
+          model: null,
+          harness: "claude-code",
+          repo_url: null,
+          status: "archived",
+          last_activity_at: null,
+        },
+        [],
+        [
+          {
+            session_id: "sess_extra",
+            filename: "src/file1.ts",
+            diff_content: "diff --git a/src/file1.ts b/src/file1.ts\n+// file1",
+            diff_index: 0,
+            additions: 1,
+            deletions: 0,
+            is_session_relevant: true,
+          },
+          {
+            session_id: "sess_extra",
+            filename: "src/unrelated.ts",
+            diff_content: "diff --git a/src/unrelated.ts b/src/unrelated.ts\n+// unrelated",
+            diff_index: 1,
+            additions: 1,
+            deletions: 0,
+            is_session_relevant: false,
+          },
+        ],
+        undefined,
+        "client-123"
+      );
+
+      // Upsert with empty diffs but touchedFiles only includes file1.ts
+      const touchedFiles = new Set(["src/file1.ts"]);
+
+      repo.upsertSessionWithDataAndReview(
+        {
+          id: "sess_new",
+          title: "Updated",
+          description: null,
+          claude_session_id: "uuid-extra-test",
+          pr_url: null,
+          share_token: null,
+          project_path: "/project",
+          model: null,
+          harness: "claude-code",
+          repo_url: null,
+          status: "archived",
+          last_activity_at: null,
+        },
+        [],
+        [], // No new diffs
+        undefined,
+        "client-123",
+        touchedFiles
+      );
+
+      // Should only preserve file1.ts (which is in touchedFiles)
+      // unrelated.ts should NOT be preserved (not in touchedFiles)
+      const diffs = repo.getDiffs("sess_extra");
+      expect(diffs.length).toBe(1);
+      expect(diffs[0].filename).toBe("src/file1.ts");
+    });
   });
 });
