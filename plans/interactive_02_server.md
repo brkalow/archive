@@ -850,15 +850,15 @@ describe("Interactive Sessions", () => {
 
 ## Checklist
 
-- [ ] Add `interactive` and `wrapper_connected` columns to sessions table
-- [ ] Create `feedback_messages` table
-- [ ] Add repository methods for feedback management
-- [ ] Create `src/routes/websocket-types.ts`
-- [ ] Create `src/routes/wrapper-connections.ts`
-- [ ] Create `src/routes/browser-messages.ts`
-- [ ] Create `src/routes/rate-limit.ts`
-- [ ] Update `src/server.ts` for wrapper WebSocket endpoint
-- [ ] Update `createLiveSession` to support `interactive` flag
-- [ ] Update browser WebSocket `connected` message with new fields
-- [ ] Add integration tests
+- [x] Add `interactive` and `wrapper_connected` columns to sessions table
+- [x] Create `feedback_messages` table
+- [x] Add repository methods for feedback management
+- [x] Create `src/routes/websocket-types.ts`
+- [x] Create `src/routes/wrapper-connections.ts`
+- [x] Create `src/routes/browser-messages.ts`
+- [x] Create `src/routes/rate-limit.ts`
+- [x] Update `src/server.ts` for wrapper WebSocket endpoint
+- [x] Update `createLiveSession` to support `interactive` flag
+- [x] Update browser WebSocket `connected` message with new fields
+- [x] Add integration tests
 - [ ] Manual testing with wrapper

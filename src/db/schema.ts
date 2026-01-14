@@ -114,6 +114,29 @@ export function initializeDatabase(dbPath: string = process.env.DATABASE_PATH ||
   db.run(`CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_sessions_client_id ON sessions(client_id)`);
 
+  // Interactive session support
+  safeAddColumn(db, "sessions", "interactive", "INTEGER DEFAULT 0");
+  safeAddColumn(db, "sessions", "wrapper_connected", "INTEGER DEFAULT 0");
+
+  // Feedback messages table (for interactive sessions)
+  db.run(`
+    CREATE TABLE IF NOT EXISTS feedback_messages (
+      id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      content TEXT NOT NULL,
+      source TEXT,
+      type TEXT NOT NULL DEFAULT 'message',
+      status TEXT NOT NULL DEFAULT 'pending',
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      resolved_at TEXT,
+      context_json TEXT,
+      FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+    )
+  `);
+
+  db.run(`CREATE INDEX IF NOT EXISTS idx_feedback_session ON feedback_messages(session_id)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_feedback_status ON feedback_messages(status)`);
+
   return db;
 }
 
@@ -133,8 +156,26 @@ export type Session = {
   status: SessionStatus;
   last_activity_at: string | null;
   client_id: string | null;
+  interactive: boolean;
+  wrapper_connected: boolean;
   created_at: string;
   updated_at: string;
+};
+
+// Feedback message types for interactive sessions
+export type FeedbackMessageType = "message" | "diff_comment" | "suggested_edit";
+export type FeedbackMessageStatus = "pending" | "approved" | "rejected" | "expired";
+
+export type FeedbackMessage = {
+  id: string;
+  session_id: string;
+  content: string;
+  source: string | null;
+  type: FeedbackMessageType;
+  status: FeedbackMessageStatus;
+  created_at: string;
+  resolved_at: string | null;
+  context?: { file: string; line: number };
 };
 
 // Content block types (matches Claude API structure)

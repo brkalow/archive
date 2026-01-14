@@ -1,6 +1,16 @@
 import { initializeDatabase } from "./db/schema";
 import { SessionRepository } from "./db/repository";
-import { createApiRoutes, addSessionSubscriber, removeSessionSubscriber, closeAllConnections } from "./routes/api";
+import { createApiRoutes, addSessionSubscriber, removeSessionSubscriber, closeAllConnections, broadcastToSession } from "./routes/api";
+import {
+  addWrapperConnection,
+  handleWrapperMessage,
+  handleWrapperClose,
+  isWrapperConnected,
+  closeAllWrapperConnections,
+  type WrapperWebSocketData,
+} from "./routes/wrapper-connections";
+import { handleBrowserMessage } from "./routes/browser-messages";
+import type { BrowserToServerMessage } from "./routes/websocket-types";
 
 // Import HTML template - Bun will bundle CSS and JS referenced in this file
 import homepage from "../public/index.html";
@@ -14,9 +24,12 @@ const repo = new SessionRepository(db);
 const api = createApiRoutes(repo);
 
 // WebSocket data attached to each connection
-interface WebSocketData {
+interface BrowserWebSocketData {
   sessionId: string;
+  isWrapper: false;
 }
+
+type WebSocketData = BrowserWebSocketData | WrapperWebSocketData;
 
 // Start server
 const server = Bun.serve({
@@ -97,10 +110,10 @@ const server = Bun.serve({
   },
 
   fetch(req, server) {
-    // Handle WebSocket upgrade for live session subscriptions
     const url = new URL(req.url);
-    const wsMatch = url.pathname.match(/^\/api\/sessions\/([^\/]+)\/ws$/);
 
+    // Handle WebSocket upgrade for live session subscriptions (browser clients)
+    const wsMatch = url.pathname.match(/^\/api\/sessions\/([^\/]+)\/ws$/);
     if (wsMatch) {
       const sessionId = wsMatch[1];
       const session = repo.getSession(sessionId);
@@ -115,8 +128,39 @@ const server = Bun.serve({
         return new Response("WebSocket only available for live sessions", { status: 410 });
       }
 
-      const upgraded = server.upgrade<WebSocketData>(req, {
-        data: { sessionId },
+      const upgraded = server.upgrade<BrowserWebSocketData>(req, {
+        data: { sessionId, isWrapper: false },
+      });
+
+      if (upgraded) {
+        return undefined; // Bun handles the upgrade
+      }
+
+      return new Response("WebSocket upgrade failed", { status: 500 });
+    }
+
+    // Handle WebSocket upgrade for wrapper connections (PTY wrapper)
+    const wrapperMatch = url.pathname.match(/^\/api\/sessions\/([^\/]+)\/wrapper$/);
+    if (wrapperMatch) {
+      const sessionId = wrapperMatch[1];
+      const session = repo.getSession(sessionId);
+
+      if (!session) {
+        return new Response("Session not found", { status: 404 });
+      }
+
+      // Only interactive sessions accept wrapper connections
+      if (!session.interactive) {
+        return new Response("Session is not interactive", { status: 400 });
+      }
+
+      // Only allow wrapper connections for live sessions
+      if (session.status !== "live") {
+        return new Response("WebSocket only available for live sessions", { status: 410 });
+      }
+
+      const upgraded = server.upgrade<WrapperWebSocketData>(req, {
+        data: { sessionId, isWrapper: true },
       });
 
       if (upgraded) {
@@ -131,41 +175,49 @@ const server = Bun.serve({
 
   websocket: {
     open(ws) {
-      const { sessionId } = ws.data as WebSocketData;
-      addSessionSubscriber(sessionId, ws as unknown as WebSocket);
+      const data = ws.data as WebSocketData;
 
-      // Send connected message with current state
-      const session = repo.getSession(sessionId);
-      const messageCount = repo.getMessageCount(sessionId);
-      const lastIndex = repo.getLastMessageIndex(sessionId);
+      if (data.isWrapper) {
+        // Wrapper connection - register but don't authenticate yet
+        addWrapperConnection(data.sessionId, ws as any);
+      } else {
+        // Browser connection - add to subscriber list
+        addSessionSubscriber(data.sessionId, ws as unknown as WebSocket);
 
-      ws.send(JSON.stringify({
-        type: "connected",
-        session_id: sessionId,
-        status: session?.status || "unknown",
-        message_count: messageCount,
-        last_index: lastIndex,
-      }));
+        // Send connected message with current state including interactive info
+        const session = repo.getSession(data.sessionId);
+        const messageCount = repo.getMessageCount(data.sessionId);
+        const lastIndex = repo.getLastMessageIndex(data.sessionId);
+
+        ws.send(JSON.stringify({
+          type: "connected",
+          session_id: data.sessionId,
+          status: session?.status || "unknown",
+          message_count: messageCount,
+          last_index: lastIndex,
+          interactive: session?.interactive ?? false,
+          wrapper_connected: isWrapperConnected(data.sessionId),
+        }));
+      }
     },
 
     message(ws, message) {
-      const { sessionId } = ws.data as WebSocketData;
+      const data = ws.data as WebSocketData;
 
       try {
-        const data = JSON.parse(message.toString());
+        const msg = JSON.parse(message.toString());
 
-        if (data.type === "subscribe" && typeof data.from_index === "number") {
-          // Client wants to resume from a specific index
-          const messages = repo.getMessagesFromIndex(sessionId, data.from_index);
-          if (messages.length > 0) {
-            ws.send(JSON.stringify({
-              type: "message",
-              messages,
-              index: messages[messages.length - 1].message_index,
-            }));
-          }
-        } else if (data.type === "ping") {
-          ws.send(JSON.stringify({ type: "pong", timestamp: new Date().toISOString() }));
+        if (data.isWrapper) {
+          // Handle wrapper messages (auth, output, state, ended, feedback_status)
+          handleWrapperMessage(data.sessionId, msg, repo);
+        } else {
+          // Handle browser messages (subscribe, ping, user_message, etc.)
+          handleBrowserMessage(
+            data.sessionId,
+            msg as BrowserToServerMessage,
+            repo,
+            (response) => ws.send(JSON.stringify(response))
+          );
         }
       } catch {
         // Invalid message, ignore
@@ -173,14 +225,24 @@ const server = Bun.serve({
     },
 
     close(ws) {
-      const { sessionId } = ws.data as WebSocketData;
-      removeSessionSubscriber(sessionId, ws as unknown as WebSocket);
+      const data = ws.data as WebSocketData;
+
+      if (data.isWrapper) {
+        handleWrapperClose(data.sessionId, repo);
+      } else {
+        removeSessionSubscriber(data.sessionId, ws as unknown as WebSocket);
+      }
     },
 
     error(ws, error) {
       console.error("WebSocket error:", error);
-      const { sessionId } = ws.data as WebSocketData;
-      removeSessionSubscriber(sessionId, ws as unknown as WebSocket);
+      const data = ws.data as WebSocketData;
+
+      if (data.isWrapper) {
+        handleWrapperClose(data.sessionId, repo);
+      } else {
+        removeSessionSubscriber(data.sessionId, ws as unknown as WebSocket);
+      }
     },
   },
 });
@@ -202,6 +264,7 @@ async function gracefulShutdown(signal: string) {
   // Close all WebSocket connections
   console.log("Closing WebSocket connections...");
   closeAllConnections();
+  closeAllWrapperConnections();
 
   // Stop accepting new connections and close existing ones
   console.log("Stopping server...");

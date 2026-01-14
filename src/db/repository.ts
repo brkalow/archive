@@ -1,5 +1,5 @@
 import { Database, Statement } from "bun:sqlite";
-import type { Session, Message, Diff, Review, Annotation, AnnotationType } from "./schema";
+import type { Session, Message, Diff, Review, Annotation, AnnotationType, FeedbackMessage, FeedbackMessageType, FeedbackMessageStatus } from "./schema";
 
 export class SessionRepository {
   // Cached prepared statements
@@ -27,14 +27,18 @@ export class SessionRepository {
     getLiveSessionByHarnessId: Statement;
     getSessionByHarnessId: Statement;
     getLiveSessions: Statement;
+    // Feedback message statements
+    insertFeedbackMessage: Statement;
+    updateFeedbackStatus: Statement;
+    getPendingFeedback: Statement;
   };
 
   constructor(private db: Database) {
     // Initialize cached prepared statements
     this.stmts = {
       createSession: db.prepare(`
-        INSERT INTO sessions (id, title, description, claude_session_id, pr_url, share_token, project_path, model, harness, repo_url, status, last_activity_at, stream_token_hash, client_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO sessions (id, title, description, claude_session_id, pr_url, share_token, project_path, model, harness, repo_url, status, last_activity_at, stream_token_hash, client_id, interactive, wrapper_connected)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         RETURNING *
       `),
       getSession: db.prepare("SELECT * FROM sessions WHERE id = ?"),
@@ -94,12 +98,27 @@ export class SessionRepository {
         LIMIT 1
       `),
       getLiveSessions: db.prepare("SELECT * FROM sessions WHERE status = 'live' ORDER BY last_activity_at DESC"),
+      // Feedback message statements
+      insertFeedbackMessage: db.prepare(`
+        INSERT INTO feedback_messages (id, session_id, content, source, type, context_json)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `),
+      updateFeedbackStatus: db.prepare(`
+        UPDATE feedback_messages
+        SET status = ?, resolved_at = datetime('now')
+        WHERE id = ?
+      `),
+      getPendingFeedback: db.prepare(`
+        SELECT * FROM feedback_messages
+        WHERE session_id = ? AND status = 'pending'
+        ORDER BY created_at ASC
+      `),
     };
   }
 
   // Note: client_id is passed separately to avoid duplication in session object
   createSession(session: Omit<Session, "created_at" | "updated_at" | "client_id">, streamTokenHash?: string, clientId?: string): Session {
-    return this.stmts.createSession.get(
+    const result = this.stmts.createSession.get(
       session.id,
       session.title,
       session.description,
@@ -113,8 +132,17 @@ export class SessionRepository {
       session.status || "archived",
       session.last_activity_at,
       streamTokenHash || null,
-      clientId || null
-    ) as Session;
+      clientId || null,
+      session.interactive ? 1 : 0,
+      session.wrapper_connected ? 1 : 0
+    ) as Record<string, unknown>;
+
+    // Convert SQLite integers to booleans for the returned object
+    return {
+      ...result,
+      interactive: Boolean(result.interactive),
+      wrapper_connected: Boolean(result.wrapper_connected),
+    } as Session;
   }
 
   // Create session with messages and diffs in a single transaction
@@ -140,8 +168,10 @@ export class SessionRepository {
         session.status || "archived",
         session.last_activity_at,
         null, // stream_token_hash not used for batch uploads
-        clientId || null
-      ) as Session;
+        clientId || null,
+        session.interactive ? 1 : 0,
+        session.wrapper_connected ? 1 : 0
+      ) as Record<string, unknown>;
 
       for (const msg of messages) {
         this.stmts.insertMessage.run(
@@ -166,7 +196,12 @@ export class SessionRepository {
         );
       }
 
-      return created;
+      // Convert SQLite integers to booleans
+      return {
+        ...created,
+        interactive: Boolean(created.interactive),
+        wrapper_connected: Boolean(created.wrapper_connected),
+      } as Session;
     });
 
     return transaction();
@@ -234,7 +269,15 @@ export class SessionRepository {
   }
 
   getSession(id: string): Session | null {
-    return this.stmts.getSession.get(id) as Session | null;
+    const result = this.stmts.getSession.get(id) as Record<string, unknown> | null;
+    if (!result) return null;
+
+    // Convert SQLite integers to booleans
+    return {
+      ...result,
+      interactive: Boolean(result.interactive),
+      wrapper_connected: Boolean(result.wrapper_connected),
+    } as Session;
   }
 
   getSessionByShareToken(token: string): Session | null {
@@ -570,8 +613,10 @@ export class SessionRepository {
         session.status || "archived",
         session.last_activity_at,
         null, // stream_token_hash not used for batch uploads
-        clientId || null
-      ) as Session;
+        clientId || null,
+        session.interactive ? 1 : 0,
+        session.wrapper_connected ? 1 : 0
+      ) as Record<string, unknown>;
 
       // Insert messages
       for (const msg of messages) {
@@ -630,9 +675,99 @@ export class SessionRepository {
         }
       }
 
-      return created;
+      // Convert SQLite integers to booleans
+      return {
+        ...created,
+        interactive: Boolean(created.interactive),
+        wrapper_connected: Boolean(created.wrapper_connected),
+      } as Session;
     });
 
     return transaction();
+  }
+
+  // === Interactive Session Methods ===
+
+  /**
+   * Create a feedback message record.
+   */
+  createFeedbackMessage(
+    sessionId: string,
+    content: string,
+    type: FeedbackMessageType,
+    source?: string,
+    context?: { file: string; line: number }
+  ): FeedbackMessage {
+    const id = crypto.randomUUID().slice(0, 8);
+    const contextJson = context ? JSON.stringify(context) : null;
+
+    this.stmts.insertFeedbackMessage.run(id, sessionId, content, source || null, type, contextJson);
+
+    return {
+      id,
+      session_id: sessionId,
+      content,
+      source: source || null,
+      type,
+      status: "pending",
+      created_at: new Date().toISOString(),
+      resolved_at: null,
+      context,
+    };
+  }
+
+  /**
+   * Update the status of a feedback message.
+   */
+  updateFeedbackStatus(messageId: string, status: FeedbackMessageStatus): void {
+    this.stmts.updateFeedbackStatus.run(status, messageId);
+  }
+
+  /**
+   * Get all pending feedback messages for a session.
+   */
+  getPendingFeedback(sessionId: string): FeedbackMessage[] {
+    const rows = this.stmts.getPendingFeedback.all(sessionId) as Array<Record<string, unknown>>;
+    return rows.map(row => ({
+      id: row.id as string,
+      session_id: row.session_id as string,
+      content: row.content as string,
+      source: row.source as string | null,
+      type: row.type as FeedbackMessageType,
+      status: row.status as FeedbackMessageStatus,
+      created_at: row.created_at as string,
+      resolved_at: row.resolved_at as string | null,
+      context: row.context_json ? JSON.parse(row.context_json as string) : undefined,
+    }));
+  }
+
+  /**
+   * Set whether a session is interactive (accepts feedback from browsers).
+   */
+  setSessionInteractive(sessionId: string, interactive: boolean): void {
+    const stmt = this.db.prepare(`
+      UPDATE sessions SET interactive = ?, updated_at = datetime('now') WHERE id = ?
+    `);
+    stmt.run(interactive ? 1 : 0, sessionId);
+  }
+
+  /**
+   * Set whether a wrapper is currently connected to a session.
+   */
+  setWrapperConnected(sessionId: string, connected: boolean): void {
+    const stmt = this.db.prepare(`
+      UPDATE sessions SET wrapper_connected = ?, updated_at = datetime('now') WHERE id = ?
+    `);
+    stmt.run(connected ? 1 : 0, sessionId);
+  }
+
+  /**
+   * Update session status (used when wrapper ends session).
+   */
+  updateSessionStatus(sessionId: string, status: "live" | "complete" | "archived"): void {
+    const stmt = this.db.prepare(`
+      UPDATE sessions SET status = ?, updated_at = datetime('now') WHERE id = ?
+    `);
+    stmt.run(status, sessionId);
   }
 }

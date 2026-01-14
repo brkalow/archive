@@ -492,7 +492,7 @@ export function createApiRoutes(repo: SessionRepository) {
     async createLiveSession(req: Request): Promise<Response> {
       try {
         const body = await req.json();
-        const { title, project_path, harness_session_id, harness, model, repo_url } = body;
+        const { title, project_path, harness_session_id, harness, model, repo_url, interactive = false } = body;
         // Support both old and new field names for backwards compatibility
         const harnessSessionId = harness_session_id || body.claude_session_id;
 
@@ -578,6 +578,8 @@ export function createApiRoutes(repo: SessionRepository) {
             repo_url: repo_url || null,
             status: "live" as SessionStatus,
             last_activity_at: now,
+            interactive: Boolean(interactive),
+            wrapper_connected: false,
           },
           streamTokenHash,
           clientId || undefined
@@ -590,6 +592,7 @@ export function createApiRoutes(repo: SessionRepository) {
           resumed: false,
           message_count: 0,
           last_index: -1,
+          interactive: Boolean(interactive),
         });
       } catch (error) {
         console.error("Error creating live session:", error);
@@ -924,7 +927,7 @@ export function removeSessionSubscriber(sessionId: string, ws: WebSocket): void 
   }
 }
 
-function broadcastToSession(sessionId: string, message: unknown): void {
+export function broadcastToSession(sessionId: string, message: unknown): void {
   const subscribers = sessionSubscribers.get(sessionId);
   if (!subscribers) return;
 
@@ -956,7 +959,7 @@ function broadcastToSession(sessionId: string, message: unknown): void {
   }
 }
 
-function closeSessionConnections(sessionId: string): void {
+export function closeSessionConnections(sessionId: string): void {
   const subscribers = sessionSubscribers.get(sessionId);
   if (!subscribers) return;
 
