@@ -1,4 +1,4 @@
-export interface ArchiveConfig {
+export interface OpenctlConfig {
   serverUrl: string;
 }
 
@@ -10,14 +10,14 @@ export interface StopHookInput {
 }
 
 /**
- * Load Archive configuration from environment variables.
- * These are set by Archive when starting a Claude Code session.
+ * Load openctl configuration from environment variables.
+ * These are set by openctl when starting a Claude Code session.
  *
  * Note: Session ID is NOT loaded from env vars - it's read from stdin
  * which Claude Code provides to hooks.
  */
-export function loadConfig(): ArchiveConfig | null {
-  const serverUrl = process.env.ARCHIVE_SERVER_URL;
+export function loadConfig(): OpenctlConfig | null {
+  const serverUrl = process.env.OPENCTL_SERVER_URL;
 
   if (!serverUrl) {
     return null;

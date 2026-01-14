@@ -1,6 +1,6 @@
-# Archive Interactive Session
+# openctl Interactive Session
 
-This session is connected to Conductor for remote collaboration.
+This session is connected to openctl for remote collaboration.
 
 ## Remote Feedback
 

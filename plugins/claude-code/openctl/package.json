@@ -1,7 +1,7 @@
 {
-  "name": "@archive/interactive-plugin",
+  "name": "@openctl/claude-plugin",
   "version": "0.1.0",
-  "description": "Claude Code plugin for Conductor interactive sessions",
+  "description": "Claude Code plugin for openctl interactive sessions",
   "main": "hooks/stop.ts",
   "scripts": {
     "build": "bun build hooks/stop.ts --outdir dist --target bun",

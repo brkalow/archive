@@ -48,3 +48,27 @@ export async function markFeedbackDelivered(
 
   await fetch(url, { method: "POST" });
 }
+
+export interface MarkInteractiveResponse {
+  success: boolean;
+  session_id: string;
+}
+
+/**
+ * Mark a session as interactive (collaborative).
+ * This enables the session to receive browser feedback.
+ */
+export async function markSessionInteractive(
+  serverUrl: string,
+  claudeSessionId: string
+): Promise<MarkInteractiveResponse> {
+  const url = `${serverUrl}/api/sessions/by-claude-session/${encodeURIComponent(claudeSessionId)}/interactive`;
+
+  const response = await fetch(url, { method: "POST" });
+
+  if (!response.ok) {
+    throw new Error(`Failed to mark session interactive: ${response.status}`);
+  }
+
+  return response.json() as Promise<MarkInteractiveResponse>;
+}

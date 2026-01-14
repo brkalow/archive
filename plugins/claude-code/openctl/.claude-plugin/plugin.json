@@ -1,0 +1,19 @@
+{
+  "name": "openctl",
+  "description": "Enables remote feedback during Claude Code sessions",
+  "version": "0.1.0",
+  "hooks": {
+    "Stop": [
+      {
+        "type": "command",
+        "command": "bun ${PLUGIN_DIR}/hooks/stop.ts"
+      }
+    ]
+  },
+  "commands": {
+    "collaborate": {
+      "description": "Enable collaborative mode to receive browser feedback",
+      "command": "bun ${PLUGIN_DIR}/commands/collaborate.ts"
+    }
+  }
+}
