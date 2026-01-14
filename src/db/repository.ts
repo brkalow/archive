@@ -725,11 +725,26 @@ export class SessionRepository {
           }
         }
 
-        // Build set of filenames covered by new diffs
-        const newDiffFilenames = new Set<string>();
+        // Helper to normalize file paths for comparison.
+        // Removes leading "./" and collapses multiple slashes.
+        const normalizeFilePath = (path: string): string =>
+          path.replace(/^\.\//, "").replace(/\/+/g, "/");
+
+        // Check if two normalized paths match, accounting for relative vs absolute paths.
+        // Paths may come from different sources (git diff headers, file system, etc.)
+        // so we allow suffix matching to handle cases like "src/file.ts" matching
+        // "project/src/file.ts" when one source uses project-relative and another
+        // uses repo-relative paths.
+        const normalizedPathsMatch = (norm1: string, norm2: string): boolean =>
+          norm1 === norm2 ||
+          norm1.endsWith("/" + norm2) ||
+          norm2.endsWith("/" + norm1);
+
+        // Build set of normalized filenames covered by new diffs for efficient lookup
+        const newDiffFilenamesNormalized = new Set<string>();
         for (const d of diffs) {
           if (d.filename) {
-            newDiffFilenames.add(d.filename);
+            newDiffFilenamesNormalized.add(normalizeFilePath(d.filename));
           }
         }
 
@@ -738,36 +753,34 @@ export class SessionRepository {
         this.stmts.clearDiffs.run(sessionId);
         this.stmts.clearReview.run(sessionId);
 
-        // Preserve existing diffs for touched files not covered by new diffs
-        // This prevents losing diffs when re-uploading after commits
+        // Preserve existing diffs for touched files not covered by new diffs.
+        // This prevents losing diffs when re-uploading after some files were committed.
+        const preservedDiffs: typeof diffs = [];
         if (touchedFiles && touchedFiles.size > 0) {
           for (const touchedFile of touchedFiles) {
-            // Normalize the touched file path for comparison
-            const normalizedTouched = touchedFile.replace(/^\.\//, "").replace(/\/+/g, "/");
+            const normalizedTouched = normalizeFilePath(touchedFile);
 
-            // Check if this touched file is NOT covered by new diffs
-            const isCoveredByNewDiff = Array.from(newDiffFilenames).some(newFile => {
-              const normalizedNew = newFile.replace(/^\.\//, "").replace(/\/+/g, "/");
-              return normalizedNew === normalizedTouched ||
-                     normalizedNew.endsWith("/" + normalizedTouched) ||
-                     normalizedTouched.endsWith("/" + normalizedNew);
-            });
+            // Check if this touched file is covered by any new diff.
+            // First try exact match (O(1)), then fall back to suffix matching.
+            let isCoveredByNewDiff = newDiffFilenamesNormalized.has(normalizedTouched);
+            if (!isCoveredByNewDiff) {
+              for (const newNormalized of newDiffFilenamesNormalized) {
+                if (normalizedPathsMatch(newNormalized, normalizedTouched)) {
+                  isCoveredByNewDiff = true;
+                  break;
+                }
+              }
+            }
 
             if (!isCoveredByNewDiff) {
-              // Check if existing diffs cover this file
+              // Look for an existing diff that covers this touched file
               for (const [existingFilename, existingDiff] of existingDiffsByFilename) {
-                const normalizedExisting = existingFilename.replace(/^\.\//, "").replace(/\/+/g, "/");
-                const matches = normalizedExisting === normalizedTouched ||
-                               normalizedExisting.endsWith("/" + normalizedTouched) ||
-                               normalizedTouched.endsWith("/" + normalizedExisting);
-
-                if (matches) {
-                  // Preserve this existing diff - add it to the diffs array
-                  diffs.push({
+                if (normalizedPathsMatch(normalizeFilePath(existingFilename), normalizedTouched)) {
+                  preservedDiffs.push({
                     session_id: sessionId,
                     filename: existingDiff.filename,
                     diff_content: existingDiff.diff_content,
-                    diff_index: diffs.length, // Append at end
+                    diff_index: diffs.length + preservedDiffs.length,
                     additions: existingDiff.additions,
                     deletions: existingDiff.deletions,
                     is_session_relevant: existingDiff.is_session_relevant,
@@ -778,6 +791,9 @@ export class SessionRepository {
             }
           }
         }
+
+        // Append preserved diffs to the diffs array
+        diffs.push(...preservedDiffs);
       } else {
         // Create new session
         resultSession = this.stmts.createSession.get(
