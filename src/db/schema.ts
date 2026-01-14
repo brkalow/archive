@@ -10,7 +10,7 @@ function safeAddColumn(db: Database, table: string, column: string, definition: 
   }
 }
 
-export function initializeDatabase(dbPath: string = "data/sessions.db"): Database {
+export function initializeDatabase(dbPath: string = process.env.DATABASE_PATH || "data/sessions.db"): Database {
   const dir = dirname(dbPath);
   if (dir && !existsSync(dir)) {
     mkdirSync(dir, { recursive: true });
