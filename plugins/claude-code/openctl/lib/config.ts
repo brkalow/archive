@@ -2,11 +2,13 @@ export interface OpenctlConfig {
   serverUrl: string;
 }
 
-export interface StopHookInput {
+export interface HookInput {
   session_id: string;
   transcript_path?: string;
   cwd?: string;
   hook_event_name?: string;
+  // UserPromptSubmit hook includes the user's prompt
+  user_prompt?: string;
 }
 
 /**
@@ -30,7 +32,7 @@ export function loadConfig(): OpenctlConfig | null {
  * Read and parse the hook input from stdin.
  * Claude Code passes JSON to hooks via stdin containing session_id and other context.
  */
-export async function readStdinInput(): Promise<StopHookInput | null> {
+export async function readStdinInput(): Promise<HookInput | null> {
   try {
     const chunks: Buffer[] = [];
     for await (const chunk of process.stdin) {
@@ -40,7 +42,7 @@ export async function readStdinInput(): Promise<StopHookInput | null> {
     if (!input) {
       return null;
     }
-    return JSON.parse(input) as StopHookInput;
+    return JSON.parse(input) as HookInput;
   } catch {
     return null;
   }

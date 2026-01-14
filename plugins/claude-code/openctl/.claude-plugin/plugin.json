@@ -8,12 +8,12 @@
         "type": "command",
         "command": "bun ${PLUGIN_DIR}/hooks/stop.ts"
       }
+    ],
+    "UserPromptSubmit": [
+      {
+        "type": "command",
+        "command": "bun ${PLUGIN_DIR}/hooks/user-prompt-submit.ts"
+      }
     ]
-  },
-  "commands": {
-    "collaborate": {
-      "description": "Enable collaborative mode to receive browser feedback",
-      "command": "bun ${PLUGIN_DIR}/commands/collaborate.ts"
-    }
   }
 }
