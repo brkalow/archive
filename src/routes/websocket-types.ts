@@ -35,6 +35,7 @@ export type ServerToBrowserMessage =
       last_index: number;
       interactive: boolean;
       wrapper_connected: boolean;
+      claude_state: "running" | "waiting" | "unknown";
     }
   | { type: "message"; messages: unknown[]; index: number }
   | {

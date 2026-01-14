@@ -6,6 +6,7 @@ import {
   handleWrapperMessage,
   handleWrapperClose,
   isWrapperConnected,
+  getClaudeState,
   closeAllWrapperConnections,
   type WrapperWebSocketData,
 } from "./routes/wrapper-connections";
@@ -197,6 +198,7 @@ const server = Bun.serve({
           last_index: lastIndex,
           interactive: session?.interactive ?? false,
           wrapper_connected: isWrapperConnected(data.sessionId),
+          claude_state: getClaudeState(data.sessionId),
         }));
       }
     },

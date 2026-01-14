@@ -889,9 +889,10 @@ function initializeLiveSession(sessionId: string, initialMessages: Message[], se
     },
 
     // Interactive session callbacks
-    onInteractiveInfo: (interactive, wrapperConnected) => {
+    onInteractiveInfo: (interactive, wrapperConnected, claudeState) => {
       interactiveState.isInteractive = interactive;
       interactiveState.wrapperConnected = wrapperConnected;
+      interactiveState.claudeState = claudeState;
       if (interactive) {
         initializeFeedbackInput();
       }

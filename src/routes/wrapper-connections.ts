@@ -29,6 +29,7 @@ interface WrapperConnection {
   ws: ServerWebSocket<WrapperWebSocketData>;
   sessionId: string;
   authenticated: boolean;
+  claudeState: "running" | "waiting" | "unknown";
 }
 
 // Map of session ID to wrapper connection
@@ -46,6 +47,7 @@ export function addWrapperConnection(
     ws,
     sessionId,
     authenticated: false,
+    claudeState: "unknown",
   });
 }
 
@@ -69,6 +71,14 @@ export function getWrapperConnection(sessionId: string): WrapperConnection | und
 export function isWrapperConnected(sessionId: string): boolean {
   const conn = wrapperConnections.get(sessionId);
   return conn?.authenticated ?? false;
+}
+
+/**
+ * Get the current Claude state for a session.
+ */
+export function getClaudeState(sessionId: string): "running" | "waiting" | "unknown" {
+  const conn = wrapperConnections.get(sessionId);
+  return conn?.claudeState ?? "unknown";
 }
 
 /**
@@ -170,6 +180,9 @@ export async function handleWrapperMessage(
     case "state":
       // Only relay if authenticated
       if (!conn.authenticated) return;
+
+      // Store the state
+      conn.claudeState = message.state;
 
       // Broadcast state change to browsers
       broadcastToSession(sessionId, {
