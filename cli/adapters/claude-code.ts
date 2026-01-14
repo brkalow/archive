@@ -174,6 +174,13 @@ export const claudeCodeAdapter: HarnessAdapter = {
       return "Untitled Session";
     }
 
+    // Strip system tags before creating title
+    text = stripSystemTags(text);
+
+    if (!text) {
+      return "Untitled Session";
+    }
+
     // Clean up and truncate
     const cleaned = text
       .replace(/\n/g, " ")
@@ -225,6 +232,22 @@ function decodeProjectPath(encoded: string): string {
 
   // Simple hyphen replacement (imperfect for paths containing hyphens)
   return "/" + encoded.replace(/-/g, "/");
+}
+
+/**
+ * Strip system instruction and reminder tags from text
+ */
+function stripSystemTags(text: string): string {
+  // Remove <system_instruction>...</system_instruction> tags and content
+  let cleaned = text.replace(/<system_instruction>[\s\S]*?<\/system_instruction>/gi, "");
+  // Remove <system-instruction>...</system-instruction> tags and content
+  cleaned = cleaned.replace(/<system-instruction>[\s\S]*?<\/system-instruction>/gi, "");
+  // Remove <system-reminder>...</system-reminder> tags and content
+  cleaned = cleaned.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/gi, "");
+  // Remove <local-command-caveat>...</local-command-caveat> tags and content
+  cleaned = cleaned.replace(/<local-command-caveat>[\s\S]*?<\/local-command-caveat>/gi, "");
+  // Trim leading/trailing whitespace
+  return cleaned.trim();
 }
 
 /**

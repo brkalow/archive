@@ -4,6 +4,15 @@ import { formatDuration } from "./liveSession";
 
 export { escapeHtml };
 
+// Strip system tags from titles (backup for sessions with tags already in titles)
+function stripSystemTagsFromTitle(text: string): string {
+  let cleaned = text.replace(/<system_instruction>[\s\S]*?<\/system_instruction>/gi, "");
+  cleaned = cleaned.replace(/<system-instruction>[\s\S]*?<\/system-instruction>/gi, "");
+  cleaned = cleaned.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/gi, "");
+  cleaned = cleaned.replace(/<local-command-caveat>[\s\S]*?<\/local-command-caveat>/gi, "");
+  return cleaned.replace(/\s+/g, " ").trim();
+}
+
 // Session List View
 export function renderSessionList(sessions: Session[]): string {
   const content = sessions.length === 0 ? renderEmptyState() : renderSessionGrid(sessions);
@@ -65,7 +74,7 @@ function renderSessionCard(session: Session): string {
     >
       <div class="flex items-start justify-between gap-3 mb-2">
         <h3 class="text-sm font-medium text-text-primary group-hover:text-accent-primary transition-colors line-clamp-2" data-title>
-          ${escapeHtml(session.title)}
+          ${escapeHtml(stripSystemTagsFromTitle(session.title))}
         </h3>
         ${
           session.pr_url
@@ -278,7 +287,7 @@ function renderHeader(session: Session, date: string, resumeCommand: string): st
         <div class="flex items-center gap-3 mb-2">
           ${isLive ? renderLiveIndicator() : ""}
           <h1 class="text-2xl font-semibold text-text-primary">
-            ${escapeHtml(session.title)}
+            ${escapeHtml(stripSystemTagsFromTitle(session.title))}
           </h1>
         </div>
 
@@ -605,10 +614,13 @@ function buildToolResultMapFromMessages(
 function formatMessageContent(content: string): string {
   let formatted = escapeHtml(content);
 
-  // Code blocks
+  // Code blocks - strip line numbers and render
   formatted = formatted.replace(
     /```(\w*)\n([\s\S]*?)```/g,
-    '<pre class="my-2 p-3 bg-bg-primary rounded-md overflow-x-auto"><code class="text-[13px]">$2</code></pre>'
+    (_, _lang, code) => {
+      const cleanedCode = stripLineNumbersFromCode(code);
+      return `<pre class="my-2 p-3 bg-bg-primary rounded-md overflow-x-auto"><code class="text-[13px]">${cleanedCode}</code></pre>`;
+    }
   );
 
   // Inline code
@@ -624,6 +636,20 @@ function formatMessageContent(content: string): string {
   formatted = formatted.replace(/\n/g, "<br>");
 
   return formatted;
+}
+
+// Strip line number prefixes from code blocks (for code that may contain line-numbered output)
+function stripLineNumbersFromCode(code: string): string {
+  const lines = code.split("\n");
+  const firstNonEmpty = lines.find(l => l.trim().length > 0);
+  if (!firstNonEmpty) return code;
+
+  // Match line number formats: "  1→", "  1:", "  1|", "  1\t"
+  const lineNumberPattern = /^\s*\d+[→:\|\t]/;
+  if (!lineNumberPattern.test(firstNonEmpty)) {
+    return code;
+  }
+  return lines.map((line) => line.replace(/^\s*\d+[→:\|\t]\s?/, "")).join("\n");
 }
 
 function renderDiffBlock(diff: Diff): string {
