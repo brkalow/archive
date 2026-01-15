@@ -233,6 +233,25 @@ function extractRepoName(repoUrl: string): string {
   return match?.[1] ?? repoUrl;
 }
 
+/**
+ * Check if a repo_url is a valid GitHub-like URL (not a local path).
+ * Returns true for URLs like "github.com/org/repo" or "https://github.com/org/repo"
+ */
+function isGitHubUrl(repoUrl: string): boolean {
+  return /github\.com\/[^\/]+\/[^\/]+/.test(repoUrl);
+}
+
+/**
+ * Ensure a GitHub URL has the https:// protocol prefix.
+ * Handles both "github.com/org/repo" and "https://github.com/org/repo"
+ */
+function ensureHttpsProtocol(repoUrl: string): string {
+  if (repoUrl.startsWith("https://") || repoUrl.startsWith("http://")) {
+    return repoUrl;
+  }
+  return `https://${repoUrl}`;
+}
+
 // Live indicator component
 function renderLiveIndicator(): string {
   return `
@@ -280,9 +299,9 @@ function renderHeader(session: Session, date: string, resumeCommand: string): st
   const isLive = session.status === "live";
   const timeDisplay = isLive ? formatDuration(session.created_at) : date;
 
-  // Project/repo display - prefer repo name if available
-  const projectPathHtml = session.repo_url
-    ? `<a href="${escapeHtml(session.repo_url)}" target="_blank" rel="noopener noreferrer"
+  // Project/repo display - prefer repo URL if it's a valid GitHub URL
+  const projectPathHtml = session.repo_url && isGitHubUrl(session.repo_url)
+    ? `<a href="${escapeHtml(ensureHttpsProtocol(session.repo_url))}" target="_blank" rel="noopener noreferrer"
          class="inline-flex items-center gap-1.5 font-mono text-[13px] hover:text-text-primary transition-colors">
          ${icons.github}
          <span>${escapeHtml(extractRepoName(session.repo_url))}</span>
