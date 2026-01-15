@@ -29,7 +29,8 @@ export async function fetchPendingFeedbackByClaudeSession(
   const response = await fetch(url);
 
   if (!response.ok) {
-    throw new Error(`Failed to fetch feedback: ${response.status}`);
+    const text = await response.text().catch(() => "(no body)");
+    throw new Error(`Failed to fetch feedback: ${response.status} - ${text}`);
   }
 
   return response.json() as Promise<PendingFeedbackResponse>;
@@ -71,4 +72,28 @@ export async function markSessionInteractive(
   }
 
   return response.json() as Promise<MarkInteractiveResponse>;
+}
+
+export interface MarkFinishedResponse {
+  success: boolean;
+  session_id: string;
+}
+
+/**
+ * Mark a session as finished/closed.
+ * Called when Claude Code session ends.
+ */
+export async function markSessionFinished(
+  serverUrl: string,
+  claudeSessionId: string
+): Promise<MarkFinishedResponse> {
+  const url = `${serverUrl}/api/sessions/by-claude-session/${encodeURIComponent(claudeSessionId)}/finished`;
+
+  const response = await fetch(url, { method: "POST" });
+
+  if (!response.ok) {
+    throw new Error(`Failed to mark session finished: ${response.status}`);
+  }
+
+  return response.json() as Promise<MarkFinishedResponse>;
 }

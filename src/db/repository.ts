@@ -41,8 +41,8 @@ export class SessionRepository {
     // Initialize cached prepared statements
     this.stmts = {
       createSession: db.prepare(`
-        INSERT INTO sessions (id, title, description, claude_session_id, pr_url, share_token, project_path, model, harness, repo_url, status, last_activity_at, stream_token_hash, client_id, interactive, wrapper_connected)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO sessions (id, title, description, claude_session_id, pr_url, share_token, project_path, model, harness, repo_url, status, last_activity_at, stream_token_hash, client_id, interactive)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         RETURNING *
       `),
       getSession: db.prepare("SELECT * FROM sessions WHERE id = ?"),
@@ -150,15 +150,13 @@ export class SessionRepository {
       session.last_activity_at,
       streamTokenHash || null,
       clientId || null,
-      session.interactive ? 1 : 0,
-      session.wrapper_connected ? 1 : 0
+      session.interactive ? 1 : 0
     ) as Record<string, unknown>;
 
     // Convert SQLite integers to booleans for the returned object
     return {
       ...result,
       interactive: Boolean(result.interactive),
-      wrapper_connected: Boolean(result.wrapper_connected),
     } as Session;
   }
 
@@ -186,8 +184,7 @@ export class SessionRepository {
         session.last_activity_at,
         null, // stream_token_hash not used for batch uploads
         clientId || null,
-        session.interactive ? 1 : 0,
-        session.wrapper_connected ? 1 : 0
+        session.interactive ? 1 : 0
       ) as Record<string, unknown>;
 
       for (const msg of messages) {
@@ -217,7 +214,6 @@ export class SessionRepository {
       return {
         ...created,
         interactive: Boolean(created.interactive),
-        wrapper_connected: Boolean(created.wrapper_connected),
       } as Session;
     });
 
@@ -320,7 +316,8 @@ export class SessionRepository {
    * Returns most recent session with matching UUID.
    */
   getSessionByClaudeSessionId(claudeSessionId: string): Session | null {
-    return this.stmts.getSessionByClaudeSessionId.get(claudeSessionId) as Session | null;
+    const result = this.stmts.getSessionByClaudeSessionId.get(claudeSessionId) as Record<string, unknown> | null;
+    return result ? this.normalizeSession(result) : null;
   }
 
   getAllSessions(): Session[] {
@@ -344,7 +341,6 @@ export class SessionRepository {
     return {
       ...result,
       interactive: Boolean(result.interactive),
-      wrapper_connected: Boolean(result.wrapper_connected),
     } as Session;
   }
 
@@ -649,8 +645,7 @@ export class SessionRepository {
         session.last_activity_at,
         null, // stream_token_hash not used for batch uploads
         clientId || null,
-        session.interactive ? 1 : 0,
-        session.wrapper_connected ? 1 : 0
+        session.interactive ? 1 : 0
       ) as Record<string, unknown>;
 
       // Insert messages
@@ -714,7 +709,6 @@ export class SessionRepository {
       return {
         ...created,
         interactive: Boolean(created.interactive),
-        wrapper_connected: Boolean(created.wrapper_connected),
       } as Session;
     });
 
@@ -787,17 +781,7 @@ export class SessionRepository {
   }
 
   /**
-   * Set whether a wrapper is currently connected to a session.
-   */
-  setWrapperConnected(sessionId: string, connected: boolean): void {
-    const stmt = this.db.prepare(`
-      UPDATE sessions SET wrapper_connected = ?, updated_at = datetime('now') WHERE id = ?
-    `);
-    stmt.run(connected ? 1 : 0, sessionId);
-  }
-
-  /**
-   * Update session status (used when wrapper ends session).
+   * Update session status.
    */
   updateSessionStatus(sessionId: string, status: "live" | "complete" | "archived"): void {
     const stmt = this.db.prepare(`
@@ -955,8 +939,7 @@ export class SessionRepository {
           session.last_activity_at,
           null, // stream_token_hash not used for batch uploads
           clientId || null,
-          session.interactive ? 1 : 0,
-          session.wrapper_connected ? 1 : 0
+          session.interactive ? 1 : 0
         ) as Session;
       }
 

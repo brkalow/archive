@@ -3,7 +3,7 @@ import type { Message } from "../db/schema";
 
 // WebSocket message types from server
 type ServerMessage =
-  | { type: "connected"; session_id: string; status: string; message_count: number; last_index: number; interactive: boolean; wrapper_connected: boolean; claude_state: "running" | "waiting" | "unknown" }
+  | { type: "connected"; session_id: string; status: string; message_count: number; last_index: number; interactive: boolean; claude_state: "running" | "waiting" | "unknown" }
   | { type: "message"; messages: Message[]; index: number }
   | { type: "tool_result"; tool_use_id: string; content: string; is_error?: boolean; message_index: number }
   | { type: "diff"; files: Array<{ filename: string; additions: number; deletions: number }> }
@@ -14,7 +14,6 @@ type ServerMessage =
   // Interactive session messages
   | { type: "feedback_queued"; message_id: string; position: number }
   | { type: "feedback_status"; message_id: string; status: "approved" | "rejected" | "expired" }
-  | { type: "wrapper_status"; connected: boolean }
   | { type: "state"; state: "running" | "waiting" }
   | { type: "output"; data: string };
 
@@ -37,10 +36,9 @@ export interface LiveSessionCallbacks {
   // Interactive session callbacks
   onFeedbackQueued?: (messageId: string, position: number) => void;
   onFeedbackStatus?: (messageId: string, status: "approved" | "rejected" | "expired") => void;
-  onWrapperStatus?: (connected: boolean) => void;
   onClaudeState?: (state: "running" | "waiting") => void;
   onOutput?: (data: string) => void;
-  onInteractiveInfo?: (interactive: boolean, wrapperConnected: boolean, claudeState: "running" | "waiting" | "unknown") => void;
+  onInteractiveInfo?: (interactive: boolean, claudeState: "running" | "waiting" | "unknown") => void;
 }
 
 export class LiveSessionManager {
@@ -115,7 +113,7 @@ export class LiveSessionManager {
       case "connected":
         this.lastIndex = data.last_index;
         // Notify about interactive session info including claude state
-        this.callbacks.onInteractiveInfo?.(data.interactive, data.wrapper_connected, data.claude_state);
+        this.callbacks.onInteractiveInfo?.(data.interactive, data.claude_state);
         break;
 
       case "message":
@@ -157,10 +155,6 @@ export class LiveSessionManager {
 
       case "feedback_status":
         this.callbacks.onFeedbackStatus?.(data.message_id, data.status);
-        break;
-
-      case "wrapper_status":
-        this.callbacks.onWrapperStatus?.(data.connected);
         break;
 
       case "state":
@@ -259,7 +253,6 @@ export interface LiveSessionState {
   lastMessageIndex: number;
   // Interactive session state
   isInteractive: boolean;
-  wrapperConnected: boolean;
   claudeState: "running" | "waiting" | "unknown";
   pendingFeedback: Map<string, { position: number; status: "pending" | "approved" | "rejected" }>;
 }

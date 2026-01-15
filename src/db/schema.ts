@@ -160,7 +160,6 @@ export type Session = {
   last_activity_at: string | null;
   client_id: string | null;
   interactive: boolean;
-  wrapper_connected: boolean;
   created_at: string;
   updated_at: string;
 };

@@ -141,7 +141,7 @@ export function renderSessionDetail({ session, messages, diffs, shareUrl, review
   const diffPanelClass = hasDiffs ? "diff-panel-container visible" : "diff-panel-container hidden";
 
   return `
-    <div class="session-detail" data-session-is-live="${isLive}" data-session-has-diffs="${hasDiffs}" data-session-is-interactive="${isInteractive}" data-session-wrapper-connected="${session.wrapper_connected ?? false}">
+    <div class="session-detail" data-session-is-live="${isLive}" data-session-has-diffs="${hasDiffs}" data-session-is-interactive="${isInteractive}">
       <!-- Header -->
       ${renderHeader(session, date, resumeCommand)}
 
@@ -757,7 +757,6 @@ export function renderConnectionStatusHtml(connected: boolean): string {
 // Feedback input state for interactive sessions
 export interface FeedbackInputState {
   isInteractive: boolean;
-  wrapperConnected: boolean;
   claudeState: "running" | "waiting" | "unknown";
   sessionComplete: boolean;
   pendingFeedback: Array<{ id: string; status: "pending" | "approved" | "rejected" }>;
@@ -765,33 +764,31 @@ export interface FeedbackInputState {
 
 // Render feedback input panel for interactive sessions
 export function renderFeedbackInput(state: FeedbackInputState): string {
-  const { isInteractive, wrapperConnected, claudeState, sessionComplete, pendingFeedback } = state;
+  const { isInteractive, claudeState, sessionComplete, pendingFeedback } = state;
 
   // Non-interactive or complete sessions don't show input
   if (!isInteractive || sessionComplete) {
     return "";
   }
 
-  // Determine input state
-  const canSend = wrapperConnected && claudeState === "waiting";
-  const statusText = getFeedbackStatusText(wrapperConnected, claudeState);
+  // For pull-based feedback, can always send when session is interactive
+  // Feedback gets queued and pulled when Claude is ready
+  const statusText = getFeedbackStatusText(claudeState);
   const pendingCount = pendingFeedback.filter(f => f.status === "pending").length;
 
   return `
     <div id="feedback-input-container" class="feedback-input-container">
       ${renderFeedbackStatus(statusText, pendingCount)}
-      <div class="feedback-input-wrapper ${canSend ? "" : "disabled"}">
+      <div class="feedback-input-wrapper">
         <textarea
           id="feedback-input"
           class="feedback-input"
-          placeholder="${canSend ? "Send a follow-up message..." : "Waiting..."}"
-          ${canSend ? "" : "disabled"}
+          placeholder="Send a follow-up message..."
           rows="2"
         ></textarea>
         <button
           id="feedback-submit"
           class="feedback-submit"
-          ${canSend ? "" : "disabled"}
           title="Send feedback (Ctrl+Enter)"
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -807,18 +804,15 @@ export function renderFeedbackInput(state: FeedbackInputState): string {
   `;
 }
 
-function getFeedbackStatusText(wrapperConnected: boolean, claudeState: "running" | "waiting" | "unknown"): string {
-  if (!wrapperConnected) {
-    return "Waiting for session to connect...";
-  }
-
+function getFeedbackStatusText(claudeState: "running" | "waiting" | "unknown"): string {
   switch (claudeState) {
     case "running":
       return "Claude is working...";
     case "waiting":
       return "Claude is waiting for input";
     default:
-      return "";
+      // For pull-based sessions, we don't track state in real-time
+      return "Feedback will be queued";
   }
 }
 
@@ -853,17 +847,8 @@ function renderPendingFeedback(pending: Array<{ id: string; status: "pending" | 
   `;
 }
 
-// Render wrapper status indicator for interactive sessions
-export function renderWrapperStatus(connected: boolean, claudeState: "running" | "waiting" | "unknown"): string {
-  if (!connected) {
-    return `
-      <span class="flex items-center gap-1 text-xs text-yellow-500">
-        <span class="w-1.5 h-1.5 rounded-full bg-yellow-500 animate-pulse"></span>
-        <span>Waiting for wrapper...</span>
-      </span>
-    `;
-  }
-
+// Render session status indicator for interactive sessions
+export function renderSessionStatus(claudeState: "running" | "waiting" | "unknown"): string {
   if (claudeState === "waiting") {
     return `
       <span class="flex items-center gap-1 text-xs text-accent-primary">

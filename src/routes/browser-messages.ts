@@ -3,15 +3,15 @@
  *
  * When a browser sends feedback (user message, diff comment, or suggested edit),
  * this module:
- * 1. Validates the session is interactive and wrapper is connected
+ * 1. Validates the session is interactive
  * 2. Creates a feedback message record in the database
- * 3. Sends the feedback to the wrapper for injection into the PTY
- * 4. Notifies the browser of the queue position
+ * 3. Notifies the browser of the queue position
+ *
+ * The feedback is then pulled by the Claude Code plugin via the stop hook.
  */
 
 import type { BrowserToServerMessage, ServerToBrowserMessage } from "./websocket-types";
 import type { SessionRepository } from "../db/repository";
-import { sendToWrapper, isWrapperConnected } from "./wrapper-connections";
 import { checkRateLimit } from "./rate-limit";
 
 /**
@@ -76,15 +76,6 @@ function handleUserMessage(
     return;
   }
 
-  if (!isWrapperConnected(sessionId)) {
-    sendToBrowser({
-      type: "error",
-      code: "WRAPPER_DISCONNECTED",
-      message: "Session wrapper is not connected",
-    });
-    return;
-  }
-
   // Check rate limit
   const rateCheck = checkRateLimit(sessionId, "message");
   if (!rateCheck.allowed) {
@@ -104,17 +95,11 @@ function handleUserMessage(
   const position = pending.findIndex((m) => m.id === feedback.id) + 1;
 
   // Notify browser of queue position
+  // Feedback will be pulled by the Claude Code plugin via the stop hook
   sendToBrowser({
     type: "feedback_queued",
     message_id: feedback.id,
     position,
-  });
-
-  // Send to wrapper for injection
-  sendToWrapper(sessionId, {
-    type: "inject",
-    content,
-    message_id: feedback.id,
   });
 }
 
@@ -131,7 +116,7 @@ function handleDiffComment(
 ): void {
   const session = repo.getSession(sessionId);
 
-  if (!session?.interactive || !isWrapperConnected(sessionId)) {
+  if (!session?.interactive) {
     sendToBrowser({
       type: "error",
       code: "UNAVAILABLE",
@@ -171,12 +156,6 @@ Please address this feedback.`;
     message_id: feedback.id,
     position,
   });
-
-  sendToWrapper(sessionId, {
-    type: "inject",
-    content: formattedContent,
-    message_id: feedback.id,
-  });
 }
 
 /**
@@ -192,7 +171,7 @@ function handleSuggestedEdit(
 ): void {
   const session = repo.getSession(sessionId);
 
-  if (!session?.interactive || !isWrapperConnected(sessionId)) {
+  if (!session?.interactive) {
     sendToBrowser({
       type: "error",
       code: "UNAVAILABLE",
@@ -238,11 +217,5 @@ Please review and apply this change if appropriate.`;
     type: "feedback_queued",
     message_id: feedback.id,
     position,
-  });
-
-  sendToWrapper(sessionId, {
-    type: "inject",
-    content: formattedContent,
-    message_id: feedback.id,
   });
 }

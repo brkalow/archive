@@ -588,7 +588,6 @@ export function createApiRoutes(repo: SessionRepository) {
             status: "live" as SessionStatus,
             last_activity_at: now,
             interactive: Boolean(interactive),
-            wrapper_connected: false,
           },
           streamTokenHash,
           clientId || undefined
@@ -874,6 +873,62 @@ export function createApiRoutes(repo: SessionRepository) {
       } catch (error) {
         console.error("Error completing session:", error);
         return jsonError("Failed to complete session", 500);
+      }
+    },
+
+    // Mark a live session as interactive (enables browser feedback)
+    async markInteractive(req: Request, sessionId: string): Promise<Response> {
+      try {
+        const authHeader = req.headers.get("Authorization");
+        if (!authHeader?.startsWith("Bearer ")) {
+          return jsonError("Missing or invalid authorization", 401);
+        }
+
+        const token = authHeader.slice(7);
+        const tokenHash = await hashToken(token);
+        if (!repo.verifyStreamToken(sessionId, tokenHash)) {
+          return jsonError("Invalid stream token or session not live", 401);
+        }
+
+        const session = repo.getSession(sessionId);
+        if (!session) {
+          return jsonError("Session not found", 404);
+        }
+
+        repo.setSessionInteractive(sessionId, true);
+
+        return json({ success: true, interactive: true });
+      } catch (error) {
+        console.error("Error marking session interactive:", error);
+        return jsonError("Failed to mark session interactive", 500);
+      }
+    },
+
+    // Disable interactive mode for a session (called when daemon disconnects)
+    async disableInteractive(req: Request, sessionId: string): Promise<Response> {
+      try {
+        const authHeader = req.headers.get("Authorization");
+        if (!authHeader?.startsWith("Bearer ")) {
+          return jsonError("Missing or invalid authorization", 401);
+        }
+
+        const token = authHeader.slice(7);
+        const tokenHash = await hashToken(token);
+        if (!repo.verifyStreamToken(sessionId, tokenHash)) {
+          return jsonError("Invalid stream token or session not live", 401);
+        }
+
+        const session = repo.getSession(sessionId);
+        if (!session) {
+          return jsonError("Session not found", 404);
+        }
+
+        repo.setSessionInteractive(sessionId, false);
+
+        return json({ success: true, interactive: false });
+      } catch (error) {
+        console.error("Error disabling interactive:", error);
+        return jsonError("Failed to disable interactive", 500);
       }
     },
 

@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(claude plugin --help:*)",
+      "WebSearch",
+      "WebFetch(domain:www.anthropic.com)",
+      "WebFetch(domain:github.com)",
+      "Bash(bun run:*)"
+    ]
+  }
+}

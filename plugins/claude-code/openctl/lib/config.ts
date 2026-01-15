@@ -28,21 +28,33 @@ export function loadConfig(): OpenctlConfig | null {
   return { serverUrl };
 }
 
+/** Timeout for reading stdin (ms) */
+const STDIN_TIMEOUT_MS = 2000;
+
 /**
  * Read and parse the hook input from stdin.
  * Claude Code passes JSON to hooks via stdin containing session_id and other context.
  */
 export async function readStdinInput(): Promise<HookInput | null> {
   try {
-    const chunks: Buffer[] = [];
-    for await (const chunk of process.stdin) {
-      chunks.push(chunk);
-    }
-    const input = Buffer.concat(chunks).toString("utf-8").trim();
-    if (!input) {
-      return null;
-    }
-    return JSON.parse(input) as HookInput;
+    // Add timeout to prevent hanging if stdin never closes
+    const timeoutPromise = new Promise<null>((resolve) => {
+      setTimeout(() => resolve(null), STDIN_TIMEOUT_MS);
+    });
+
+    const readPromise = (async () => {
+      const chunks: Buffer[] = [];
+      for await (const chunk of process.stdin) {
+        chunks.push(chunk);
+      }
+      const input = Buffer.concat(chunks).toString("utf-8").trim();
+      if (!input) {
+        return null;
+      }
+      return JSON.parse(input) as HookInput;
+    })();
+
+    return await Promise.race([readPromise, timeoutPromise]);
   } catch {
     return null;
   }

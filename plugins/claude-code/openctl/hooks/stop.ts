@@ -13,23 +13,30 @@ interface StopHookResponse {
 
 const TIMEOUT_MS = 3000; // 3 second timeout
 
+// Always log to stderr for debugging (visible in verbose mode ctrl+o)
+function log(msg: string): void {
+  console.error(`[openctl:stop] ${msg}`);
+}
+
 async function main(): Promise<void> {
   // Read stdin first (before checking config) to get Claude session ID
   const stdinInput = await readStdinInput();
+
   if (!stdinInput?.session_id) {
-    // No session ID from Claude Code - allow Claude to stop
+    log("No session_id in stdin");
     process.exit(0);
   }
 
   const config = loadConfig();
 
-  // Not an Archive session (no env vars set) - allow Claude to stop
   if (!config) {
+    log(`No OPENCTL_SERVER_URL set`);
     process.exit(0);
   }
 
   try {
-    // Fetch with timeout using the Claude session ID from stdin
+    log(`Checking ${config.serverUrl} for session ${stdinInput.session_id.slice(0, 8)}...`);
+
     const response = await Promise.race([
       fetchPendingFeedbackByClaudeSession(config.serverUrl, stdinInput.session_id),
       new Promise<never>((_, reject) =>
@@ -38,9 +45,11 @@ async function main(): Promise<void> {
     ]);
 
     if (!response.pending || response.messages.length === 0) {
-      // No pending feedback - allow Claude to stop
+      log("No pending feedback");
       process.exit(0);
     }
+
+    log(`Found ${response.messages.length} pending message(s)`);
 
     // Batch all pending messages into a single injection
     const reason = formatBatchedFeedback(response.messages);
@@ -58,12 +67,13 @@ async function main(): Promise<void> {
       reason,
     };
 
-    // Output to stderr for Claude to receive
-    console.error(JSON.stringify(output));
-    process.exit(2); // Exit code 2 = block
-  } catch {
-    // Network error, timeout, or server unavailable
-    // Allow Claude to stop rather than blocking indefinitely
+    log("Blocking stop to inject feedback");
+
+    // Output JSON to stdout with exit code 0 for structured control
+    console.log(JSON.stringify(output));
+    process.exit(0);
+  } catch (err) {
+    log(`Error: ${err}`);
     process.exit(0);
   }
 }

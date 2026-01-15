@@ -104,10 +104,13 @@ export function handleGetPendingFeedbackByClaudeSession(
   claudeSessionId: string,
   repo: SessionRepository
 ): Response {
+  console.log(`[feedback] Looking up session by claude_session_id=${claudeSessionId}`);
+
   // Look up session by Claude session ID
   const session = repo.getSessionByClaudeSessionId(claudeSessionId);
 
   if (!session) {
+    console.log(`[feedback] Session not found for claude_session_id=${claudeSessionId}`);
     return new Response(
       JSON.stringify({ error: "Session not found for claude_session_id" }),
       {
@@ -117,8 +120,11 @@ export function handleGetPendingFeedbackByClaudeSession(
     );
   }
 
+  console.log(`[feedback] Found session: id=${session.id}, interactive=${session.interactive}`);
+
   // Get pending (undelivered) feedback messages
   const pending = repo.getPendingFeedback(session.id);
+  console.log(`[feedback] Found ${pending.length} pending feedback messages`);
 
   const response: PendingFeedbackResponse = {
     pending: pending.length > 0,
@@ -143,16 +149,86 @@ export function handleGetPendingFeedbackByClaudeSession(
  * POST /api/sessions/by-claude-session/:claudeSessionId/interactive
  *
  * Mark a session as interactive (accepts browser feedback).
- * Called by the SessionStart hook when the plugin is loaded.
+ * If no session exists with this claude_session_id, creates one.
+ * Called by the UserPromptSubmit hook when /collaborate is run.
  */
 export function handleMarkSessionInteractive(
   claudeSessionId: string,
   repo: SessionRepository
 ): Response {
+  console.log(`[interactive] Marking session interactive: claude_session_id=${claudeSessionId}`);
+
+  // Look up session by Claude session ID
+  let session = repo.getSessionByClaudeSessionId(claudeSessionId);
+
+  if (!session) {
+    // No session exists - create one on-demand
+    console.log(`[interactive] Session not found, creating new session for claude_session_id=${claudeSessionId}`);
+
+    const id = generateSessionId();
+    const now = new Date().toISOString();
+
+    session = repo.createSession({
+      id,
+      title: "Interactive Session",
+      description: null,
+      claude_session_id: claudeSessionId,
+      pr_url: null,
+      share_token: null,
+      project_path: null,
+      model: null,
+      harness: "claude-code",
+      repo_url: null,
+      status: "live",
+      last_activity_at: now,
+      interactive: true,
+    });
+
+    console.log(`[interactive] Created new session: id=${session.id}`);
+  } else {
+    console.log(`[interactive] Found session: id=${session.id}, current interactive=${session.interactive}`);
+
+    // Mark session as interactive
+    repo.setSessionInteractive(session.id, true);
+
+    console.log(`[interactive] Session marked interactive: id=${session.id}`);
+  }
+
+  return new Response(
+    JSON.stringify({ success: true, session_id: session.id }),
+    {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    }
+  );
+}
+
+/**
+ * Generate a unique session ID.
+ */
+function generateSessionId(): string {
+  const timestamp = Date.now().toString(36);
+  const randomPart = crypto.randomUUID().replace(/-/g, "").substring(0, 8);
+  return `sess_${timestamp}_${randomPart}`;
+}
+
+/**
+ * POST /api/sessions/by-claude-session/:claudeSessionId/finished
+ *
+ * Mark a session as finished/closed.
+ * Called by the SessionEnd hook when Claude Code exits.
+ */
+export function handleMarkSessionFinished(
+  claudeSessionId: string,
+  repo: SessionRepository
+): Response {
+  console.log(`[session-end] Marking session finished: claude_session_id=${claudeSessionId}`);
+
   // Look up session by Claude session ID
   const session = repo.getSessionByClaudeSessionId(claudeSessionId);
 
   if (!session) {
+    console.log(`[session-end] Session not found for claude_session_id=${claudeSessionId}`);
     return new Response(
       JSON.stringify({ error: "Session not found for claude_session_id" }),
       {
@@ -162,8 +238,13 @@ export function handleMarkSessionInteractive(
     );
   }
 
-  // Mark session as interactive
-  repo.setSessionInteractive(session.id, true);
+  console.log(`[session-end] Found session: id=${session.id}, status=${session.status}`);
+
+  // Mark session as complete and disable interactive mode
+  repo.updateSession(session.id, { status: "complete" });
+  repo.setSessionInteractive(session.id, false);
+
+  console.log(`[session-end] Session marked finished: id=${session.id}`);
 
   return new Response(
     JSON.stringify({ success: true, session_id: session.id }),

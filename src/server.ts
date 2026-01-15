@@ -1,17 +1,8 @@
 import { initializeDatabase } from "./db/schema";
 import { SessionRepository } from "./db/repository";
 import { createApiRoutes, addSessionSubscriber, removeSessionSubscriber, closeAllConnections, broadcastToSession } from "./routes/api";
-import {
-  addWrapperConnection,
-  handleWrapperMessage,
-  handleWrapperClose,
-  isWrapperConnected,
-  getClaudeState,
-  closeAllWrapperConnections,
-  type WrapperWebSocketData,
-} from "./routes/wrapper-connections";
 import { handleBrowserMessage } from "./routes/browser-messages";
-import { handleGetPendingFeedback, handleMarkFeedbackDelivered, handleGetPendingFeedbackByClaudeSession, handleMarkSessionInteractive } from "./routes/feedback-api";
+import { handleGetPendingFeedback, handleMarkFeedbackDelivered, handleGetPendingFeedbackByClaudeSession, handleMarkSessionInteractive, handleMarkSessionFinished } from "./routes/feedback-api";
 import type { BrowserToServerMessage } from "./routes/websocket-types";
 
 // Import HTML template - Bun will bundle CSS and JS referenced in this file
@@ -28,10 +19,9 @@ const api = createApiRoutes(repo);
 // WebSocket data attached to each connection
 interface BrowserWebSocketData {
   sessionId: string;
-  isWrapper: false;
 }
 
-type WebSocketData = BrowserWebSocketData | WrapperWebSocketData;
+type WebSocketData = BrowserWebSocketData;
 
 // Start server
 const server = Bun.serve({
@@ -110,6 +100,11 @@ const server = Bun.serve({
       POST: (req) => api.completeSession(req, req.params.id),
     },
 
+    "/api/sessions/:id/interactive": {
+      POST: (req) => api.markInteractive(req, req.params.id),
+      DELETE: (req) => api.disableInteractive(req, req.params.id),
+    },
+
     // Feedback API endpoints for plugin-based interactive sessions
     // Note: by-claude-session route must come before :id routes to avoid matching conflicts
     "/api/sessions/by-claude-session/:claudeSessionId/feedback/pending": {
@@ -118,6 +113,10 @@ const server = Bun.serve({
 
     "/api/sessions/by-claude-session/:claudeSessionId/interactive": {
       POST: (req) => handleMarkSessionInteractive(req.params.claudeSessionId, repo),
+    },
+
+    "/api/sessions/by-claude-session/:claudeSessionId/finished": {
+      POST: (req) => handleMarkSessionFinished(req.params.claudeSessionId, repo),
     },
 
     "/api/sessions/:id/feedback/pending": {
@@ -149,38 +148,7 @@ const server = Bun.serve({
       }
 
       const upgraded = server.upgrade<BrowserWebSocketData>(req, {
-        data: { sessionId, isWrapper: false },
-      });
-
-      if (upgraded) {
-        return undefined; // Bun handles the upgrade
-      }
-
-      return new Response("WebSocket upgrade failed", { status: 500 });
-    }
-
-    // Handle WebSocket upgrade for wrapper connections (PTY wrapper)
-    const wrapperMatch = url.pathname.match(/^\/api\/sessions\/([^\/]+)\/wrapper$/);
-    if (wrapperMatch) {
-      const sessionId = wrapperMatch[1];
-      const session = repo.getSession(sessionId);
-
-      if (!session) {
-        return new Response("Session not found", { status: 404 });
-      }
-
-      // Only interactive sessions accept wrapper connections
-      if (!session.interactive) {
-        return new Response("Session is not interactive", { status: 400 });
-      }
-
-      // Only allow wrapper connections for live sessions
-      if (session.status !== "live") {
-        return new Response("WebSocket only available for live sessions", { status: 410 });
-      }
-
-      const upgraded = server.upgrade<WrapperWebSocketData>(req, {
-        data: { sessionId, isWrapper: true },
+        data: { sessionId },
       });
 
       if (upgraded) {
@@ -197,29 +165,23 @@ const server = Bun.serve({
     open(ws) {
       const data = ws.data as WebSocketData;
 
-      if (data.isWrapper) {
-        // Wrapper connection - register but don't authenticate yet
-        addWrapperConnection(data.sessionId, ws as any);
-      } else {
-        // Browser connection - add to subscriber list
-        addSessionSubscriber(data.sessionId, ws as unknown as WebSocket);
+      // Add to subscriber list
+      addSessionSubscriber(data.sessionId, ws as unknown as WebSocket);
 
-        // Send connected message with current state including interactive info
-        const session = repo.getSession(data.sessionId);
-        const messageCount = repo.getMessageCount(data.sessionId);
-        const lastIndex = repo.getLastMessageIndex(data.sessionId);
+      // Send connected message with current state including interactive info
+      const session = repo.getSession(data.sessionId);
+      const messageCount = repo.getMessageCount(data.sessionId);
+      const lastIndex = repo.getLastMessageIndex(data.sessionId);
 
-        ws.send(JSON.stringify({
-          type: "connected",
-          session_id: data.sessionId,
-          status: session?.status || "unknown",
-          message_count: messageCount,
-          last_index: lastIndex,
-          interactive: session?.interactive ?? false,
-          wrapper_connected: isWrapperConnected(data.sessionId),
-          claude_state: getClaudeState(data.sessionId),
-        }));
-      }
+      ws.send(JSON.stringify({
+        type: "connected",
+        session_id: data.sessionId,
+        status: session?.status || "unknown",
+        message_count: messageCount,
+        last_index: lastIndex,
+        interactive: session?.interactive ?? false,
+        claude_state: "unknown" as const,
+      }));
     },
 
     message(ws, message) {
@@ -228,18 +190,13 @@ const server = Bun.serve({
       try {
         const msg = JSON.parse(message.toString());
 
-        if (data.isWrapper) {
-          // Handle wrapper messages (auth, output, state, ended, feedback_status)
-          handleWrapperMessage(data.sessionId, msg, repo);
-        } else {
-          // Handle browser messages (subscribe, ping, user_message, etc.)
-          handleBrowserMessage(
-            data.sessionId,
-            msg as BrowserToServerMessage,
-            repo,
-            (response) => ws.send(JSON.stringify(response))
-          );
-        }
+        // Handle browser messages (subscribe, ping, user_message, etc.)
+        handleBrowserMessage(
+          data.sessionId,
+          msg as BrowserToServerMessage,
+          repo,
+          (response) => ws.send(JSON.stringify(response))
+        );
       } catch {
         // Invalid message, ignore
       }
@@ -247,23 +204,13 @@ const server = Bun.serve({
 
     close(ws) {
       const data = ws.data as WebSocketData;
-
-      if (data.isWrapper) {
-        handleWrapperClose(data.sessionId, repo);
-      } else {
-        removeSessionSubscriber(data.sessionId, ws as unknown as WebSocket);
-      }
+      removeSessionSubscriber(data.sessionId, ws as unknown as WebSocket);
     },
 
     error(ws, error) {
       console.error("WebSocket error:", error);
       const data = ws.data as WebSocketData;
-
-      if (data.isWrapper) {
-        handleWrapperClose(data.sessionId, repo);
-      } else {
-        removeSessionSubscriber(data.sessionId, ws as unknown as WebSocket);
-      }
+      removeSessionSubscriber(data.sessionId, ws as unknown as WebSocket);
     },
   },
 });
@@ -285,7 +232,6 @@ async function gracefulShutdown(signal: string) {
   // Close all WebSocket connections
   console.log("Closing WebSocket connections...");
   closeAllConnections();
-  closeAllWrapperConnections();
 
   // Stop accepting new connections and close existing ones
   console.log("Stopping server...");

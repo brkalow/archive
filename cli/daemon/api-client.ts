@@ -101,6 +101,11 @@ export interface UpdateSessionResponse {
   updated: boolean;
 }
 
+export interface MarkInteractiveResponse {
+  success: boolean;
+  interactive: boolean;
+}
+
 export class ApiClient {
   private baseUrl: string;
   private retryOptions: RetryOptions;
@@ -292,6 +297,57 @@ export class ApiClient {
     }
 
     return res.json();
+  }
+
+  /**
+   * Mark a session as interactive (enables browser feedback).
+   */
+  async markInteractive(
+    sessionId: string,
+    streamToken: string
+  ): Promise<MarkInteractiveResponse> {
+    const res = await fetchWithRetry(
+      `${this.baseUrl}/api/sessions/${sessionId}/interactive`,
+      {
+        method: "POST",
+        headers: this.getHeaders({
+          Authorization: `Bearer ${streamToken}`,
+        }),
+      },
+      this.retryOptions
+    );
+
+    if (!res.ok) {
+      const error = await res.text();
+      throw new Error(`Failed to mark session interactive: ${res.status} - ${error}`);
+    }
+
+    return res.json();
+  }
+
+  /**
+   * Disable interactive mode for a session (called when daemon disconnects).
+   */
+  async disableInteractive(
+    sessionId: string,
+    streamToken: string
+  ): Promise<void> {
+    // Use a short timeout since we're shutting down
+    const res = await fetchWithRetry(
+      `${this.baseUrl}/api/sessions/${sessionId}/interactive`,
+      {
+        method: "DELETE",
+        headers: this.getHeaders({
+          Authorization: `Bearer ${streamToken}`,
+        }),
+      },
+      { maxRetries: 1, initialDelayMs: 500, maxDelayMs: 1000 }
+    );
+
+    if (!res.ok) {
+      const error = await res.text();
+      throw new Error(`Failed to disable interactive: ${res.status} - ${error}`);
+    }
   }
 
   /**

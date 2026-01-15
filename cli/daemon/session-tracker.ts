@@ -27,6 +27,9 @@ const DIFF_DEBOUNCE_MS = 2000;
 /** Tool names that modify files and should trigger diff capture */
 const FILE_MODIFYING_TOOLS = ["Write", "Edit", "NotebookEdit"];
 
+/** Pattern to detect the collaborate command in messages */
+const COLLABORATE_COMMAND_PATTERN = /\/(?:openctl:)?collaborate/i;
+
 /** Maximum messages to keep in memory after title derivation (to prevent unbounded growth) */
 const MAX_RETAINED_MESSAGES = 10;
 
@@ -49,6 +52,10 @@ interface ActiveSession {
   messagesPushed: number;
   // Files explicitly modified by this session (for filtering untracked files in diff)
   modifiedFiles: Set<string>;
+  // Whether collaboration mode has been enabled for this session
+  collaborationEnabled: boolean;
+  // Whether initial file read is complete (only detect commands after this)
+  liveMode: boolean;
 }
 
 /**
@@ -186,6 +193,8 @@ export class SessionTracker {
         diffDebounceTimer: null,
         messagesPushed: 0,
         modifiedFiles: new Set(),
+        collaborationEnabled: false,
+        liveMode: false,
       };
 
       this.sessions.set(filePath, session);
@@ -201,6 +210,13 @@ export class SessionTracker {
       }) as EventListener);
 
       tail.start();
+
+      // Enable live mode after initial file read completes
+      // This ensures we only detect collaborate commands on NEW messages, not historical ones
+      setTimeout(() => {
+        session.liveMode = true;
+        debug(`Session ${session.sessionId} now in live mode`);
+      }, 2000);
 
       // Capture initial diff state (useful when picking up in-progress sessions)
       if (session.projectPath) {
@@ -304,6 +320,9 @@ export class SessionTracker {
 
     // Check for file-modifying tool calls and schedule diff capture
     this.checkForFileModifications(session, messages);
+
+    // Check for collaborate command and enable collaboration mode
+    this.checkForCollaborateCommand(session, messages);
   }
 
   /**
@@ -338,6 +357,49 @@ export class SessionTracker {
 
     if (shouldCaptureDiff) {
       this.scheduleDiffCapture(session);
+    }
+  }
+
+  /**
+   * Check if any messages contain the collaborate command.
+   * If so, mark the session as interactive on the server.
+   * Only runs in live mode (after initial file read) to avoid retroactive detection.
+   */
+  private checkForCollaborateCommand(
+    session: ActiveSession,
+    messages: NormalizedMessage[]
+  ): void {
+    // Skip if not in live mode (still processing historical messages)
+    if (!session.liveMode) return;
+
+    // Skip if collaboration already enabled
+    if (session.collaborationEnabled) return;
+
+    for (const msg of messages) {
+      for (const block of msg.content_blocks) {
+        if (block.type === "text" && typeof block.text === "string") {
+          if (COLLABORATE_COMMAND_PATTERN.test(block.text)) {
+            debug(`Collaborate command detected in message`);
+            this.enableCollaboration(session);
+            return;
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Enable collaboration mode for a session by marking it interactive on the server.
+   */
+  private async enableCollaboration(session: ActiveSession): Promise<void> {
+    if (session.collaborationEnabled) return;
+
+    try {
+      await this.api.markInteractive(session.sessionId, session.streamToken);
+      session.collaborationEnabled = true;
+      console.log(`  Collaboration enabled for session: ${session.sessionId}`);
+    } catch (err) {
+      console.error(`  Failed to enable collaboration:`, err);
     }
   }
 
@@ -489,6 +551,17 @@ export class SessionTracker {
     }
 
     session.tail.stop();
+
+    // Disable collaboration mode if it was enabled
+    if (session.collaborationEnabled) {
+      try {
+        await this.api.disableInteractive(session.sessionId, session.streamToken);
+        console.log(`  Collaboration disabled for session: ${session.sessionId}`);
+      } catch (err) {
+        // Non-critical, continue with session cleanup
+        debug(`Failed to disable collaboration: ${err}`);
+      }
+    }
 
     // If no messages were pushed, delete the empty session instead of completing it
     if (session.messagesPushed === 0) {

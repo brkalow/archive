@@ -1,5 +1,5 @@
 import { Router } from "./router";
-import { renderSessionList, renderSessionDetail, renderNotFound, renderSingleMessage, renderConnectionStatusHtml, renderDiffPanel, escapeHtml, renderFeedbackInput, renderWrapperStatus, type FeedbackInputState } from "./views";
+import { renderSessionList, renderSessionDetail, renderNotFound, renderSingleMessage, renderConnectionStatusHtml, renderDiffPanel, escapeHtml, renderFeedbackInput, renderSessionStatus, type FeedbackInputState } from "./views";
 import { formatMarkdown } from "./blocks";
 import type { Session, Message, Diff, Review, Annotation, AnnotationType } from "../db/schema";
 // Import @pierre/diffs - this registers the web component and provides FileDiff class
@@ -30,7 +30,6 @@ let pendingToolCalls = new Set<string>();
 // Interactive session state
 let interactiveState: FeedbackInputState = {
   isInteractive: false,
-  wrapperConnected: false,
   claudeState: "unknown",
   sessionComplete: false,
   pendingFeedback: [],
@@ -679,7 +678,6 @@ function initializeLiveSession(sessionId: string, initialMessages: Message[], se
   // Initialize interactive state from session data
   interactiveState = {
     isInteractive: session.interactive ?? false,
-    wrapperConnected: session.wrapper_connected ?? false,
     claudeState: "unknown",
     sessionComplete: false,
     pendingFeedback: [],
@@ -889,25 +887,13 @@ function initializeLiveSession(sessionId: string, initialMessages: Message[], se
     },
 
     // Interactive session callbacks
-    onInteractiveInfo: (interactive, wrapperConnected, claudeState) => {
+    onInteractiveInfo: (interactive, claudeState) => {
       interactiveState.isInteractive = interactive;
-      interactiveState.wrapperConnected = wrapperConnected;
       interactiveState.claudeState = claudeState;
       if (interactive) {
         initializeFeedbackInput();
       }
       updateFeedbackInput();
-    },
-
-    onWrapperStatus: (connected) => {
-      interactiveState.wrapperConnected = connected;
-      updateFeedbackInput();
-      // Show toast for connection changes
-      if (connected) {
-        window.showToast("Session wrapper connected", "success");
-      } else {
-        window.showToast("Session wrapper disconnected", "error");
-      }
     },
 
     onClaudeState: (state) => {
