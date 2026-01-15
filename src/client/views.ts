@@ -313,7 +313,7 @@ function renderHeader(session: Session, date: string, resumeCommand: string): st
         </div>
 
         <!-- Metadata line -->
-        <div class="flex items-center gap-4 text-sm text-text-muted">
+        <div class="flex items-center gap-4 text-sm text-text-muted overflow-hidden">
           ${isLive ? `
             ${renderConnectionStatus()}
             <span class="text-text-muted/30">·</span>
@@ -339,8 +339,8 @@ function renderHeader(session: Session, date: string, resumeCommand: string): st
             </a>
           ` : ""}
           <span class="text-text-muted/30">·</span>
-          <div class="inline-flex items-center gap-1.5">
-            <code class="text-[13px] font-mono text-accent-primary" id="resume-command">${escapeHtml(resumeCommand)}</code>
+          <div class="inline-flex items-center gap-1.5 min-w-0">
+            <code class="text-[13px] font-mono text-accent-primary truncate" id="resume-command">${escapeHtml(resumeCommand)}</code>
             <button data-copy-target="resume-command" title="Copy command"
                     class="p-1 text-text-muted hover:text-text-primary rounded transition-colors">
               ${icons.copy}
@@ -418,8 +418,8 @@ function renderConversationPanel(messages: Message[], isInteractive: boolean = f
     }
   }
 
-  // Adjust height based on whether feedback input will be shown
-  const conversationHeight = isInteractive ? "calc(100% - 2rem - 120px)" : "calc(100% - 2rem)";
+  // No height adjustment needed - floating input doesn't take space from conversation
+  const conversationHeight = "calc(100% - 2rem)";
 
   return `
     <div class="min-w-0 lg:sticky lg:top-[calc(3.5rem+1.5rem)] lg:self-start" style="height: calc(100vh - 10rem);">
@@ -771,81 +771,53 @@ export function renderFeedbackInput(state: FeedbackInputState): string {
     return "";
   }
 
-  // For pull-based feedback, can always send when session is interactive
-  // Feedback gets queued and pulled when Claude is ready
-  const statusText = getFeedbackStatusText(claudeState);
   const pendingCount = pendingFeedback.filter(f => f.status === "pending").length;
+  const isMac = typeof navigator !== "undefined" && navigator.platform.includes("Mac");
+  const shortcutKey = isMac ? "⌘" : "Ctrl";
 
-  return `
-    <div id="feedback-input-container" class="feedback-input-container">
-      ${renderFeedbackStatus(statusText, pendingCount)}
-      <div class="feedback-input-wrapper">
-        <textarea
-          id="feedback-input"
-          class="feedback-input"
-          placeholder="Send a follow-up message..."
-          rows="2"
-        ></textarea>
-        <button
-          id="feedback-submit"
-          class="feedback-submit"
-          title="Send feedback (Ctrl+Enter)"
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/>
-          </svg>
-        </button>
-      </div>
-      <div class="feedback-help">
-        <span class="feedback-shortcut">${navigator.platform.includes("Mac") ? "\u2318" : "Ctrl"}+Enter</span> to send
-      </div>
-      ${renderPendingFeedback(pendingFeedback)}
-    </div>
-  `;
-}
-
-function getFeedbackStatusText(claudeState: "running" | "waiting" | "unknown"): string {
-  switch (claudeState) {
-    case "running":
-      return "Claude is working...";
-    case "waiting":
-      return "Claude is waiting for input";
-    default:
-      // For pull-based sessions, we don't track state in real-time
-      return "Feedback will be queued";
-  }
-}
-
-function renderFeedbackStatus(text: string, pendingCount: number): string {
-  if (!text && pendingCount === 0) return "";
-
-  return `
-    <div class="feedback-status">
-      <span class="feedback-status-text">${text}</span>
-      ${pendingCount > 0 ? `
-        <span class="feedback-pending-badge">
-          ${pendingCount} pending approval
+  // Status indicator for when Claude is working or messages are queued
+  const showStatusBadge = claudeState === "running" || pendingCount > 0;
+  const statusBadge = showStatusBadge ? `
+    <div class="flex items-center gap-3 text-xs px-3 py-1 bg-bg-secondary/80 backdrop-blur-sm border border-bg-elevated rounded-full mb-2">
+      ${claudeState === "running" ? `
+        <span class="flex items-center gap-1.5 text-text-secondary">
+          <span class="w-1.5 h-1.5 rounded-full bg-accent-primary animate-pulse"></span>
+          Working
         </span>
       ` : ""}
+      ${pendingCount > 0 ? `
+        <span class="text-amber-400 font-medium">${pendingCount} queued</span>
+      ` : ""}
     </div>
-  `;
-}
-
-function renderPendingFeedback(pending: Array<{ id: string; status: "pending" | "approved" | "rejected" }>): string {
-  const pendingItems = pending.filter(f => f.status === "pending");
-  if (pendingItems.length === 0) return "";
+  ` : "";
 
   return `
-    <div class="feedback-pending-list">
-      ${pendingItems.map(_f => `
-        <div class="feedback-pending-item">
-          <span class="feedback-pending-icon">&#9203;</span>
-          <span>Waiting for approval...</span>
+    <div id="feedback-input-container" class="fixed bottom-6 left-1/2 -translate-x-1/2 z-[100] flex flex-col items-center">
+      ${statusBadge}
+      <div class="flex items-end w-[min(600px,calc(100vw-2rem))] bg-bg-secondary border border-bg-elevated rounded-2xl px-4 py-2 shadow-lg transition-all duration-200 focus-within:border-text-muted/50 focus-within:shadow-xl">
+        <textarea
+          id="feedback-input"
+          class="flex-1 bg-transparent text-text-primary text-[15px] leading-relaxed placeholder:text-text-muted resize-none border-none outline-none py-1 min-h-[24px] max-h-[150px]"
+          placeholder="Ask a question..."
+          rows="1"
+        ></textarea>
+        <div class="flex items-center gap-2 pb-0.5 ml-3">
+          <kbd class="hidden sm:inline-flex text-[11px] text-text-muted font-mono px-2 py-1 bg-bg-tertiary rounded">${shortcutKey}I</kbd>
+          <button
+            id="feedback-submit"
+            class="w-7 h-7 flex items-center justify-center rounded-full bg-text-muted text-bg-primary transition-all duration-150 hover:bg-text-primary hover:scale-105 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:scale-100"
+            title="Send (${shortcutKey}+Enter)"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 19V5M5 12l7-7 7 7"/>
+            </svg>
+          </button>
         </div>
-      `).join("")}
+      </div>
     </div>
   `;
 }
+
 
 // Render session status indicator for interactive sessions
 export function renderSessionStatus(claudeState: "running" | "waiting" | "unknown"): string {

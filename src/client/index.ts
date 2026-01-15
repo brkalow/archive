@@ -775,6 +775,25 @@ function initializeLiveSession(sessionId: string, initialMessages: Message[], se
       } else {
         hideTypingIndicator();
       }
+
+      // For interactive sessions, when we receive a user message, it likely means
+      // pending feedback was processed - clear any stale pending items and update UI
+      if (interactiveState.isInteractive) {
+        const hasUserMessage = messages.some(m => m.role === "user");
+        if (hasUserMessage && interactiveState.pendingFeedback.length > 0) {
+          // Mark oldest pending item as approved if we haven't received explicit status
+          const pendingItem = interactiveState.pendingFeedback.find(f => f.status === "pending");
+          if (pendingItem) {
+            pendingItem.status = "approved";
+            // Remove after a short delay
+            setTimeout(() => {
+              interactiveState.pendingFeedback = interactiveState.pendingFeedback.filter(f => f.id !== pendingItem.id);
+              updateFeedbackInput();
+            }, 1000);
+          }
+        }
+        updateFeedbackInput();
+      }
     },
 
     onToolResult: (result) => {
