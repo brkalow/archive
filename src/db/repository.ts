@@ -1,6 +1,11 @@
 import { Database, Statement } from "bun:sqlite";
 import type { Session, Message, Diff, Review, Annotation, AnnotationType, FeedbackMessage, FeedbackMessageType, FeedbackMessageStatus } from "./schema";
 
+// Generate SQLite-compatible UTC timestamp (YYYY-MM-DD HH:MM:SS)
+function sqliteDatetimeNow(): string {
+  return new Date().toISOString().replace("T", " ").slice(0, 19);
+}
+
 export class SessionRepository {
   // Cached prepared statements
   private readonly stmts: {
@@ -122,7 +127,7 @@ export class SessionRepository {
       `),
       updateFeedbackStatus: db.prepare(`
         UPDATE feedback_messages
-        SET status = ?, resolved_at = datetime('now')
+        SET status = ?, resolved_at = datetime('now', 'utc')
         WHERE id = ?
       `),
       getPendingFeedback: db.prepare(`
@@ -271,7 +276,7 @@ export class SessionRepository {
 
     if (fields.length === 0) return this.getSession(id);
 
-    fields.push("updated_at = datetime('now')");
+    fields.push("updated_at = datetime('now', 'utc')");
     values.push(id);
 
     // Dynamic query - can't be cached
@@ -509,7 +514,7 @@ export class SessionRepository {
    */
   updateStreamToken(sessionId: string, newTokenHash: string): boolean {
     const stmt = this.db.prepare(`
-      UPDATE sessions SET stream_token_hash = ?, updated_at = datetime('now')
+      UPDATE sessions SET stream_token_hash = ?, updated_at = datetime('now', 'utc')
       WHERE id = ? AND status = 'live'
     `);
     const result = stmt.run(newTokenHash, sessionId);
@@ -525,8 +530,8 @@ export class SessionRepository {
       UPDATE sessions SET
         stream_token_hash = ?,
         status = 'live',
-        last_activity_at = datetime('now'),
-        updated_at = datetime('now')
+        last_activity_at = datetime('now', 'utc'),
+        updated_at = datetime('now', 'utc')
       WHERE id = ?
     `);
     const result = stmt.run(newTokenHash, sessionId);
@@ -739,7 +744,7 @@ export class SessionRepository {
       source: source || null,
       type,
       status: "pending",
-      created_at: new Date().toISOString(),
+      created_at: sqliteDatetimeNow(),
       resolved_at: null,
       context,
     };
@@ -775,7 +780,7 @@ export class SessionRepository {
    */
   setSessionInteractive(sessionId: string, interactive: boolean): void {
     const stmt = this.db.prepare(`
-      UPDATE sessions SET interactive = ?, updated_at = datetime('now') WHERE id = ?
+      UPDATE sessions SET interactive = ?, updated_at = datetime('now', 'utc') WHERE id = ?
     `);
     stmt.run(interactive ? 1 : 0, sessionId);
   }
@@ -785,7 +790,7 @@ export class SessionRepository {
    */
   updateSessionStatus(sessionId: string, status: "live" | "complete" | "archived"): void {
     const stmt = this.db.prepare(`
-      UPDATE sessions SET status = ?, updated_at = datetime('now') WHERE id = ?
+      UPDATE sessions SET status = ?, updated_at = datetime('now', 'utc') WHERE id = ?
     `);
     stmt.run(status, sessionId);
   }

@@ -51,6 +51,11 @@ function parseSqliteDatetime(datetime: string): Date {
   return new Date(datetime.replace(" ", "T") + "Z");
 }
 
+// Generate SQLite-compatible UTC timestamp (YYYY-MM-DD HH:MM:SS)
+function sqliteDatetimeNow(): string {
+  return new Date().toISOString().replace("T", " ").slice(0, 19);
+}
+
 // Content block parsing helpers
 function parseContentBlock(block: Record<string, unknown>): ContentBlock | null {
   switch (block.type) {
@@ -522,7 +527,7 @@ export function createApiRoutes(repo: SessionRepository) {
 
             // Update last activity
             repo.updateSession(existingSession.id, {
-              last_activity_at: new Date().toISOString(),
+              last_activity_at: sqliteDatetimeNow(),
             });
 
             const messageCount = repo.getMessageCount(existingSession.id);
@@ -570,7 +575,6 @@ export function createApiRoutes(repo: SessionRepository) {
         const id = generateId();
         const streamToken = generateStreamToken();
         const streamTokenHash = await hashToken(streamToken);
-        const now = new Date().toISOString();
         const clientId = getClientId(req);
 
         repo.createSession(
@@ -586,7 +590,7 @@ export function createApiRoutes(repo: SessionRepository) {
             harness: harness || null,
             repo_url: repo_url || null,
             status: "live" as SessionStatus,
-            last_activity_at: now,
+            last_activity_at: sqliteDatetimeNow(),
             interactive: Boolean(interactive),
           },
           streamTokenHash,
@@ -664,7 +668,7 @@ export function createApiRoutes(repo: SessionRepository) {
 
         // Update last activity
         repo.updateSession(sessionId, {
-          last_activity_at: new Date().toISOString(),
+          last_activity_at: sqliteDatetimeNow(),
         });
 
         // Reconstruct messages with their assigned indices for broadcast
@@ -734,7 +738,7 @@ export function createApiRoutes(repo: SessionRepository) {
         }
 
         repo.updateSession(sessionId, {
-          last_activity_at: new Date().toISOString(),
+          last_activity_at: sqliteDatetimeNow(),
         });
 
         return json({
@@ -833,7 +837,7 @@ export function createApiRoutes(repo: SessionRepository) {
         // Update description if summary provided
         const updates: Partial<{ status: SessionStatus; description: string; last_activity_at: string }> = {
           status: "complete",
-          last_activity_at: new Date().toISOString(),
+          last_activity_at: sqliteDatetimeNow(),
         };
 
         if (summary) {

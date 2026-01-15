@@ -30,8 +30,8 @@ export function initializeDatabase(dbPath: string = process.env.DATABASE_PATH ||
       pr_url TEXT,
       share_token TEXT UNIQUE,
       project_path TEXT,
-      created_at TEXT DEFAULT (datetime('now')),
-      updated_at TEXT DEFAULT (datetime('now'))
+      created_at TEXT DEFAULT (datetime('now', 'utc')),
+      updated_at TEXT DEFAULT (datetime('now', 'utc'))
     )
   `);
 
@@ -69,7 +69,7 @@ export function initializeDatabase(dbPath: string = process.env.DATABASE_PATH ||
       session_id TEXT NOT NULL UNIQUE,
       summary TEXT NOT NULL,
       model TEXT,
-      created_at TEXT DEFAULT (datetime('now')),
+      created_at TEXT DEFAULT (datetime('now', 'utc')),
       FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
     )
   `);
@@ -126,7 +126,7 @@ export function initializeDatabase(dbPath: string = process.env.DATABASE_PATH ||
       source TEXT,
       type TEXT NOT NULL DEFAULT 'message',
       status TEXT NOT NULL DEFAULT 'pending',
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      created_at TEXT NOT NULL DEFAULT (datetime('now', 'utc')),
       resolved_at TEXT,
       context_json TEXT,
       FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE

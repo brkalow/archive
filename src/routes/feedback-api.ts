@@ -7,6 +7,11 @@
 
 import type { SessionRepository } from "../db/repository";
 
+// Generate SQLite-compatible UTC timestamp (YYYY-MM-DD HH:MM:SS)
+function sqliteDatetimeNow(): string {
+  return new Date().toISOString().replace("T", " ").slice(0, 19);
+}
+
 export interface PendingFeedbackResponse {
   pending: boolean;
   messages: Array<{
@@ -166,7 +171,6 @@ export function handleMarkSessionInteractive(
     console.log(`[interactive] Session not found, creating new session for claude_session_id=${claudeSessionId}`);
 
     const id = generateSessionId();
-    const now = new Date().toISOString();
 
     session = repo.createSession({
       id,
@@ -180,7 +184,7 @@ export function handleMarkSessionInteractive(
       harness: "claude-code",
       repo_url: null,
       status: "live",
-      last_activity_at: now,
+      last_activity_at: sqliteDatetimeNow(),
       interactive: true,
     });
 
