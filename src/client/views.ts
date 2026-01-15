@@ -4,6 +4,13 @@ import { formatDuration } from "./liveSession";
 
 export { escapeHtml };
 
+/** Check if a session was recently active (within the threshold) */
+function isRecentlyActive(session: Session, thresholdMs: number = 5 * 60 * 1000): boolean {
+  if (!session.last_activity_at) return false;
+  const lastActivity = new Date(session.last_activity_at).getTime();
+  return Date.now() - lastActivity < thresholdMs;
+}
+
 // Strip system tags from titles (backup for sessions with tags already in titles)
 function stripSystemTagsFromTitle(text: string): string {
   let cleaned = text.replace(/<system_instruction>[\s\S]*?<\/system_instruction>/gi, "");
@@ -66,7 +73,8 @@ function renderSessionCard(session: Session): string {
     day: "numeric",
   });
 
-  const isLive = session.status === "live";
+  // Show "LIVE" badge only if session is live AND has recent activity
+  const isLive = session.status === "live" && isRecentlyActive(session);
   const isInteractive = session.interactive;
 
   return `

@@ -6,7 +6,6 @@
  * - Parsing incoming lines via adapters
  * - Pushing messages to the server
  * - Title derivation from first user message
- * - Idle timeout detection
  */
 
 import type {
@@ -609,25 +608,9 @@ export class SessionTracker {
   }
 
   startIdleCheck(): void {
-    this.idleCheckInterval = setInterval(async () => {
-      const now = Date.now();
-
-      // Collect sessions to end first, then end them (avoid modifying map while iterating)
-      const toEnd: string[] = [];
-      for (const [filePath, session] of this.sessions) {
-        const idleMs = now - session.lastActivity.getTime();
-        if (idleMs > this.idleTimeoutMs) {
-          console.log(
-            `  Session idle for ${Math.round(idleMs / 1000)}s, completing...`
-          );
-          toEnd.push(filePath);
-        }
-      }
-
-      for (const filePath of toEnd) {
-        await this.endSession(filePath);
-      }
-    }, 10_000);
+    // No-op: sessions are no longer auto-completed on idle.
+    // Sessions remain live until explicitly ended (e.g., daemon shutdown, file deletion).
+    // The list view shows "LIVE" based on recent activity (last_activity_at).
   }
 
   stopIdleCheck(): void {
