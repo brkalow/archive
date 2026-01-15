@@ -136,15 +136,16 @@ export function renderContentBlocks(
 }
 
 function renderTextBlock(text: string): string {
+  // Check if this is a command/skill prompt message BEFORE stripping system tags
+  // because extractCommandInfo needs to find <local-command-stdout> tags
+  const commandInfo = extractCommandInfo(text);
+  if (commandInfo) {
+    return renderCommandBlock(commandInfo.name, commandInfo.output, text);
+  }
+
   // Strip system tags that shouldn't be displayed
   const cleaned = stripSystemTags(text);
   if (!cleaned.trim()) return ""; // Don't render empty text blocks
-
-  // Check if this is a command/skill prompt message
-  const commandInfo = extractCommandInfo(cleaned);
-  if (commandInfo) {
-    return renderCommandBlock(commandInfo.name, commandInfo.output, cleaned);
-  }
 
   const formatted = formatMarkdown(cleaned);
   return `<div class="text-block">${formatted}</div>`;
@@ -176,13 +177,14 @@ function renderCommandBlock(commandName: string, output: string, fullContent: st
   // Format the output with markdown if present
   const formattedOutput = hasOutput ? formatMarkdown(output) : "";
 
-  // Strip all command tags to get clean remaining content
+  // Strip all command tags and system tags to get clean remaining content
   let remainingContent = fullContent
     .replace(/<command-name>[^<]*<\/command-name>/g, "")
     .replace(/<command-message>[^<]*<\/command-message>/g, "")
     .replace(/<command-args>[^<]*<\/command-args>/g, "")
-    .replace(/<local-command-stdout>[\s\S]*?<\/local-command-stdout>/g, "")
-    .trim();
+    .replace(/<local-command-stdout>[\s\S]*?<\/local-command-stdout>/g, "");
+  // Also strip system tags from remaining content
+  remainingContent = stripSystemTags(remainingContent);
 
   const hasRemainingContent = remainingContent.length > 0;
 
@@ -230,6 +232,9 @@ function stripSystemTags(text: string): string {
   cleaned = cleaned.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/gi, "");
   // Remove <local-command-caveat>...</local-command-caveat> tags and content
   cleaned = cleaned.replace(/<local-command-caveat>[\s\S]*?<\/local-command-caveat>/gi, "");
+  // Remove <local-command-stdout>...</local-command-stdout> tags and content
+  // (these are handled by extractCommandInfo when paired with command-name, this is a fallback)
+  cleaned = cleaned.replace(/<local-command-stdout>[\s\S]*?<\/local-command-stdout>/gi, "");
   // Trim leading/trailing whitespace
   return cleaned.trim();
 }
