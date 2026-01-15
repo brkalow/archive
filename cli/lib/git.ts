@@ -186,6 +186,39 @@ export async function getGitRootPath(projectPath: string): Promise<string | null
 }
 
 /**
+ * Get the HTTPS URL for a repository (for display/linking purposes).
+ * Converts SSH URLs to HTTPS format.
+ *
+ * Examples:
+ *   git@github.com:org/repo.git -> https://github.com/org/repo
+ *   https://github.com/org/repo.git -> https://github.com/org/repo
+ *
+ * Returns null if not a git repo or no remote URL.
+ */
+export async function getRepoHttpsUrl(projectPath: string): Promise<string | null> {
+  const remoteUrl = await getGitRemoteUrl(projectPath);
+  if (!remoteUrl) {
+    return null;
+  }
+
+  // Convert SSH format to HTTPS
+  // git@github.com:user/repo.git -> https://github.com/user/repo
+  if (remoteUrl.startsWith("git@github.com:")) {
+    return remoteUrl
+      .replace("git@github.com:", "https://github.com/")
+      .replace(/\.git$/, "");
+  }
+
+  // Already HTTPS or other format, just clean up .git suffix
+  if (remoteUrl.includes("github.com")) {
+    return remoteUrl.replace(/\.git$/, "");
+  }
+
+  // For other hosts, return as-is (may need protocol added)
+  return remoteUrl.replace(/\.git$/, "");
+}
+
+/**
  * Normalize a git remote URL to a canonical identifier.
  *
  * Examples:

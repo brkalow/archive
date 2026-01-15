@@ -16,7 +16,7 @@ import type {
 } from "../adapters/types";
 import { isRepoAllowed } from "../lib/config";
 import { debug } from "../lib/debug";
-import { captureGitDiff, getRepoIdentifier } from "../lib/git";
+import { captureGitDiff, getRepoIdentifier, getRepoHttpsUrl } from "../lib/git";
 import { Tail } from "../lib/tail";
 import { ApiClient } from "./api-client";
 
@@ -150,6 +150,9 @@ export class SessionTracker {
 
     console.log(`[${adapter.name}] Session detected: ${filePath}`);
 
+    // Get the repo HTTPS URL for display in the UI
+    const repoUrl = await getRepoHttpsUrl(sessionInfo.projectPath);
+
     try {
       const { id, stream_token, resumed, restored, message_count } = await this.api.createLiveSession({
         title: "Live Session",
@@ -157,7 +160,7 @@ export class SessionTracker {
         harness_session_id: sessionInfo.harnessSessionId,
         harness: adapter.id,
         model: sessionInfo.model,
-        repo_url: sessionInfo.repoUrl,
+        repo_url: repoUrl,
       });
 
       if (restored) {
