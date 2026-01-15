@@ -116,7 +116,6 @@ export function initializeDatabase(dbPath: string = process.env.DATABASE_PATH ||
 
   // Interactive session support
   safeAddColumn(db, "sessions", "interactive", "INTEGER DEFAULT 0");
-  safeAddColumn(db, "sessions", "wrapper_connected", "INTEGER DEFAULT 0");
 
   // Feedback messages table (for interactive sessions)
   db.run(`

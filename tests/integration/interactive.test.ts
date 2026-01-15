@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach, afterEach, afterAll } from "bun:test";
+import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { initializeDatabase } from "../../src/db/schema";
 import { SessionRepository } from "../../src/db/repository";
 import { Database } from "bun:sqlite";
@@ -15,13 +15,7 @@ describe("Interactive Sessions", () => {
     repo = new SessionRepository(db);
 
     // Import server modules dynamically to avoid port conflicts
-    const { createApiRoutes, addSessionSubscriber, removeSessionSubscriber, broadcastToSession } = await import("../../src/routes/api");
-    const {
-      addWrapperConnection,
-      handleWrapperMessage,
-      handleWrapperClose,
-      isWrapperConnected,
-    } = await import("../../src/routes/wrapper-connections");
+    const { createApiRoutes, addSessionSubscriber, removeSessionSubscriber } = await import("../../src/routes/api");
     const { handleBrowserMessage } = await import("../../src/routes/browser-messages");
 
     const api = createApiRoutes(repo);
@@ -49,28 +43,7 @@ describe("Interactive Sessions", () => {
             return new Response("WebSocket only available for live sessions", { status: 410 });
           }
           const upgraded = server.upgrade(req, {
-            data: { sessionId, isWrapper: false },
-          });
-          if (upgraded) return undefined;
-          return new Response("WebSocket upgrade failed", { status: 500 });
-        }
-
-        // Wrapper WebSocket
-        const wrapperMatch = url.pathname.match(/^\/api\/sessions\/([^\/]+)\/wrapper$/);
-        if (wrapperMatch) {
-          const sessionId = wrapperMatch[1];
-          const session = repo.getSession(sessionId);
-          if (!session) {
-            return new Response("Session not found", { status: 404 });
-          }
-          if (!session.interactive) {
-            return new Response("Session is not interactive", { status: 400 });
-          }
-          if (session.status !== "live") {
-            return new Response("WebSocket only available for live sessions", { status: 410 });
-          }
-          const upgraded = server.upgrade(req, {
-            data: { sessionId, isWrapper: true },
+            data: { sessionId },
           });
           if (upgraded) return undefined;
           return new Response("WebSocket upgrade failed", { status: 500 });
@@ -80,50 +53,37 @@ describe("Interactive Sessions", () => {
       },
       websocket: {
         open(ws) {
-          const data = ws.data as { sessionId: string; isWrapper: boolean };
-          if (data.isWrapper) {
-            addWrapperConnection(data.sessionId, ws as any);
-          } else {
-            addSessionSubscriber(data.sessionId, ws as unknown as WebSocket);
-            const session = repo.getSession(data.sessionId);
-            const messageCount = repo.getMessageCount(data.sessionId);
-            const lastIndex = repo.getLastMessageIndex(data.sessionId);
-            ws.send(JSON.stringify({
-              type: "connected",
-              session_id: data.sessionId,
-              status: session?.status || "unknown",
-              message_count: messageCount,
-              last_index: lastIndex,
-              interactive: session?.interactive ?? false,
-              wrapper_connected: isWrapperConnected(data.sessionId),
-            }));
-          }
+          const data = ws.data as { sessionId: string };
+          addSessionSubscriber(data.sessionId, ws as unknown as WebSocket);
+          const session = repo.getSession(data.sessionId);
+          const messageCount = repo.getMessageCount(data.sessionId);
+          const lastIndex = repo.getLastMessageIndex(data.sessionId);
+          ws.send(JSON.stringify({
+            type: "connected",
+            session_id: data.sessionId,
+            status: session?.status || "unknown",
+            message_count: messageCount,
+            last_index: lastIndex,
+            interactive: session?.interactive ?? false,
+          }));
         },
         message(ws, message) {
-          const data = ws.data as { sessionId: string; isWrapper: boolean };
+          const data = ws.data as { sessionId: string };
           try {
             const msg = JSON.parse(message.toString());
-            if (data.isWrapper) {
-              handleWrapperMessage(data.sessionId, msg, repo);
-            } else {
-              handleBrowserMessage(
-                data.sessionId,
-                msg,
-                repo,
-                (response) => ws.send(JSON.stringify(response))
-              );
-            }
+            handleBrowserMessage(
+              data.sessionId,
+              msg,
+              repo,
+              (response) => ws.send(JSON.stringify(response))
+            );
           } catch {
             // Invalid message
           }
         },
         close(ws) {
-          const data = ws.data as { sessionId: string; isWrapper: boolean };
-          if (data.isWrapper) {
-            handleWrapperClose(data.sessionId, repo);
-          } else {
-            removeSessionSubscriber(data.sessionId, ws as unknown as WebSocket);
-          }
+          const data = ws.data as { sessionId: string };
+          removeSessionSubscriber(data.sessionId, ws as unknown as WebSocket);
         },
       },
     });
@@ -158,7 +118,6 @@ describe("Interactive Sessions", () => {
     const session = repo.getSession(data.id);
     expect(session).not.toBeNull();
     expect(session!.interactive).toBe(true);
-    expect(session!.wrapper_connected).toBe(false);
   });
 
   test("creates non-interactive session by default", async () => {
@@ -176,28 +135,6 @@ describe("Interactive Sessions", () => {
 
     const session = repo.getSession(data.id);
     expect(session!.interactive).toBe(false);
-  });
-
-  test("rejects wrapper connection for non-interactive session", async () => {
-    // Create non-interactive session
-    const createRes = await fetch(`http://localhost:${serverPort}/api/sessions/live`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        title: "Test Non-Interactive",
-        project_path: "/tmp",
-        interactive: false,
-      }),
-    });
-    const sessionData = await createRes.json();
-
-    // Try to connect wrapper
-    const res = await fetch(`http://localhost:${serverPort}/api/sessions/${sessionData.id}/wrapper`, {
-      headers: { "Upgrade": "websocket" },
-    });
-
-    expect(res.status).toBe(400);
-    expect(await res.text()).toContain("not interactive");
   });
 });
 
@@ -230,7 +167,6 @@ describe("Repository Feedback Methods", () => {
       status: "live",
       last_activity_at: null,
       interactive: true,
-      wrapper_connected: false,
     });
 
     const feedback = repo.createFeedbackMessage(
@@ -262,7 +198,6 @@ describe("Repository Feedback Methods", () => {
       status: "live",
       last_activity_at: null,
       interactive: true,
-      wrapper_connected: false,
     });
 
     const feedback = repo.createFeedbackMessage(
@@ -293,7 +228,6 @@ describe("Repository Feedback Methods", () => {
       status: "live",
       last_activity_at: null,
       interactive: true,
-      wrapper_connected: false,
     });
 
     repo.createFeedbackMessage(session.id, "First", "message");
@@ -320,7 +254,6 @@ describe("Repository Feedback Methods", () => {
       status: "live",
       last_activity_at: null,
       interactive: true,
-      wrapper_connected: false,
     });
 
     const feedback = repo.createFeedbackMessage(session.id, "Test", "message");
@@ -345,7 +278,6 @@ describe("Repository Feedback Methods", () => {
       status: "live",
       last_activity_at: null,
       interactive: false,
-      wrapper_connected: false,
     });
 
     expect(session.interactive).toBe(false);
@@ -353,31 +285,6 @@ describe("Repository Feedback Methods", () => {
     repo.setSessionInteractive(session.id, true);
     const updated = repo.getSession(session.id);
     expect(updated!.interactive).toBe(true);
-  });
-
-  test("sets wrapper connected flag", () => {
-    const session = repo.createSession({
-      id: "test_session",
-      title: "Test",
-      description: null,
-      claude_session_id: null,
-      pr_url: null,
-      share_token: null,
-      project_path: "/tmp",
-      model: null,
-      harness: null,
-      repo_url: null,
-      status: "live",
-      last_activity_at: null,
-      interactive: true,
-      wrapper_connected: false,
-    });
-
-    expect(session.wrapper_connected).toBe(false);
-
-    repo.setWrapperConnected(session.id, true);
-    const updated = repo.getSession(session.id);
-    expect(updated!.wrapper_connected).toBe(true);
   });
 });
 
