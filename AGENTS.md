@@ -26,6 +26,7 @@ PORT=3001 bun run dev
 - **Database**: SQLite via `bun:sqlite` (file: `sessions.db`)
 - **Frontend**: Server-rendered HTML with client-side hydration, Tailwind CSS v4
 - **CLI**: Located in `cli/`, entry point is `cli/index.ts`
+- **Component Library**: Visit `/_components` to browse all design tokens, typography, and UI primitives
 
 ## Planning and Documentation
 
