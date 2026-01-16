@@ -32,6 +32,10 @@ async function main() {
 
   if (!command || command === "--help" || command === "-h") {
     console.log(`
+Claude Session Archive CLI
+
+Upload, stream, and manage Claude Code sessions.
+
 Usage: archive <command> [options]
 
 Commands:
