@@ -589,6 +589,57 @@ const messageIcons = {
   system: `<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>`,
 };
 
+// Merge command stdout from the next message into the current message's content blocks
+// Claude Code CLI exports <command-name> and <local-command-stdout> in separate messages
+function mergeCommandOutputFromNextMessage(
+  message: Message,
+  allMessages: Message[],
+  currentIndex: number
+): import("../db/schema").ContentBlock[] | undefined {
+  const blocks = message.content_blocks;
+  if (!blocks || blocks.length === 0) return blocks;
+
+  // Check if any text block contains <command-name> without <local-command-stdout>
+  const commandBlockIndex = blocks.findIndex(
+    (block) =>
+      block.type === "text" &&
+      /<command-name>/.test(block.text) &&
+      !/<local-command-stdout>/.test(block.text)
+  );
+
+  if (commandBlockIndex === -1) return blocks;
+
+  // Look at the next message to find <local-command-stdout>
+  const nextMessage = allMessages[currentIndex + 1];
+  if (!nextMessage || nextMessage.role !== "user") return blocks;
+
+  const nextBlocks = nextMessage.content_blocks;
+  if (!nextBlocks || nextBlocks.length === 0) return blocks;
+
+  // Find <local-command-stdout> in next message's first text block
+  const stdoutBlock = nextBlocks.find(
+    (block) => block.type === "text" && /<local-command-stdout>/.test(block.text)
+  );
+
+  if (!stdoutBlock || stdoutBlock.type !== "text") return blocks;
+
+  // Extract the stdout content
+  const stdoutMatch = stdoutBlock.text.match(/<local-command-stdout>([\s\S]*?)<\/local-command-stdout>/);
+  if (!stdoutMatch) return blocks;
+
+  // Merge the stdout into the command block
+  const mergedBlocks = [...blocks];
+  const commandBlock = mergedBlocks[commandBlockIndex];
+  if (commandBlock.type === "text") {
+    mergedBlocks[commandBlockIndex] = {
+      ...commandBlock,
+      text: commandBlock.text + "\n" + `<local-command-stdout>${stdoutMatch[1]}</local-command-stdout>`,
+    };
+  }
+
+  return mergedBlocks;
+}
+
 function renderMessageBlock(message: Message, allMessages: Message[], index: number, prevRenderedRole: string | null): string {
   const isUser = message.role === "user";
   const isSystem = message.role === "system";
@@ -600,10 +651,13 @@ function renderMessageBlock(message: Message, allMessages: Message[], index: num
   // Build tool result map from this and next messages
   const toolResults = buildToolResultMapFromMessages(message, allMessages, index);
 
+  // Pre-process content blocks to merge command names with their stdout from following messages
+  const processedBlocks = mergeCommandOutputFromNextMessage(message, allMessages, index);
+
   // Render content blocks if available, otherwise fall back to legacy content
-  const hasBlocks = message.content_blocks && message.content_blocks.length > 0;
+  const hasBlocks = processedBlocks && processedBlocks.length > 0;
   const content = hasBlocks
-    ? renderContentBlocks(message.content_blocks, toolResults)
+    ? renderContentBlocks(processedBlocks, toolResults)
     : formatMessageContent(message.content);
 
   // Skip rendering if content is empty (e.g., all system tags stripped)
