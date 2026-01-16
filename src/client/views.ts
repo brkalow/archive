@@ -25,7 +25,7 @@ export function renderSessionList(sessions: Session[]): string {
   const content = sessions.length === 0 ? renderEmptyState() : renderSessionGrid(sessions);
 
   return `
-    <div class="max-w-[1800px] mx-auto px-6 lg:px-10 py-8">
+    <div class="max-w-[1400px] mx-auto px-6 lg:px-10 py-8">
       <div class="flex items-center justify-between gap-6 mb-8">
         <h1 class="text-xl font-semibold text-text-primary tracking-tight">Sessions</h1>
         <div class="w-full max-w-sm">
@@ -154,7 +154,7 @@ export function renderSessionDetail({ session, messages, diffs, shareUrl, review
       ${renderHeader(session, date, resumeCommand)}
 
       <!-- Content -->
-      <div class="max-w-[1800px] mx-auto px-6 lg:px-10 py-6">
+      <div class="max-w-[1400px] mx-auto px-6 lg:px-10 py-6">
         <div class="${gridClass || ""}" data-content-grid>
           <!-- Conversation: main content, scrolls with page -->
           <div class="${conversationClass}" data-conversation-panel>
@@ -330,7 +330,7 @@ function renderHeader(session: Session, date: string, resumeCommand: string): st
 
   return `
     <header class="border-b border-bg-elevated">
-      <div class="max-w-[1800px] mx-auto px-6 lg:px-10 py-5">
+      <div class="max-w-[1400px] mx-auto px-6 lg:px-10 py-5">
         <!-- Title row -->
         <div class="flex items-center gap-3 mb-2">
           ${isLive ? renderLiveIndicator() : ""}
@@ -391,7 +391,7 @@ function renderHeader(session: Session, date: string, resumeCommand: string): st
 function renderFooter(resumeCommand: string, shareUrl: string | null): string {
   return `
     <footer class="shrink-0 border-t border-bg-elevated bg-bg-secondary">
-      <div class="max-w-[1800px] mx-auto px-6 lg:px-10 py-3">
+      <div class="max-w-[1400px] mx-auto px-6 lg:px-10 py-3">
         <div class="flex items-center gap-8">
           <!-- Resume command -->
           <div class="flex items-center gap-3 min-w-0">
