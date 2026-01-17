@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, useParams } from 'react-router-dom';
+import { GettingStartedPage } from './components/GettingStartedPage';
 import { SessionListPage } from './components/SessionListPage';
 import { SessionDetailPage } from './components/SessionDetailPage';
 import { renderComponentsShowcase } from './views';
@@ -237,7 +238,7 @@ export function App() {
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/" element={<SessionListLoader />} />
+        <Route path="/" element={<GettingStartedPage />} />
         <Route path="/sessions" element={<SessionListLoader />} />
         <Route path="/sessions/:id" element={<SessionDetailLoader />} />
         <Route path="/s/:shareToken" element={<SharedSessionLoader />} />
