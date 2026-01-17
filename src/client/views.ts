@@ -1500,24 +1500,27 @@ function renderIconsSection(): string {
 export function renderGettingStarted(): string {
   return `
     <div class="min-h-[calc(100vh-3.5rem)] flex flex-col items-center justify-start pt-16 pb-24 px-6">
-      <!-- Animated brackets -->
-      <div class="flex items-center justify-center font-mono text-[clamp(4rem,12vw,8rem)] font-light text-white/20 mb-16">
-        <div class="flex items-center justify-center animate-brackets">
-          <span class="inline-block">[</span>
-          <span class="inline-block w-[0.08em] animate-gap-pulse"></span>
-          <span class="inline-block">]</span>
+      <!-- Hero: Two column layout -->
+      <div class="w-full max-w-4xl grid grid-cols-1 md:grid-cols-2 gap-8 items-center mb-20">
+        <!-- Left: Animated brackets -->
+        <div class="flex items-center justify-center font-mono text-[clamp(6rem,15vw,12rem)] font-light text-white/20">
+          <div class="flex items-center justify-center animate-brackets">
+            <span class="inline-block">[</span>
+            <span class="inline-block w-[0.08em] animate-gap-pulse"></span>
+            <span class="inline-block">]</span>
+          </div>
+        </div>
+
+        <!-- Right: Logo + description -->
+        <div class="flex flex-col items-center md:items-start">
+          <h1 class="text-3xl font-mono font-medium text-text-primary hover:text-accent-primary transition-colors mb-4">
+            <span class="text-[18px] inline-flex gap-[3px] -translate-y-[2.5px]"><span>[</span><span>]</span></span>penctl
+          </h1>
+          <p class="text-text-secondary text-center md:text-left font-mono text-sm leading-relaxed">
+            Share, collaborate, and review your agent sessions.
+          </p>
         </div>
       </div>
-
-      <!-- Logo -->
-      <h1 class="text-2xl font-mono font-medium text-text-primary hover:text-accent-primary transition-colors mb-4">
-        <span class="text-[15px] inline-flex gap-[2px] -translate-y-[1.5px]"><span>[</span><span>]</span></span>penctl
-      </h1>
-
-      <!-- Tagline -->
-      <p class="text-text-secondary text-center max-w-lg mb-16 font-mono text-sm leading-relaxed">
-        Store, view, and share your Claude Code sessions. Stream live sessions in real-time with full conversation history and code diffs.
-      </p>
 
       <!-- Install command -->
       <div class="flex items-center gap-3 px-6 py-4 border border-bg-elevated rounded bg-bg-secondary/50 backdrop-blur mb-20 max-w-xl w-full">
@@ -1533,7 +1536,7 @@ export function renderGettingStarted(): string {
       </div>
 
       <!-- Commands section -->
-      <div class="w-full max-w-lg">
+      <div class="w-full max-w-xl">
         <div class="text-xs uppercase tracking-[0.2em] text-text-muted text-center mb-6 font-mono">Commands</div>
         <div class="border border-bg-elevated rounded bg-bg-secondary/30 backdrop-blur divide-y divide-bg-elevated font-mono text-sm">
           <div class="flex items-center justify-between px-5 py-3">
@@ -1541,8 +1544,8 @@ export function renderGettingStarted(): string {
             <span class="text-text-muted">upload a session</span>
           </div>
           <div class="flex items-center justify-between px-5 py-3">
-            <span><span class="text-text-primary">openctl</span> <span class="text-accent-primary">stream</span></span>
-            <span class="text-text-muted">live stream session</span>
+            <span><span class="text-text-primary">openctl</span> <span class="text-accent-primary">daemon start</span></span>
+            <span class="text-text-muted">live stream sessions</span>
           </div>
           <div class="flex items-center justify-between px-5 py-3">
             <span><span class="text-text-primary">openctl</span> <span class="text-accent-primary">list</span></span>
@@ -1559,32 +1562,5 @@ export function renderGettingStarted(): string {
         </svg>
       </a>
     </div>
-
-    <style>
-      .animate-brackets {
-        animation: breathe 6s ease-in-out infinite, float 8s ease-in-out infinite;
-      }
-
-      .animate-gap-pulse {
-        animation: gapPulse 4s ease-in-out infinite;
-      }
-
-      @keyframes breathe {
-        0%, 100% { transform: scale(1) rotate(0deg); }
-        50% { transform: scale(1.03) rotate(2deg); }
-      }
-
-      @keyframes float {
-        0%, 100% { translate: 0 0; }
-        25% { translate: 3px -4px; }
-        50% { translate: -2px 2px; }
-        75% { translate: 4px 3px; }
-      }
-
-      @keyframes gapPulse {
-        0%, 100% { width: 0.08em; }
-        50% { width: 0.18em; }
-      }
-    </style>
   `;
 }

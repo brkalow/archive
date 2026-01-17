@@ -126,14 +126,31 @@ async function fetchAnnotations(sessionId: string): Promise<AnnotationsData | nu
   return res.json();
 }
 
+// Nav width based on route
+function updateNavWidth(): void {
+  const nav = document.getElementById("site-nav");
+  if (!nav) return;
+
+  const isHome = window.location.pathname === "/";
+  if (isHome) {
+    nav.classList.remove("max-w-[1400px]");
+    nav.classList.add("max-w-3xl");
+  } else {
+    nav.classList.remove("max-w-3xl");
+    nav.classList.add("max-w-[1400px]");
+  }
+}
+
 // Route handlers
 router.on("/", async () => {
+  updateNavWidth();
   const app = document.getElementById("app")!;
   app.innerHTML = renderGettingStarted();
   attachGettingStartedHandlers();
 });
 
 router.on("/sessions", async () => {
+  updateNavWidth();
   const app = document.getElementById("app")!;
   app.innerHTML = '<div class="text-center py-8 text-text-muted">Loading...</div>';
 
@@ -143,6 +160,7 @@ router.on("/sessions", async () => {
 });
 
 router.on("/sessions/:id", async (params) => {
+  updateNavWidth();
   // Clean up previous live session
   if (liveSessionManager) {
     liveSessionManager.destroy();
@@ -168,6 +186,7 @@ router.on("/sessions/:id", async (params) => {
 });
 
 router.on("/s/:shareToken", async (params) => {
+  updateNavWidth();
   const app = document.getElementById("app")!;
   app.innerHTML = '<div class="text-center py-8 text-text-muted">Loading...</div>';
 
@@ -182,6 +201,7 @@ router.on("/s/:shareToken", async (params) => {
 });
 
 router.on("/_components", async () => {
+  updateNavWidth();
   const app = document.getElementById("app")!;
   app.innerHTML = renderComponentsShowcase();
 });
@@ -193,8 +213,9 @@ function attachGettingStartedHandlers() {
     btn.addEventListener("click", async () => {
       const copyBtn = btn as HTMLElement;
       const targetId = copyBtn.dataset.copyTarget;
-      const targetEl = document.getElementById(targetId!);
+      if (!targetId) return;
 
+      const targetEl = document.getElementById(targetId);
       if (targetEl) {
         const text = targetEl.textContent?.trim() || "";
         await window.copyToClipboard(text);
@@ -1164,5 +1185,25 @@ function initNewMessagesButton(scrollContainer: HTMLElement): void {
   });
 }
 
+// Header scroll border effect
+function initHeaderScrollEffect(): void {
+  const header = document.getElementById("site-header");
+  if (!header) return;
+
+  const updateBorder = () => {
+    if (window.scrollY > 0) {
+      header.classList.remove("border-transparent");
+      header.classList.add("border-bg-elevated");
+    } else {
+      header.classList.remove("border-bg-elevated");
+      header.classList.add("border-transparent");
+    }
+  };
+
+  window.addEventListener("scroll", updateBorder, { passive: true });
+  updateBorder();
+}
+
 // Start the router
 router.start();
+initHeaderScrollEffect();
