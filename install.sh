@@ -9,6 +9,15 @@ set -euo pipefail
 #   LOCAL_DIST   - Path to local dist directory for local installs
 
 REPO_OWNER="brkalow"
+
+# Print header
+print_header() {
+    local version="$1"
+    echo ""
+    echo -e "  \033[1;36mInstalling openctl CLI\033[0m"
+    echo -e "  \033[0;90mVersion: ${version}\033[0m"
+    echo ""
+}
 REPO_NAME="openctl"
 BINARY_NAME="openctl"
 INSTALL_DIR="${INSTALL_DIR:-/usr/local/bin}"
@@ -191,6 +200,8 @@ install_local() {
     os=$(detect_os)
     arch=$(detect_arch)
 
+    print_header "local"
+
     info "Installing from local dist: ${LOCAL_DIST}"
     info "Detected platform: ${os}-${arch}"
 
@@ -210,8 +221,6 @@ install_remote() {
     os=$(detect_os)
     arch=$(detect_arch)
 
-    info "Detected platform: ${os}-${arch}"
-
     # Windows uses zip, others use tar.gz
     if [ "$os" = "windows" ]; then
         archive_name="${BINARY_NAME}-${os}-${arch}.zip"
@@ -219,9 +228,10 @@ install_remote() {
         archive_name="${BINARY_NAME}-${os}-${arch}.tar.gz"
     fi
 
-    info "Fetching latest release..."
     version=$(get_latest_version)
-    info "Latest version: ${version}"
+    print_header "${version}"
+
+    info "Detected platform: ${os}-${arch}"
 
     download_url="https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/download/${version}/${archive_name}"
     checksums_url="https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/download/${version}/checksums.txt"
