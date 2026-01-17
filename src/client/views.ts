@@ -1,4 +1,4 @@
-import type { Session, Message, Diff, Review } from "../db/schema";
+import type { Session, Message } from "../db/schema";
 import { escapeHtml, renderContentBlocks, buildToolResultMap } from "./blocks";
 import { formatDuration } from "./liveSession";
 
@@ -18,52 +18,6 @@ function stripSystemTagsFromTitle(text: string): string {
   cleaned = cleaned.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/gi, "");
   cleaned = cleaned.replace(/<local-command-caveat>[\s\S]*?<\/local-command-caveat>/gi, "");
   return cleaned.replace(/\s+/g, " ").trim();
-}
-
-// Session List View
-export function renderSessionList(sessions: Session[]): string {
-  const content = sessions.length === 0 ? renderEmptyState() : renderSessionGrid(sessions);
-
-  return `
-    <div class="max-w-[1400px] mx-auto px-6 lg:px-10 py-8">
-      <div class="flex items-center justify-between gap-6 mb-8">
-        <h1 class="text-xl font-semibold text-text-primary tracking-tight">Sessions</h1>
-        <div class="w-full max-w-sm">
-          <input
-            type="search"
-            id="search-input"
-            placeholder="Search sessions..."
-            class="w-full bg-bg-secondary border border-bg-elevated rounded-md px-4 py-2.5 text-sm text-text-primary placeholder:text-text-muted focus:outline focus:outline-2 focus:outline-accent-primary focus:outline-offset-2 transition-all"
-          />
-        </div>
-      </div>
-      ${content}
-    </div>
-  `;
-}
-
-function renderEmptyState(): string {
-  return `
-    <div class="flex flex-col items-center justify-center py-16 text-center">
-      <div class="w-16 h-16 mb-4 rounded-md bg-bg-secondary flex items-center justify-center">
-        <svg class="w-8 h-8 text-text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-        </svg>
-      </div>
-      <h2 class="text-lg font-medium text-text-secondary mb-2">No sessions yet</h2>
-      <p class="text-sm text-text-muted max-w-sm">
-        Sessions can be uploaded via the API at <code class="bg-bg-tertiary px-1.5 py-0.5 rounded text-accent-primary">POST /api/sessions</code>
-      </p>
-    </div>
-  `;
-}
-
-function renderSessionGrid(sessions: Session[]): string {
-  return `
-    <div class="grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-      ${sessions.map(renderSessionCard).join("")}
-    </div>
-  `;
 }
 
 function renderSessionCard(session: Session): string {
@@ -112,64 +66,6 @@ function renderSessionCard(session: Session): string {
         }
       </div>
     </a>
-  `;
-}
-
-// Session Detail View
-interface ReviewWithCount extends Review {
-  annotation_count: number;
-}
-
-interface SessionDetailData {
-  session: Session;
-  messages: Message[];
-  diffs: Diff[];
-  shareUrl: string | null;
-  review?: ReviewWithCount | null;
-}
-
-export function renderSessionDetail({ session, messages, diffs, shareUrl, review }: SessionDetailData): string {
-  const hasDiffs = diffs.length > 0;
-  const isLive = session.status === "live";
-  const isInteractive = session.interactive ?? false;
-  const date = formatDate(session.created_at);
-
-  const resumeCommand = session.claude_session_id
-    ? `claude --resume ${session.claude_session_id}`
-    : session.project_path
-      ? `cd ${session.project_path} && claude --continue`
-      : "claude --continue";
-
-  // Determine layout classes
-  // - For sessions with diffs: two-column layout, diff panel visible
-  // - For live sessions without diffs: single-column layout, diff panel hidden (will animate in when diffs arrive)
-  // - For non-live sessions without diffs: single-column centered, no diff panel
-  const gridClass = hasDiffs ? "session-content-grid two-column" : (isLive ? "session-content-grid single-column" : "");
-  const conversationClass = !hasDiffs && !isLive ? "" : "conversation-panel-container";
-  const diffPanelClass = hasDiffs ? "diff-panel-container visible" : "diff-panel-container hidden";
-
-  return `
-    <div class="session-detail" data-session-is-live="${isLive}" data-session-has-diffs="${hasDiffs}" data-session-is-interactive="${isInteractive}">
-      <!-- Header -->
-      ${renderHeader(session, date, resumeCommand)}
-
-      <!-- Content -->
-      <div class="max-w-[1400px] mx-auto px-6 lg:px-10 py-6">
-        <div class="${gridClass || ""}" data-content-grid>
-          <!-- Conversation: main content, scrolls with page -->
-          <div class="${conversationClass}" data-conversation-panel>
-            ${renderConversationPanel(messages, isInteractive && isLive)}
-          </div>
-
-          ${isLive || hasDiffs ? `
-            <!-- Diffs: sticky sidebar on right -->
-            <div class="${diffPanelClass}" data-diff-panel>
-              ${hasDiffs ? renderDiffPanel(diffs, review) : renderEmptyDiffPlaceholder()}
-            </div>
-          ` : ""}
-        </div>
-      </div>
-    </div>
   `;
 }
 
@@ -267,34 +163,6 @@ function renderConnectionStatus(): string {
   return `<span id="connection-status"></span>`;
 }
 
-// Typing indicator component
-function renderTypingIndicator(): string {
-  return `
-    <div id="typing-indicator" class="hidden flex items-center gap-2 py-3 px-4 text-text-muted border-l-2 border-role-assistant">
-      <div class="flex gap-1">
-        <span class="w-1.5 h-1.5 bg-text-muted rounded-full animate-bounce" style="animation-delay: 0ms"></span>
-        <span class="w-1.5 h-1.5 bg-text-muted rounded-full animate-bounce" style="animation-delay: 150ms"></span>
-        <span class="w-1.5 h-1.5 bg-text-muted rounded-full animate-bounce" style="animation-delay: 300ms"></span>
-      </div>
-      <span class="text-sm">Claude is working...</span>
-    </div>
-  `;
-}
-
-// New messages button component
-function renderNewMessagesButton(): string {
-  return `
-    <button
-      id="new-messages-btn"
-      class="hidden fixed bottom-8 left-1/2 -translate-x-1/2
-             px-4 py-2 bg-accent-primary text-bg-primary text-sm font-medium rounded
-             shadow-lg hover:bg-accent-primary/90 transition-all z-50"
-    >
-      New messages
-    </button>
-  `;
-}
-
 function renderHeader(session: Session, date: string, resumeCommand: string): string {
   const isLive = session.status === "live";
   const timeDisplay = isLive ? formatDuration(session.created_at) : date;
@@ -386,198 +254,6 @@ function renderHeader(session: Session, date: string, resumeCommand: string): st
       </div>
     </header>
   `;
-}
-
-function renderFooter(resumeCommand: string, shareUrl: string | null): string {
-  return `
-    <footer class="shrink-0 border-t border-bg-elevated bg-bg-secondary">
-      <div class="max-w-[1400px] mx-auto px-6 lg:px-10 py-3">
-        <div class="flex items-center gap-8">
-          <!-- Resume command -->
-          <div class="flex items-center gap-3 min-w-0">
-            <span class="text-[11px] uppercase tracking-wider text-text-muted shrink-0 font-medium">Resume</span>
-            <code class="text-sm font-mono text-accent-primary truncate" id="resume-command">
-              ${escapeHtml(resumeCommand)}
-            </code>
-            <button data-copy-target="resume-command" title="Copy command"
-                    class="p-1.5 text-text-muted hover:text-text-primary hover:bg-bg-tertiary rounded transition-colors shrink-0">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                      d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-              </svg>
-            </button>
-          </div>
-
-          ${shareUrl ? `
-            <div class="flex items-center gap-3 min-w-0">
-              <span class="text-[11px] uppercase tracking-wider text-text-muted shrink-0 font-medium">Share</span>
-              <code class="text-sm font-mono text-diff-add truncate" id="share-url">
-                ${escapeHtml(shareUrl)}
-              </code>
-              <button data-copy-target="share-url" title="Copy URL"
-                      class="p-1.5 text-text-muted hover:text-text-primary hover:bg-bg-tertiary rounded transition-colors shrink-0">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                        d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                </svg>
-              </button>
-            </div>
-          ` : ""}
-        </div>
-      </div>
-    </footer>
-  `;
-}
-
-function renderConversationPanel(messages: Message[], isInteractive: boolean = false): string {
-  // Conversation panel: sticky sidebar on left, fixed height with internal scroll
-  // Render messages with gap tracking based on actually rendered messages
-  let prevRenderedRole: string | null = null;
-  const renderedMessages: string[] = [];
-
-  for (let idx = 0; idx < messages.length; idx++) {
-    const msg = messages[idx];
-    if (!msg) continue;
-    const result = renderMessageBlock(msg, messages, idx, prevRenderedRole);
-    if (result) {
-      renderedMessages.push(result);
-      prevRenderedRole = msg.role;
-    }
-  }
-
-  // No height adjustment needed - floating input doesn't take space from conversation
-  const conversationHeight = "calc(100% - 2rem)";
-
-  return `
-    <div class="min-w-0 lg:sticky lg:top-[calc(3.5rem+1.5rem)] lg:self-start" style="height: calc(100vh - 10rem);">
-      <div class="flex items-center justify-between mb-4">
-        <h2 class="text-sm font-semibold text-text-primary">Conversation</h2>
-        <span id="message-count" class="text-xs text-text-muted tabular-nums">${messages.length} messages</span>
-      </div>
-      <div id="conversation-list" class="conversation-panel flex-1 overflow-y-auto flex flex-col" style="height: ${conversationHeight};">
-        ${renderedMessages.join("")}
-        ${renderTypingIndicator()}
-      </div>
-      <!-- Placeholder for feedback input (rendered dynamically for interactive sessions) -->
-      <div id="feedback-input-placeholder"></div>
-    </div>
-    ${renderNewMessagesButton()}
-  `;
-}
-
-export function renderDiffPanel(diffs: Diff[], review?: ReviewWithCount | null): string {
-  // Separate diffs by relevance
-  const sessionDiffs = diffs.filter((d) => d.is_session_relevant);
-  const otherDiffs = diffs.filter((d) => !d.is_session_relevant);
-
-  const sessionCount = sessionDiffs.length;
-  const otherCount = otherDiffs.length;
-  const totalCount = diffs.length;
-
-  return `
-    <div class="min-w-0">
-      ${review ? renderReviewSummary(review) : ""}
-      <div class="flex items-center justify-between mb-4">
-        <h2 class="text-sm font-semibold text-text-primary">Code Changes</h2>
-        <span class="text-xs text-text-muted tabular-nums">${totalCount} file${totalCount !== 1 ? "s" : ""}</span>
-      </div>
-      <div id="diffs-container" class="bg-bg-secondary border border-bg-elevated rounded-md overflow-hidden">
-        ${
-          sessionCount > 0
-            ? `
-          <div class="diff-group">
-            <div class="px-3 py-2 text-xs font-medium text-text-secondary bg-bg-tertiary border-b border-bg-elevated truncate">
-              Changed in this session (${sessionCount})
-            </div>
-            ${sessionDiffs.map((d) => renderDiffBlock(d)).join("")}
-          </div>
-        `
-            : ""
-        }
-
-        ${
-          otherCount > 0
-            ? `
-          <div class="diff-group">
-            <button class="w-full px-3 py-2 text-xs font-medium text-text-muted bg-bg-tertiary border-b border-bg-elevated flex items-center gap-2 hover:bg-bg-elevated transition-colors"
-                    data-toggle-other-diffs>
-              <span class="toggle-icon transition-transform">▶</span>
-              <span>Other branch changes (${otherCount})</span>
-              <span class="text-text-muted/60 ml-auto truncate max-w-[200px]">
-                ${summarizeOtherFiles(otherDiffs)}
-              </span>
-            </button>
-            <div id="other-diffs-content" class="hidden">
-              ${otherDiffs.map((d) => renderDiffBlock(d)).join("")}
-            </div>
-          </div>
-        `
-            : ""
-        }
-
-        ${
-          totalCount === 0
-            ? `
-          <div class="flex items-center justify-center h-full text-text-muted text-sm py-8">
-            No code changes
-          </div>
-        `
-            : ""
-        }
-      </div>
-    </div>
-  `;
-}
-
-function renderEmptyDiffPlaceholder(): string {
-  return `
-    <div class="min-w-0">
-      <div class="flex items-center justify-between mb-4">
-        <h2 class="text-sm font-semibold text-text-primary">Code Changes</h2>
-        <span class="text-xs text-text-muted tabular-nums">0 files</span>
-      </div>
-      <div id="diffs-container" class="bg-bg-secondary border border-bg-elevated rounded-md overflow-hidden">
-        <div class="flex items-center justify-center h-full text-text-muted text-sm py-8">
-          No code changes yet
-        </div>
-      </div>
-    </div>
-  `;
-}
-
-function renderReviewSummary(review: ReviewWithCount): string {
-  return `
-    <div class="bg-bg-secondary border border-bg-elevated rounded-md overflow-hidden mb-4">
-      <div class="flex items-center justify-between px-4 py-2.5 bg-bg-tertiary border-b border-bg-elevated">
-        <span class="text-sm font-medium text-text-primary flex items-center gap-2">
-          <svg class="w-4 h-4 text-accent-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-          </svg>
-          Code Review
-        </span>
-        ${review.model ? `<span class="text-xs text-text-muted font-mono">${escapeHtml(review.model)}</span>` : ""}
-      </div>
-      <div class="px-4 py-3 text-sm text-text-secondary leading-relaxed">
-        ${formatMessageContent(review.summary)}
-      </div>
-      ${review.annotation_count > 0 ? `
-        <div class="px-4 py-2 border-t border-bg-elevated text-xs text-text-muted">
-          ${review.annotation_count} annotation${review.annotation_count !== 1 ? "s" : ""}
-        </div>
-      ` : ""}
-    </div>
-  `;
-}
-
-function summarizeOtherFiles(diffs: Diff[]): string {
-  const names = diffs
-    .map((d) => d.filename?.split("/").pop() || "unknown")
-    .slice(0, 3);
-
-  if (diffs.length > 3) {
-    return names.join(", ") + "...";
-  }
-  return names.join(", ");
 }
 
 // Message role icons
@@ -707,45 +383,6 @@ function stripLineNumbersFromCode(code: string): string {
   return lines.map((line) => line.replace(/^\s*\d+[→:\|\t]\s?/, "")).join("\n");
 }
 
-function renderDiffBlock(diff: Diff): string {
-  const filename = diff.filename || "Unknown file";
-  // Use pre-computed stats from database
-  const additions = diff.additions || 0;
-  const deletions = diff.deletions || 0;
-  const totalChanges = additions + deletions;
-
-  // Large diff threshold - collapse by default if >300 lines changed
-  const isLarge = totalChanges > 300;
-  const isCollapsed = isLarge;
-  const blockId = `diff-${diff.diff_index}`;
-
-  return `
-    <div class="diff-file border-b border-bg-elevated last:border-b-0"
-         data-filename="${escapeHtml(filename)}">
-      <button class="diff-file-header flex items-center justify-between w-full px-3 py-2 bg-bg-tertiary border-b border-bg-elevated hover:bg-bg-elevated transition-colors text-left sticky top-14 z-10"
-              data-toggle-diff="${blockId}"
-              data-collapsed="${isCollapsed}">
-        <div class="flex items-center gap-2 min-w-0">
-          <span class="toggle-icon text-text-muted text-xs transition-transform">${isCollapsed ? "▶" : "▼"}</span>
-          <span class="text-[13px] font-mono text-text-primary truncate">${escapeHtml(filename)}</span>
-        </div>
-        <div class="flex items-center gap-2 text-xs font-mono shrink-0 tabular-nums">
-          ${deletions > 0 ? `<span class="text-diff-del">-${deletions}</span>` : ""}
-          ${additions > 0 ? `<span class="text-diff-add">+${additions}</span>` : ""}
-          ${isLarge ? `<span class="collapse-label text-text-muted ml-2">${isCollapsed ? "Show" : "Hide"}</span>` : ""}
-        </div>
-      </button>
-      <div id="${blockId}" class="diff-content ${isCollapsed ? "hidden" : ""}"
-           data-diff-content="${escapeHtml(diff.diff_content)}"
-           data-diff-id="${diff.id}"
-           data-filename="${escapeHtml(filename)}"
-           data-needs-render="${isCollapsed ? "true" : "false"}">
-        ${isCollapsed ? "" : '<div class="px-4 py-3 text-text-muted text-sm">Loading diff...</div>'}
-      </div>
-    </div>
-  `;
-}
-
 // Not Found View
 export function renderNotFound(): string {
   return `
@@ -755,11 +392,6 @@ export function renderNotFound(): string {
       <a href="/" class="btn btn-primary">Go Home</a>
     </div>
   `;
-}
-
-// Export function to render a single message for live appending
-export function renderSingleMessage(message: Message, prevRole: string | null): string {
-  return renderMessageBlock(message, [message], 0, prevRole);
 }
 
 // Connection status rendering
@@ -777,90 +409,6 @@ export function renderConnectionStatusHtml(connected: boolean): string {
     <span class="flex items-center gap-1 text-xs text-yellow-500">
       <span class="w-1.5 h-1.5 rounded-full bg-yellow-500 animate-pulse"></span>
       <span>Reconnecting...</span>
-    </span>
-  `;
-}
-
-// Feedback input state for interactive sessions
-export interface FeedbackInputState {
-  isInteractive: boolean;
-  claudeState: "running" | "waiting" | "unknown";
-  sessionComplete: boolean;
-  pendingFeedback: Array<{ id: string; status: "pending" | "approved" | "rejected" }>;
-}
-
-// Render feedback input panel for interactive sessions
-export function renderFeedbackInput(state: FeedbackInputState): string {
-  const { isInteractive, claudeState, sessionComplete, pendingFeedback } = state;
-
-  // Non-interactive or complete sessions don't show input
-  if (!isInteractive || sessionComplete) {
-    return "";
-  }
-
-  const pendingCount = pendingFeedback.filter(f => f.status === "pending").length;
-  const isMac = typeof navigator !== "undefined" && navigator.userAgent.includes("Mac");
-  const shortcutKey = isMac ? "⌘" : "Ctrl";
-
-  // Status indicator for when Claude is working or messages are queued
-  const showStatusBadge = claudeState === "running" || pendingCount > 0;
-  const statusBadge = showStatusBadge ? `
-    <div class="flex items-center gap-3 text-xs px-3 py-1 bg-bg-secondary/80 backdrop-blur-sm border border-bg-elevated rounded mb-2">
-      ${claudeState === "running" ? `
-        <span class="flex items-center gap-1.5 text-text-secondary">
-          <span class="w-1.5 h-1.5 rounded-full bg-accent-primary animate-pulse"></span>
-          Working
-        </span>
-      ` : ""}
-      ${pendingCount > 0 ? `
-        <span class="text-amber-400 font-medium">${pendingCount} queued</span>
-      ` : ""}
-    </div>
-  ` : "";
-
-  return `
-    <div id="feedback-input-container" class="fixed bottom-6 left-1/2 -translate-x-1/2 z-[100] flex flex-col items-center">
-      ${statusBadge}
-      <div class="flex items-center w-[min(600px,calc(100vw-2rem))] bg-bg-secondary border border-bg-elevated rounded-md px-4 py-2 shadow-lg transition-all duration-200 focus-within:outline focus-within:outline-2 focus-within:outline-accent-primary focus-within:outline-offset-2">
-        <textarea
-          id="feedback-input"
-          class="flex-1 bg-transparent text-text-primary text-[15px] leading-relaxed placeholder:text-text-muted resize-none border-none outline-none focus-visible:outline-none py-1 min-h-[24px] max-h-[150px]"
-          placeholder="Ask a question..."
-          rows="1"
-        ></textarea>
-        <div class="flex items-center gap-2 ml-3">
-          <kbd class="hidden sm:inline-flex text-[11px] text-text-muted font-mono px-2 py-1 bg-bg-tertiary rounded">${shortcutKey}I</kbd>
-          <button
-            id="feedback-submit"
-            class="w-7 h-7 flex items-center justify-center rounded bg-text-muted text-bg-primary transition-all duration-150 hover:bg-text-primary hover:scale-105 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:scale-100"
-            title="Send (${shortcutKey}+Enter)"
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M12 19V5M5 12l7-7 7 7"/>
-            </svg>
-          </button>
-        </div>
-      </div>
-    </div>
-  `;
-}
-
-
-// Render session status indicator for interactive sessions
-export function renderSessionStatus(claudeState: "running" | "waiting" | "unknown"): string {
-  if (claudeState === "waiting") {
-    return `
-      <span class="flex items-center gap-1 text-xs text-accent-primary">
-        <span class="w-1.5 h-1.5 rounded-full bg-accent-primary animate-pulse"></span>
-        <span>Waiting for input</span>
-      </span>
-    `;
-  }
-
-  return `
-    <span class="flex items-center gap-1 text-xs text-green-400">
-      <span class="w-1.5 h-1.5 rounded-full bg-green-400"></span>
-      <span>Interactive</span>
     </span>
   `;
 }

@@ -47,7 +47,7 @@ const toolIcons = {
 };
 
 // Get the appropriate icon for a tool
-function getToolIcon(toolName: string): string {
+export function getToolIcon(toolName: string): string {
   // MCP tools get gear icon
   if (toolName.startsWith("mcp__")) {
     return toolIcons.gear;
@@ -223,7 +223,7 @@ function stripLineNumbersFromCode(code: string): string {
   return lines.map((line) => line.replace(/^\s*\d+[→:\|\t]\s?/, "")).join("\n");
 }
 
-function stripSystemTags(text: string): string {
+export function stripSystemTags(text: string): string {
   // Remove <system_instruction>...</system_instruction> tags and content
   let cleaned = text.replace(/<system_instruction>[\s\S]*?<\/system_instruction>/gi, "");
   // Remove <system-instruction>...</system-instruction> tags and content
@@ -476,13 +476,6 @@ function getToolStatus(result?: ToolResultBlock): string {
     return '<span class="tool-status text-diff-del">&#10007;</span>';
   }
   return '<span class="tool-status text-diff-add">&#10003;</span>';
-}
-
-function extractErrorSummary(content: string): string {
-  // Extract first line or first 20 chars of error
-  const firstLine = content.split("\n")[0] || "";
-  if (firstLine.length <= 20) return firstLine;
-  return firstLine.slice(0, 20) + "...";
 }
 
 function renderToolInput(block: ToolUseBlock, fullPathShown?: string | null): string {
