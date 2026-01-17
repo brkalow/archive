@@ -37,6 +37,7 @@ const server = Bun.serve({
   routes: {
     // HTML routes - all pages use the same template with client-side routing
     "/": homepage,
+    "/sessions": homepage,
     "/sessions/:id": homepage,
     "/s/:shareToken": homepage,
     "/_components": homepage,

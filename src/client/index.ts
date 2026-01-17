@@ -1,5 +1,5 @@
 import { Router } from "./router";
-import { renderSessionList, renderSessionDetail, renderNotFound, renderSingleMessage, renderConnectionStatusHtml, renderDiffPanel, escapeHtml, renderFeedbackInput, renderSessionStatus, renderComponentsShowcase, type FeedbackInputState } from "./views";
+import { renderSessionList, renderSessionDetail, renderNotFound, renderSingleMessage, renderConnectionStatusHtml, renderDiffPanel, escapeHtml, renderFeedbackInput, renderSessionStatus, renderComponentsShowcase, renderGettingStarted, type FeedbackInputState } from "./views";
 import { formatMarkdown } from "./blocks";
 import type { Session, Message, Diff, Review, Annotation, AnnotationType } from "../db/schema";
 // Import @pierre/diffs - this registers the web component and provides FileDiff class
@@ -129,6 +129,12 @@ async function fetchAnnotations(sessionId: string): Promise<AnnotationsData | nu
 // Route handlers
 router.on("/", async () => {
   const app = document.getElementById("app")!;
+  app.innerHTML = renderGettingStarted();
+  attachGettingStartedHandlers();
+});
+
+router.on("/sessions", async () => {
+  const app = document.getElementById("app")!;
   app.innerHTML = '<div class="text-center py-8 text-text-muted">Loading...</div>';
 
   const sessions = await fetchSessions();
@@ -181,6 +187,26 @@ router.on("/_components", async () => {
 });
 
 // Event handler attachments
+function attachGettingStartedHandlers() {
+  // Copy button handler for the install command
+  document.querySelectorAll("[data-copy-target]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const copyBtn = btn as HTMLElement;
+      const targetId = copyBtn.dataset.copyTarget;
+      const targetEl = document.getElementById(targetId!);
+
+      if (targetEl) {
+        const text = targetEl.textContent?.trim() || "";
+        await window.copyToClipboard(text);
+
+        // Show feedback
+        copyBtn.classList.add("text-diff-add");
+        setTimeout(() => copyBtn.classList.remove("text-diff-add"), 1000);
+      }
+    });
+  });
+}
+
 function attachSessionListHandlers() {
   const searchInput = document.getElementById("search-input") as HTMLInputElement;
   if (searchInput) {

@@ -1495,3 +1495,96 @@ function renderIconsSection(): string {
     </section>
   `;
 }
+
+// Getting Started Page
+export function renderGettingStarted(): string {
+  return `
+    <div class="min-h-[calc(100vh-3.5rem)] flex flex-col items-center justify-start pt-16 pb-24 px-6">
+      <!-- Animated brackets -->
+      <div class="flex items-center justify-center font-mono text-[clamp(4rem,12vw,8rem)] font-light text-white/20 mb-16">
+        <div class="flex items-center justify-center animate-brackets">
+          <span class="inline-block">[</span>
+          <span class="inline-block w-[0.08em] animate-gap-pulse"></span>
+          <span class="inline-block">]</span>
+        </div>
+      </div>
+
+      <!-- Logo -->
+      <h1 class="text-2xl font-mono font-medium text-text-primary hover:text-accent-primary transition-colors mb-4">
+        <span class="text-[15px] inline-flex gap-[2px] -translate-y-[1.5px]"><span>[</span><span>]</span></span>penctl
+      </h1>
+
+      <!-- Tagline -->
+      <p class="text-text-secondary text-center max-w-lg mb-16 font-mono text-sm leading-relaxed">
+        Store, view, and share your Claude Code sessions. Stream live sessions in real-time with full conversation history and code diffs.
+      </p>
+
+      <!-- Install command -->
+      <div class="flex items-center gap-3 px-6 py-4 border border-bg-elevated rounded bg-bg-secondary/50 backdrop-blur mb-20 max-w-xl w-full">
+        <span class="text-text-muted font-mono">$</span>
+        <code id="install-command" class="flex-1 font-mono text-text-primary text-sm">curl -fsSL https://openctl.dev/setup/install.sh | bash</code>
+        <button
+          data-copy-target="install-command"
+          class="text-text-muted hover:text-text-primary transition-colors"
+          title="Copy to clipboard"
+        >
+          ${icons.copy}
+        </button>
+      </div>
+
+      <!-- Commands section -->
+      <div class="w-full max-w-lg">
+        <div class="text-xs uppercase tracking-[0.2em] text-text-muted text-center mb-6 font-mono">Commands</div>
+        <div class="border border-bg-elevated rounded bg-bg-secondary/30 backdrop-blur divide-y divide-bg-elevated font-mono text-sm">
+          <div class="flex items-center justify-between px-5 py-3">
+            <span><span class="text-text-primary">openctl</span> <span class="text-accent-primary">upload</span></span>
+            <span class="text-text-muted">upload a session</span>
+          </div>
+          <div class="flex items-center justify-between px-5 py-3">
+            <span><span class="text-text-primary">openctl</span> <span class="text-accent-primary">stream</span></span>
+            <span class="text-text-muted">live stream session</span>
+          </div>
+          <div class="flex items-center justify-between px-5 py-3">
+            <span><span class="text-text-primary">openctl</span> <span class="text-accent-primary">list</span></span>
+            <span class="text-text-muted">view all sessions</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Browse link -->
+      <a href="/sessions" class="mt-16 text-accent-primary hover:text-accent-primary/80 transition-colors font-mono text-sm flex items-center gap-2">
+        <span>browse sessions</span>
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3" />
+        </svg>
+      </a>
+    </div>
+
+    <style>
+      .animate-brackets {
+        animation: breathe 6s ease-in-out infinite, float 8s ease-in-out infinite;
+      }
+
+      .animate-gap-pulse {
+        animation: gapPulse 4s ease-in-out infinite;
+      }
+
+      @keyframes breathe {
+        0%, 100% { transform: scale(1) rotate(0deg); }
+        50% { transform: scale(1.03) rotate(2deg); }
+      }
+
+      @keyframes float {
+        0%, 100% { translate: 0 0; }
+        25% { translate: 3px -4px; }
+        50% { translate: -2px 2px; }
+        75% { translate: 4px 3px; }
+      }
+
+      @keyframes gapPulse {
+        0%, 100% { width: 0.08em; }
+        50% { width: 0.18em; }
+      }
+    </style>
+  `;
+}
