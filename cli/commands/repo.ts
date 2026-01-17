@@ -1,7 +1,7 @@
 import { parseArgs } from "util";
 import { resolve } from "path";
 import {
-  loadConfig,
+  getServerUrl,
   getAllowedRepos,
   addAllowedRepo,
   removeAllowedRepo,
@@ -56,8 +56,7 @@ async function repoAllow(args: string[]): Promise<void> {
     allowPositionals: true,
   });
 
-  const config = loadConfig();
-  const serverUrl = values.server || config.server || "http://localhost:3000";
+  const serverUrl = getServerUrl(values.server);
   const targetPath = positionals[0] || process.cwd();
 
   // Resolve to absolute path
@@ -88,7 +87,6 @@ async function repoDeny(args: string[]): Promise<void> {
     allowPositionals: true,
   });
 
-  const config = loadConfig();
   const targetPath = positionals[0] || process.cwd();
 
   // Resolve to absolute path
@@ -116,7 +114,7 @@ async function repoDeny(args: string[]): Promise<void> {
     }
   } else {
     // Remove from specific server
-    const serverUrl = values.server || config.server || "http://localhost:3000";
+    const serverUrl = getServerUrl(values.server);
     if (removeAllowedRepo(serverUrl, repoId)) {
       console.log(`Denied: ${repoId}`);
       console.log(`Server: ${serverUrl}`);
@@ -137,8 +135,6 @@ async function repoList(args: string[]): Promise<void> {
     },
   });
 
-  const config = loadConfig();
-
   if (values.all) {
     // Show all servers
     const allServers = getAllServersWithRepos();
@@ -155,7 +151,7 @@ async function repoList(args: string[]): Promise<void> {
     }
   } else {
     // Show specific server
-    const serverUrl = values.server || config.server || "http://localhost:3000";
+    const serverUrl = getServerUrl(values.server);
     const repos = getAllowedRepos(serverUrl);
 
     if (repos.length === 0) {

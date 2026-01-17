@@ -3,6 +3,17 @@ import { dirname, join } from "path";
 
 const CONFIG_PATH = join(Bun.env.HOME || "~", ".openctl", "config.json");
 
+export const DEFAULT_SERVER = "https://openctl.dev";
+
+/**
+ * Get the server URL, falling back to the default.
+ */
+export function getServerUrl(override?: string): string {
+  if (override) return override;
+  const config = loadConfig();
+  return config.server || DEFAULT_SERVER;
+}
+
 interface ServerConfig {
   allowedRepos: string[];
 }

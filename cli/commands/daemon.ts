@@ -1,6 +1,6 @@
 import { parseArgs } from "util";
 import { startDaemon, stopDaemon, getDaemonStatus } from "../daemon";
-import { loadConfig } from "../lib/config";
+import { getServerUrl } from "../lib/config";
 
 export async function daemon(args: string[]): Promise<void> {
   const subcommand = args[0];
@@ -44,12 +44,10 @@ async function daemonStart(args: string[]): Promise<void> {
     },
   });
 
-  const config = loadConfig();
-
   const options = {
     harnesses: values.harness || [],
     watchPaths: values.watch || [],
-    server: values.server || config.server || "http://localhost:3000",
+    server: getServerUrl(values.server),
     idleTimeout: parseInt(values["idle-timeout"] || "300", 10),
     verbose: values.verbose || false,
   };

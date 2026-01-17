@@ -7,7 +7,7 @@ import { existsSync } from "fs";
 import { basename, join } from "path";
 import { Glob } from "bun";
 import { getClientId } from "../lib/client-id";
-import { loadConfig } from "../lib/config";
+import { DEFAULT_SERVER, getServerUrl } from "../lib/config";
 
 // UUID v4 pattern
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -40,13 +40,11 @@ interface ParsedOptions {
 }
 
 function parseArgs(args: string[]): ParsedOptions {
-  const config = loadConfig();
-
   const options: ParsedOptions = {
     harness: "Claude Code",
     diff: true,
     review: false,
-    server: config.server || "http://localhost:3000",
+    server: getServerUrl(),
     help: false,
   };
 
@@ -628,7 +626,7 @@ Options:
   --diff, -d      Include git diff (default: true)
   --no-diff       Exclude git diff
   --review, -r    Generate code review using Claude CLI (requires diff)
-  --server        Server URL (default: from config or http://localhost:3000)
+  --server        Server URL (default: from config or ${DEFAULT_SERVER})
   --help, -h      Show this help
   `);
 }

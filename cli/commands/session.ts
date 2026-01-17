@@ -1,5 +1,5 @@
 import { parseArgs } from "util";
-import { loadConfig, isRepoAllowed, addAllowedRepo } from "../lib/config";
+import { getServerUrl, isRepoAllowed, addAllowedRepo } from "../lib/config";
 import { getClientId } from "../lib/client-id";
 import { getRepoIdentifier } from "../lib/git";
 import { getDaemonStatus } from "../daemon";
@@ -86,8 +86,7 @@ async function sessionList(args: string[]): Promise<void> {
     },
   });
 
-  const config = loadConfig();
-  const serverUrl = values.server || config.server || "http://localhost:3000";
+  const serverUrl = getServerUrl(values.server);
 
   // Build query string
   const params = new URLSearchParams();
@@ -151,8 +150,7 @@ async function sessionDelete(args: string[]): Promise<void> {
     process.exit(1);
   }
 
-  const config = loadConfig();
-  const serverUrl = values.server || config.server || "http://localhost:3000";
+  const serverUrl = getServerUrl(values.server);
 
   // Confirm unless --force
   if (!values.force) {
@@ -240,8 +238,7 @@ async function sessionShare(args: string[]): Promise<void> {
   const projectPath = extractProjectPathFromSessionPath(sessionPath);
 
   // 4. Get server URL
-  const config = loadConfig();
-  const serverUrl = values.server || config.server || "http://localhost:3000";
+  const serverUrl = getServerUrl(values.server);
 
   // 5. Check repo allowlist
   const repoId = await getRepoIdentifier(projectPath || process.cwd());
