@@ -39,6 +39,25 @@ function showToastImpl(message: string, type: ToastType = 'success'): void {
   }, TOAST_DURATION_MS);
 }
 
+// Header scroll border effect
+function initHeaderScrollEffect(): void {
+  const header = document.getElementById('site-header');
+  if (!header) return;
+
+  const updateBorder = () => {
+    if (window.scrollY > 0) {
+      header.classList.remove('border-transparent');
+      header.classList.add('border-bg-elevated');
+    } else {
+      header.classList.remove('border-bg-elevated');
+      header.classList.add('border-transparent');
+    }
+  };
+
+  window.addEventListener('scroll', updateBorder, { passive: true });
+  updateBorder();
+}
+
 export function setupGlobals(): void {
   window.copyToClipboard = async (text: string) => {
     try {
@@ -53,6 +72,9 @@ export function setupGlobals(): void {
   window.showToast = (message: string, type: ToastType = 'success') => {
     showToastImpl(message, type);
   };
+
+  // Initialize header scroll effect
+  initHeaderScrollEffect();
 }
 
 declare global {
