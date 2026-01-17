@@ -1,6 +1,7 @@
 import { initializeDatabase } from "./db/schema";
 import { SessionRepository } from "./db/repository";
 import { createApiRoutes, addSessionSubscriber, removeSessionSubscriber, closeAllConnections, broadcastToSession } from "./routes/api";
+import { createPageRoutes } from "./routes/pages";
 import { handleBrowserMessage } from "./routes/browser-messages";
 import { handleGetPendingFeedback, handleMarkFeedbackDelivered, handleGetPendingFeedbackByClaudeSession, handleMarkSessionInteractive, handleMarkSessionFinished } from "./routes/feedback-api";
 import type { BrowserToServerMessage } from "./routes/websocket-types";
@@ -18,6 +19,7 @@ const HOST = process.env.HOST || "0.0.0.0";
 const db = initializeDatabase();
 const repo = new SessionRepository(db);
 const api = createApiRoutes(repo);
+const pages = createPageRoutes(repo);
 
 // WebSocket data attached to each connection
 interface BrowserWebSocketData {
@@ -37,9 +39,15 @@ const server = Bun.serve({
   routes: {
     // HTML routes - all pages use the same template with client-side routing
     "/": homepage,
+    "/sessions": homepage,
     "/sessions/:id": homepage,
     "/s/:shareToken": homepage,
     "/_components": homepage,
+
+    // Server-rendered stats page
+    "/stats": {
+      GET: (req) => pages.statsPage(req),
+    },
 
     // Install script for CLI setup
     "/setup/install.sh": () => new Response(installScript, {
@@ -134,6 +142,23 @@ const server = Bun.serve({
 
     "/api/sessions/:id/feedback/:messageId/delivered": {
       POST: (req) => handleMarkFeedbackDelivered(req.params.id, req.params.messageId, repo),
+    },
+
+    // Analytics Stats endpoints
+    "/api/stats": {
+      GET: (req) => api.getStats(req),
+    },
+
+    "/api/stats/timeseries": {
+      GET: (req) => api.getStatsTimeseries(req),
+    },
+
+    "/api/stats/tools": {
+      GET: (req) => api.getStatsTools(req),
+    },
+
+    "/api/stats/dashboard": {
+      GET: (req) => api.getDashboardStats(req),
     },
   },
 

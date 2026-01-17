@@ -139,6 +139,40 @@ export function initializeDatabase(dbPath: string = process.env.DATABASE_PATH ||
   // Index for session lookup by claude_session_id (for upsert on upload)
   db.run(`CREATE INDEX IF NOT EXISTS idx_sessions_claude_session_id ON sessions(claude_session_id)`);
 
+  // Analytics events - raw event log (append-only)
+  db.run(`
+    CREATE TABLE IF NOT EXISTS analytics_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_type TEXT NOT NULL,
+      session_id TEXT,
+      client_id TEXT,
+      timestamp TEXT NOT NULL DEFAULT (datetime('now', 'utc')),
+      properties TEXT NOT NULL DEFAULT '{}',
+      FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE SET NULL
+    )
+  `);
+
+  db.run(`CREATE INDEX IF NOT EXISTS idx_events_type ON analytics_events(event_type)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_events_timestamp ON analytics_events(timestamp)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_events_client ON analytics_events(client_id)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_events_type_timestamp ON analytics_events(event_type, timestamp)`);
+
+  // Analytics daily stats - pre-computed daily aggregates
+  db.run(`
+    CREATE TABLE IF NOT EXISTS analytics_daily_stats (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      date TEXT NOT NULL,
+      client_id TEXT,
+      model TEXT,
+      stat_type TEXT NOT NULL,
+      value INTEGER NOT NULL DEFAULT 0,
+      UNIQUE(date, client_id, model, stat_type)
+    )
+  `);
+
+  db.run(`CREATE INDEX IF NOT EXISTS idx_daily_stats_date ON analytics_daily_stats(date)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_daily_stats_client ON analytics_daily_stats(client_id)`);
+
   return db;
 }
 
@@ -266,4 +300,72 @@ export type Annotation = {
   side: "additions" | "deletions";
   annotation_type: AnnotationType;
   content: string;
+};
+
+// Analytics types
+
+// Event types
+export type AnalyticsEventType =
+  | "session.created"
+  | "session.completed"
+  | "message.sent"
+  | "diff.updated"
+  | "tool.invoked";
+
+// Stat types for daily rollups
+export type StatType =
+  | "sessions_created"
+  | "sessions_interactive"
+  | "sessions_live"
+  | "prompts_sent"
+  | "lines_added"
+  | "lines_removed"
+  | "files_changed"
+  | `tool_${string}`;
+
+// Raw event record
+export type AnalyticsEvent = {
+  id: number;
+  event_type: AnalyticsEventType;
+  session_id: string | null;
+  client_id: string | null;
+  timestamp: string;
+  properties: Record<string, unknown>;
+};
+
+// Daily stat record
+export type AnalyticsDailyStat = {
+  id: number;
+  date: string;           // YYYY-MM-DD
+  client_id: string | null;
+  model: string | null;
+  stat_type: StatType;
+  value: number;
+};
+
+// Event property types for type safety
+export type SessionCreatedProperties = {
+  model?: string;
+  harness?: string;
+  interactive?: boolean;
+  is_live?: boolean;
+};
+
+export type SessionCompletedProperties = {
+  duration_seconds?: number;
+  message_count?: number;
+};
+
+export type MessageSentProperties = {
+  content_length?: number;
+};
+
+export type DiffUpdatedProperties = {
+  files_changed: number;
+  additions: number;
+  deletions: number;
+};
+
+export type ToolInvokedProperties = {
+  tool_name: string;
 };

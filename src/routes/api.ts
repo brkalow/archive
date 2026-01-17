@@ -1,5 +1,19 @@
 import { SessionRepository } from "../db/repository";
-import type { Message, Diff, ContentBlock, ToolUseBlock, ToolResultBlock, ImageBlock, SessionStatus, AnnotationType } from "../db/schema";
+import type { Message, Diff, ContentBlock, ToolUseBlock, ToolResultBlock, ImageBlock, SessionStatus, AnnotationType, StatType } from "../db/schema";
+import { getDateRange, parsePeriod, fillTimeseriesGaps } from "../analytics/queries";
+import { AnalyticsRecorder } from "../analytics/events";
+import { getClientId } from "../utils/request";
+
+// Helper to calculate content length from content blocks
+function calculateContentLength(contentBlocks: Array<{ type: string; text?: string }>): number {
+  let length = 0;
+  for (const block of contentBlocks) {
+    if (block.type === "text" && block.text) {
+      length += block.text.length;
+    }
+  }
+  return length;
+}
 
 // Payload size limits to prevent DoS attacks
 const MAX_JSON_PAYLOAD_BYTES = 10 * 1024 * 1024; // 10MB for JSON payloads
@@ -27,11 +41,6 @@ function json(data: unknown, status = 200, headers: Record<string, string> = {})
 
 function jsonError(error: string, status: number): Response {
   return json({ error }, status);
-}
-
-// Extract client ID from request header
-function getClientId(req: Request): string | null {
-  return req.headers.get("X-Openctl-Client-ID");
 }
 
 // URL validation
@@ -106,6 +115,8 @@ function deriveTextContent(blocks: ContentBlock[]): string {
 }
 
 export function createApiRoutes(repo: SessionRepository) {
+  const analytics = new AnalyticsRecorder(repo);
+
   return {
     // Get all sessions or a specific session by claude_session_id
     getSessions(req: Request): Response {
@@ -294,6 +305,35 @@ export function createApiRoutes(repo: SessionRepository) {
 
         if (isUpdate) {
           console.log(`Updated existing session ${session.id} (claude_session_id: ${claudeSessionId})`);
+        }
+
+        // Record analytics for session creation
+        analytics.recordSessionCreated(session.id, {
+          clientId: clientId || undefined,
+          model: session.model || undefined,
+          harness: session.harness || undefined,
+          interactive: false,
+          isLive: false,
+        });
+
+        // Record analytics for messages from uploaded session (batched for performance)
+        analytics.recordMessagesFromUpload(session.id, messages, {
+          clientId: clientId || undefined,
+        });
+
+        // Record diff stats if provided
+        if (diffs && diffs.length > 0) {
+          const totalAdditions = diffs.reduce((sum, d) => sum + (d.additions || 0), 0);
+          const totalDeletions = diffs.reduce((sum, d) => sum + (d.deletions || 0), 0);
+          const filesChanged = diffs.filter(d => d.is_session_relevant).length;
+
+          if (filesChanged > 0 || totalAdditions > 0 || totalDeletions > 0) {
+            analytics.recordDiffUpdated(
+              session.id,
+              { filesChanged, additions: totalAdditions, deletions: totalDeletions },
+              { clientId: clientId || undefined }
+            );
+          }
         }
 
         return new Response(null, {
@@ -613,6 +653,15 @@ export function createApiRoutes(repo: SessionRepository) {
           clientId || undefined
         );
 
+        // Record analytics for live session creation
+        analytics.recordSessionCreated(id, {
+          clientId: clientId || undefined,
+          model: model || undefined,
+          harness: harness || undefined,
+          interactive: Boolean(interactive),
+          isLive: true,
+        });
+
         return json({
           id,
           url: `/sessions/${id}`,
@@ -687,6 +736,26 @@ export function createApiRoutes(repo: SessionRepository) {
         repo.updateSession(sessionId, {
           last_activity_at: sqliteDatetimeNow(),
         });
+
+        // Record analytics for each message
+        const clientId = getClientId(req);
+        for (const msg of parsedMessages) {
+          // Track user messages (prompts)
+          if (msg.role === "user") {
+            const contentLength = calculateContentLength(msg.content_blocks as Array<{ type: string; text?: string }>);
+            analytics.recordMessageSent(sessionId, {
+              clientId: clientId || undefined,
+              contentLength,
+            });
+          }
+
+          // Track tool invocations from assistant messages
+          if (msg.role === "assistant" && msg.content_blocks) {
+            analytics.recordToolsFromMessage(sessionId, msg.content_blocks as Array<{ type: string; name?: string }>, {
+              clientId: clientId || undefined,
+            });
+          }
+        }
 
         // Reconstruct messages with their assigned indices for broadcast
         const startIndex = lastIndex - count + 1;
@@ -818,6 +887,16 @@ export function createApiRoutes(repo: SessionRepository) {
           })),
         });
 
+        // Record analytics for diff update
+        const clientId = getClientId(req);
+        if (diffs.length > 0 || additions > 0 || deletions > 0) {
+          analytics.recordDiffUpdated(
+            sessionId,
+            { filesChanged: diffs.length, additions, deletions },
+            { clientId: clientId || undefined }
+          );
+        }
+
         return json({
           files_changed: diffs.length,
           additions,
@@ -885,6 +964,14 @@ export function createApiRoutes(repo: SessionRepository) {
 
         // Close all WebSocket connections for this session
         closeSessionConnections(sessionId);
+
+        // Record analytics for session completion
+        const clientId = getClientId(req);
+        analytics.recordSessionCompleted(sessionId, {
+          clientId: clientId || undefined,
+          durationSeconds,
+          messageCount,
+        });
 
         return json({
           status: "complete",
@@ -973,6 +1060,140 @@ export function createApiRoutes(repo: SessionRepository) {
       const annotationsByDiff = repo.getAnnotationsGroupedByDiff(sessionId);
 
       return json({ review, annotations_by_diff: annotationsByDiff });
+    },
+
+    // === Analytics Stats Endpoints ===
+
+    /**
+     * GET /api/stats
+     * Query params: period (today|week|month|all), mine (true to filter by client_id)
+     */
+    getStats(req: Request): Response {
+      const url = new URL(req.url);
+      const period = parsePeriod(url.searchParams.get("period"));
+      const mine = url.searchParams.get("mine") === "true";
+      const clientId = mine ? getClientId(req) : undefined;
+
+      const { startDate, endDate } = getDateRange(period);
+      const summary = repo.getStatsSummary(startDate, endDate, clientId ?? undefined);
+
+      return json({
+        period,
+        summary: {
+          sessions_created: summary.sessions_created ?? 0,
+          sessions_interactive: summary.sessions_interactive ?? 0,
+          sessions_live: summary.sessions_live ?? 0,
+          prompts_sent: summary.prompts_sent ?? 0,
+          lines_added: summary.lines_added ?? 0,
+          lines_removed: summary.lines_removed ?? 0,
+          files_changed: summary.files_changed ?? 0,
+        },
+      });
+    },
+
+    /**
+     * GET /api/stats/timeseries
+     * Query params: stat, period, mine, fill
+     */
+    getStatsTimeseries(req: Request): Response {
+      const url = new URL(req.url);
+      const statType = url.searchParams.get("stat");
+      const period = parsePeriod(url.searchParams.get("period"));
+      const mine = url.searchParams.get("mine") === "true";
+      const fill = url.searchParams.get("fill") === "true";
+      const clientId = mine ? getClientId(req) : undefined;
+
+      if (!statType) {
+        return jsonError("stat parameter is required", 400);
+      }
+
+      // Validate stat type
+      const validStats = [
+        "sessions_created",
+        "sessions_interactive",
+        "sessions_live",
+        "prompts_sent",
+        "lines_added",
+        "lines_removed",
+        "files_changed",
+      ];
+
+      if (!validStats.includes(statType) && !statType.startsWith("tool_")) {
+        return jsonError(`Invalid stat type: ${statType}`, 400);
+      }
+
+      const { startDate, endDate } = getDateRange(period);
+      let data = repo.getStatTimeseries(statType as StatType, startDate, endDate, clientId ?? undefined);
+
+      // Optionally fill gaps for charting
+      if (fill) {
+        data = fillTimeseriesGaps(data, startDate, endDate);
+      }
+
+      return json({
+        stat: statType,
+        period,
+        data,
+      });
+    },
+
+    /**
+     * GET /api/stats/tools
+     * Query params: period, mine
+     */
+    getStatsTools(req: Request): Response {
+      const url = new URL(req.url);
+      const period = parsePeriod(url.searchParams.get("period"));
+      const mine = url.searchParams.get("mine") === "true";
+      const clientId = mine ? getClientId(req) : undefined;
+
+      const { startDate, endDate } = getDateRange(period);
+      const tools = repo.getToolStats(startDate, endDate, clientId ?? undefined);
+
+      return json({
+        period,
+        data: tools,
+      });
+    },
+
+    /**
+     * GET /api/stats/dashboard
+     * Returns summary, tool breakdown, and sessions timeseries in one call
+     */
+    getDashboardStats(req: Request): Response {
+      const url = new URL(req.url);
+      const period = parsePeriod(url.searchParams.get("period"));
+      const mine = url.searchParams.get("mine") === "true";
+      const clientId = mine ? getClientId(req) : undefined;
+
+      const { startDate, endDate } = getDateRange(period);
+
+      // Fetch all data
+      const summary = repo.getStatsSummary(startDate, endDate, clientId ?? undefined);
+      const tools = repo.getToolStats(startDate, endDate, clientId ?? undefined);
+      const sessionsTimeseries = fillTimeseriesGaps(
+        repo.getStatTimeseries("sessions_created", startDate, endDate, clientId ?? undefined),
+        startDate,
+        endDate
+      );
+
+      return json({
+        period,
+        date_range: { start: startDate, end: endDate },
+        summary: {
+          sessions_created: summary.sessions_created ?? 0,
+          sessions_interactive: summary.sessions_interactive ?? 0,
+          sessions_live: summary.sessions_live ?? 0,
+          prompts_sent: summary.prompts_sent ?? 0,
+          lines_added: summary.lines_added ?? 0,
+          lines_removed: summary.lines_removed ?? 0,
+          files_changed: summary.files_changed ?? 0,
+        },
+        tools,
+        timeseries: {
+          sessions: sessionsTimeseries,
+        },
+      });
     },
   };
 }

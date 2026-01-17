@@ -8,6 +8,27 @@ import { basename, join } from "path";
 import { Glob } from "bun";
 import { getClientId } from "../lib/client-id";
 import { DEFAULT_SERVER, getServerUrl } from "../lib/config";
+import * as readline from "readline";
+
+async function promptConfirmation(message: string): Promise<boolean> {
+  // Skip prompt in non-interactive environments
+  if (!process.stdin.isTTY) {
+    console.log("Non-interactive environment detected. Use --yes to skip confirmation.");
+    return false;
+  }
+
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+
+  return new Promise((resolve) => {
+    rl.question(message, (answer) => {
+      rl.close();
+      resolve(answer.toLowerCase() === "y" || answer.toLowerCase() === "yes");
+    });
+  });
+}
 
 // UUID v4 pattern
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -36,6 +57,7 @@ interface ParsedOptions {
   diff: boolean;
   review: boolean;
   server: string;
+  yes: boolean;
   help: boolean;
 }
 
@@ -45,6 +67,7 @@ function parseArgs(args: string[]): ParsedOptions {
     diff: true,
     review: false,
     server: getServerUrl(),
+    yes: false,
     help: false,
   };
 
@@ -82,6 +105,10 @@ function parseArgs(args: string[]): ParsedOptions {
         break;
       case "--server":
         options.server = args[++i];
+        break;
+      case "--yes":
+      case "-y":
+        options.yes = true;
         break;
       case "--help":
       case "-h":
@@ -627,6 +654,7 @@ Options:
   --no-diff       Exclude git diff
   --review, -r    Generate code review using Claude CLI (requires diff)
   --server        Server URL (default: from config or ${DEFAULT_SERVER})
+  --yes, -y       Skip confirmation prompt when auto-detecting session
   --help, -h      Show this help
   `);
 }
@@ -641,12 +669,14 @@ export async function upload(args: string[]): Promise<void> {
 
   // Find session file
   let sessionPath = options.session;
+  let autoDetected = false;
   if (!sessionPath) {
     console.log("Auto-detecting current session...");
     sessionPath = await findCurrentSession();
     if (!sessionPath) {
       process.exit(1);
     }
+    autoDetected = true;
   } else if (UUID_PATTERN.test(sessionPath)) {
     // Session is a UUID, look it up in ~/.claude/projects/*/
     console.log(`Looking up session by UUID: ${sessionPath}`);
@@ -706,6 +736,17 @@ export async function upload(args: string[]): Promise<void> {
   const repoUrl = options.repo || (await getRepoUrl(extractedProjectPath || undefined));
   if (repoUrl) {
     console.log(`Repo: ${repoUrl}`);
+  }
+
+  // Prompt for confirmation when auto-detecting (unless --yes)
+  if (autoDetected && !options.yes) {
+    console.log();
+    const confirmed = await promptConfirmation("Upload this session? [y/N] ");
+    if (!confirmed) {
+      console.log("Upload cancelled.");
+      process.exit(0);
+    }
+    console.log();
   }
 
   // Extract files touched by the session (for filtering diff)

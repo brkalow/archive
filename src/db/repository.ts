@@ -1,5 +1,5 @@
 import { Database, Statement } from "bun:sqlite";
-import type { Session, Message, Diff, Review, Annotation, AnnotationType, FeedbackMessage, FeedbackMessageType, FeedbackMessageStatus } from "./schema";
+import type { Session, Message, Diff, Review, Annotation, AnnotationType, FeedbackMessage, FeedbackMessageType, FeedbackMessageStatus, AnalyticsEventType, StatType } from "./schema";
 
 // Generate SQLite-compatible UTC timestamp (YYYY-MM-DD HH:MM:SS)
 function sqliteDatetimeNow(): string {
@@ -40,6 +40,12 @@ export class SessionRepository {
     insertFeedbackMessage: Statement;
     updateFeedbackStatus: Statement;
     getPendingFeedback: Statement;
+    // Analytics statements
+    insertEvent: Statement;
+    upsertDailyStat: Statement;
+    getStatsByDateRange: Statement;
+    getToolStats: Statement;
+    getTimeseries: Statement;
   };
 
   constructor(private db: Database) {
@@ -134,6 +140,43 @@ export class SessionRepository {
         SELECT * FROM feedback_messages
         WHERE session_id = ? AND status = 'pending'
         ORDER BY created_at ASC
+      `),
+      // Analytics statements
+      insertEvent: db.prepare(`
+        INSERT INTO analytics_events (event_type, session_id, client_id, timestamp, properties)
+        VALUES (?, ?, ?, datetime('now', 'utc'), ?)
+      `),
+      upsertDailyStat: db.prepare(`
+        INSERT INTO analytics_daily_stats (date, client_id, model, stat_type, value)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(date, client_id, model, stat_type)
+        DO UPDATE SET value = value + excluded.value
+      `),
+      getStatsByDateRange: db.prepare(`
+        SELECT stat_type, SUM(value) as total
+        FROM analytics_daily_stats
+        WHERE date >= ? AND date <= ?
+          AND ((? IS NULL AND client_id IS NULL) OR client_id = ?)
+          AND stat_type NOT LIKE 'tool_%'
+        GROUP BY stat_type
+      `),
+      getToolStats: db.prepare(`
+        SELECT SUBSTR(stat_type, 6) as tool, SUM(value) as count
+        FROM analytics_daily_stats
+        WHERE date >= ? AND date <= ?
+          AND ((? IS NULL AND client_id IS NULL) OR client_id = ?)
+          AND stat_type LIKE 'tool_%'
+        GROUP BY stat_type
+        ORDER BY count DESC
+      `),
+      getTimeseries: db.prepare(`
+        SELECT date, SUM(value) as value
+        FROM analytics_daily_stats
+        WHERE date >= ? AND date <= ?
+          AND ((? IS NULL AND client_id IS NULL) OR client_id = ?)
+          AND stat_type = ?
+        GROUP BY date
+        ORDER BY date ASC
       `),
     };
   }
@@ -1007,5 +1050,172 @@ export class SessionRepository {
     });
 
     return transaction();
+  }
+
+  // === Analytics Methods ===
+
+  /**
+   * Record an analytics event
+   */
+  recordEvent(
+    eventType: AnalyticsEventType,
+    options: {
+      sessionId?: string;
+      clientId?: string;
+      properties?: Record<string, unknown>;
+    } = {}
+  ): void {
+    const { sessionId, clientId, properties = {} } = options;
+
+    this.stmts.insertEvent.run(
+      eventType,
+      sessionId ?? null,
+      clientId ?? null,
+      JSON.stringify(properties)
+    );
+  }
+
+  /**
+   * Increment a daily stat (atomic upsert)
+   * Automatically updates both global (client_id=null) and per-client rollups
+   */
+  incrementDailyStat(
+    statType: StatType,
+    options: {
+      clientId?: string;
+      model?: string;
+      value?: number;
+      date?: string;  // YYYY-MM-DD, defaults to today
+    } = {}
+  ): void {
+    const {
+      clientId,
+      model,
+      value = 1,
+      date = new Date().toISOString().slice(0, 10)
+    } = options;
+
+    // Always update global rollup (client_id = null)
+    this.stmts.upsertDailyStat.run(date, null, model ?? null, statType, value);
+
+    // Also update per-client rollup if client_id provided
+    if (clientId) {
+      this.stmts.upsertDailyStat.run(date, clientId, model ?? null, statType, value);
+    }
+  }
+
+  /**
+   * Record event and increment stat in a single transaction
+   */
+  recordEventWithStat(
+    eventType: AnalyticsEventType,
+    statType: StatType,
+    options: {
+      sessionId?: string;
+      clientId?: string;
+      model?: string;
+      properties?: Record<string, unknown>;
+      statValue?: number;
+    } = {}
+  ): void {
+    const { sessionId, clientId, model, properties, statValue = 1 } = options;
+
+    const transaction = this.db.transaction(() => {
+      this.recordEvent(eventType, { sessionId, clientId, properties });
+      this.incrementDailyStat(statType, { clientId, model, value: statValue });
+    });
+
+    transaction();
+  }
+
+  /**
+   * Record multiple stats in a single transaction (for diff updates)
+   */
+  recordMultipleStats(
+    stats: Array<{
+      statType: StatType;
+      value: number;
+      model?: string;
+    }>,
+    options: {
+      eventType?: AnalyticsEventType;
+      sessionId?: string;
+      clientId?: string;
+      properties?: Record<string, unknown>;
+    } = {}
+  ): void {
+    const { eventType, sessionId, clientId, properties } = options;
+
+    const transaction = this.db.transaction(() => {
+      if (eventType) {
+        this.recordEvent(eventType, { sessionId, clientId, properties });
+      }
+
+      for (const stat of stats) {
+        this.incrementDailyStat(stat.statType, {
+          clientId,
+          model: stat.model,
+          value: stat.value,
+        });
+      }
+    });
+
+    transaction();
+  }
+
+  /**
+   * Get summary stats for a date range
+   */
+  getStatsSummary(
+    startDate: string,
+    endDate: string,
+    clientId?: string
+  ): Record<string, number> {
+    const rows = this.stmts.getStatsByDateRange.all(
+      startDate,
+      endDate,
+      clientId ?? null,
+      clientId ?? null
+    ) as Array<{ stat_type: string; total: number }>;
+
+    const summary: Record<string, number> = {};
+    for (const row of rows) {
+      summary[row.stat_type] = row.total;
+    }
+    return summary;
+  }
+
+  /**
+   * Get tool usage breakdown for a date range
+   */
+  getToolStats(
+    startDate: string,
+    endDate: string,
+    clientId?: string
+  ): Array<{ tool: string; count: number }> {
+    return this.stmts.getToolStats.all(
+      startDate,
+      endDate,
+      clientId ?? null,
+      clientId ?? null
+    ) as Array<{ tool: string; count: number }>;
+  }
+
+  /**
+   * Get timeseries data for a specific stat
+   */
+  getStatTimeseries(
+    statType: StatType,
+    startDate: string,
+    endDate: string,
+    clientId?: string
+  ): Array<{ date: string; value: number }> {
+    return this.stmts.getTimeseries.all(
+      startDate,
+      endDate,
+      clientId ?? null,
+      clientId ?? null,
+      statType
+    ) as Array<{ date: string; value: number }>;
   }
 }

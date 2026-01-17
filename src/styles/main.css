@@ -254,3 +254,30 @@ code, pre {
 #feedback-input {
   font-family: inherit;
 }
+
+/* === Getting Started Page Animations === */
+
+.animate-brackets {
+  animation: breathe 6s ease-in-out infinite, float 8s ease-in-out infinite;
+}
+
+.animate-gap-pulse {
+  animation: gapPulse 4s ease-in-out infinite;
+}
+
+@keyframes breathe {
+  0%, 100% { transform: scale(1) rotate(0deg); }
+  50% { transform: scale(1.03) rotate(2deg); }
+}
+
+@keyframes float {
+  0%, 100% { translate: 0 0; }
+  25% { translate: 3px -4px; }
+  50% { translate: -2px 2px; }
+  75% { translate: 4px 3px; }
+}
+
+@keyframes gapPulse {
+  0%, 100% { width: 0.08em; }
+  50% { width: 0.18em; }
+}

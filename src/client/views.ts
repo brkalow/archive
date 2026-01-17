@@ -1043,3 +1043,72 @@ function renderIconsSection(): string {
     </section>
   `;
 }
+
+// Getting Started Page
+export function renderGettingStarted(): string {
+  return `
+    <div class="min-h-[calc(100vh-3.5rem)] flex flex-col items-center justify-start pt-16 pb-24 px-6">
+      <!-- Hero: Two column layout -->
+      <div class="w-full max-w-4xl grid grid-cols-1 md:grid-cols-2 gap-8 items-center mb-20">
+        <!-- Left: Animated brackets -->
+        <div class="flex items-center justify-center font-mono text-[clamp(6rem,15vw,12rem)] font-light text-white/20">
+          <div class="flex items-center justify-center animate-brackets">
+            <span class="inline-block">[</span>
+            <span class="inline-block w-[0.08em] animate-gap-pulse"></span>
+            <span class="inline-block">]</span>
+          </div>
+        </div>
+
+        <!-- Right: Logo + description -->
+        <div class="flex flex-col items-center md:items-start">
+          <h1 class="text-3xl font-mono font-medium text-text-primary hover:text-accent-primary transition-colors mb-4">
+            <span class="text-[18px] inline-flex gap-[3px] -translate-y-[2.5px]"><span>[</span><span>]</span></span>penctl
+          </h1>
+          <p class="text-text-secondary text-center md:text-left font-mono text-sm leading-relaxed">
+            Share, collaborate, and review your agent sessions.
+          </p>
+        </div>
+      </div>
+
+      <!-- Install command -->
+      <div class="flex items-center gap-3 px-6 py-4 border border-bg-elevated rounded bg-bg-secondary/50 backdrop-blur mb-20 max-w-xl w-full">
+        <span class="text-text-muted font-mono">$</span>
+        <code id="install-command" class="flex-1 font-mono text-text-primary text-sm">curl -fsSL https://openctl.dev/setup/install.sh | bash</code>
+        <button
+          data-copy-target="install-command"
+          class="text-text-muted hover:text-text-primary transition-colors"
+          title="Copy to clipboard"
+        >
+          ${icons.copy}
+        </button>
+      </div>
+
+      <!-- Commands section -->
+      <div class="w-full max-w-xl">
+        <div class="text-xs uppercase tracking-[0.2em] text-text-muted text-center mb-6 font-mono">Commands</div>
+        <div class="border border-bg-elevated rounded bg-bg-secondary/30 backdrop-blur divide-y divide-bg-elevated font-mono text-sm">
+          <div class="flex items-center justify-between px-5 py-3">
+            <span><span class="text-text-primary">openctl</span> <span class="text-accent-primary">upload</span></span>
+            <span class="text-text-muted">upload a session</span>
+          </div>
+          <div class="flex items-center justify-between px-5 py-3">
+            <span><span class="text-text-primary">openctl</span> <span class="text-accent-primary">daemon start</span></span>
+            <span class="text-text-muted">live stream sessions</span>
+          </div>
+          <div class="flex items-center justify-between px-5 py-3">
+            <span><span class="text-text-primary">openctl</span> <span class="text-accent-primary">list</span></span>
+            <span class="text-text-muted">view all sessions</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Browse link -->
+      <a href="/sessions" class="mt-16 text-accent-primary hover:text-accent-primary/80 transition-colors font-mono text-sm flex items-center gap-2">
+        <span>browse sessions</span>
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3" />
+        </svg>
+      </a>
+    </div>
+  `;
+}
