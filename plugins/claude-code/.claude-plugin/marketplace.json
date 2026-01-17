@@ -1,0 +1,15 @@
+{
+  "name": "openctl-claude-code-plugins",
+  "owner": {
+    "name": "openctl",
+    "email": "support@openctl.dev"
+  },
+  "plugins": [
+    {
+      "name": "openctl",
+      "source": "./openctl",
+      "description": "Enables remote feedback during Claude Code sessions",
+      "version": "0.1.0"
+    }
+  ]
+}
