@@ -107,9 +107,23 @@ function deriveTextContent(blocks: ContentBlock[]): string {
 
 export function createApiRoutes(repo: SessionRepository) {
   return {
-    // Get all sessions
+    // Get all sessions or a specific session by claude_session_id
     getSessions(req: Request): Response {
       const url = new URL(req.url);
+      const claudeSessionId = url.searchParams.get("claude_session_id");
+
+      // If claude_session_id is provided, return the specific session
+      if (claudeSessionId) {
+        const session = repo.getSessionByClaudeSessionId(claudeSessionId);
+        if (session) {
+          return json({
+            session,
+            url: `/sessions/${session.id}`,
+          });
+        }
+        return json({ session: null });
+      }
+
       const mine = url.searchParams.get("mine") === "true";
       const clientId = getClientId(req);
 
@@ -537,6 +551,7 @@ export function createApiRoutes(repo: SessionRepository) {
 
             return json({
               id: existingSession.id,
+              url: `/sessions/${existingSession.id}`,
               stream_token: streamToken,
               status: "live",
               resumed: true,
@@ -561,6 +576,7 @@ export function createApiRoutes(repo: SessionRepository) {
 
             return json({
               id: existingSession.id,
+              url: `/sessions/${existingSession.id}`,
               stream_token: streamToken,
               status: "live",
               resumed: true,
@@ -599,6 +615,7 @@ export function createApiRoutes(repo: SessionRepository) {
 
         return json({
           id,
+          url: `/sessions/${id}`,
           stream_token: streamToken,
           status: "live",
           resumed: false,

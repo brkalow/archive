@@ -8,11 +8,15 @@
  * - Graceful shutdown
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync } from "fs";
-import { join } from "path";
-import { getEnabledAdapters } from "../adapters";
+import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync, watch, type FSWatcher } from "fs";
+import { dirname, join } from "path";
+import { getAdapterForPath, getEnabledAdapters } from "../adapters";
 import { getAllowedRepos } from "../lib/config";
-import { setVerbose } from "../lib/debug";
+import { setVerbose, debug } from "../lib/debug";
+import {
+  getSharedSessionsForServer,
+  getSharedSessionsPath,
+} from "../lib/shared-sessions";
 import { SessionTracker } from "./session-tracker";
 import { SessionWatcher } from "./watcher";
 
@@ -31,6 +35,7 @@ const STATUS_FILE = join(OPENCTL_DIR, "daemon.status.json");
 let tracker: SessionTracker | null = null;
 let watcher: SessionWatcher | null = null;
 let statusInterval: ReturnType<typeof setInterval> | null = null;
+let sharedSessionsWatcher: FSWatcher | null = null;
 
 export async function startDaemon(options: DaemonOptions): Promise<void> {
   // Enable debug logging if verbose
@@ -87,9 +92,12 @@ To allow a specific repository:
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
 
-  // Start watching
+  // Start watching file system for new sessions (still useful for detecting session file changes)
   watcher.start();
   tracker.startIdleCheck();
+
+  // Start watching shared sessions allowlist
+  watchSharedSessions(options.server, tracker);
 
   // Start status file updates
   updateStatusFile();
@@ -101,12 +109,88 @@ To allow a specific repository:
   await new Promise(() => {});
 }
 
+/**
+ * Watch the shared sessions allowlist file for changes.
+ * When sessions are added/removed, start/stop tracking accordingly.
+ */
+function watchSharedSessions(serverUrl: string, tracker: SessionTracker): void {
+  const sharedSessionsPath = getSharedSessionsPath();
+  let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+  // Ensure file and directory exist
+  const dir = dirname(sharedSessionsPath);
+  if (!existsSync(dir)) {
+    mkdirSync(dir, { recursive: true });
+  }
+  if (!existsSync(sharedSessionsPath)) {
+    writeFileSync(sharedSessionsPath, JSON.stringify({ version: 1, sessions: {} }));
+  }
+
+  // Initial load - start tracking any shared sessions
+  handleSharedSessionsChange(serverUrl, tracker);
+
+  // Watch for changes
+  try {
+    sharedSessionsWatcher = watch(sharedSessionsPath, (eventType) => {
+      if (eventType === "change") {
+        if (debounceTimer) clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(() => {
+          handleSharedSessionsChange(serverUrl, tracker);
+        }, 100);
+      }
+    });
+    debug(`Watching shared sessions file: ${sharedSessionsPath}`);
+  } catch (err) {
+    console.error(`Failed to watch shared sessions file:`, err);
+  }
+}
+
+/**
+ * Handle changes to the shared sessions allowlist.
+ * Start tracking new sessions and stop tracking removed ones.
+ */
+async function handleSharedSessionsChange(
+  serverUrl: string,
+  tracker: SessionTracker
+): Promise<void> {
+  const sharedSessions = getSharedSessionsForServer(serverUrl);
+  const sharedFilePaths = new Set(sharedSessions.map((s) => s.session.filePath));
+
+  debug(`Shared sessions change detected: ${sharedSessions.length} sessions for ${serverUrl}`);
+
+  // Start tracking new sessions
+  for (const { uuid, session } of sharedSessions) {
+    if (!tracker.isTracking(session.filePath)) {
+      const adapter = getAdapterForPath(session.filePath);
+      if (adapter) {
+        debug(`Starting to track shared session: ${uuid}`);
+        await tracker.startSession(session.filePath, adapter);
+      } else {
+        debug(`No adapter found for shared session: ${session.filePath}`);
+      }
+    }
+  }
+
+  // Stop tracking sessions no longer in allowlist
+  for (const filePath of tracker.getTrackedFilePaths()) {
+    if (!sharedFilePaths.has(filePath)) {
+      debug(`Stopping tracking of unshared session: ${filePath}`);
+      await tracker.endSession(filePath);
+    }
+  }
+}
+
 async function shutdown(): Promise<void> {
   console.log("\nShutting down...");
 
   if (statusInterval) {
     clearInterval(statusInterval);
     statusInterval = null;
+  }
+
+  if (sharedSessionsWatcher) {
+    sharedSessionsWatcher.close();
+    sharedSessionsWatcher = null;
   }
 
   if (watcher) {

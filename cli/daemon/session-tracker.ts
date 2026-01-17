@@ -644,4 +644,18 @@ export class SessionTracker {
       messageCount: s.parseContext.messages.length,
     }));
   }
+
+  /**
+   * Check if a session file is currently being tracked.
+   */
+  isTracking(filePath: string): boolean {
+    return this.sessions.has(filePath);
+  }
+
+  /**
+   * Get all file paths currently being tracked.
+   */
+  getTrackedFilePaths(): string[] {
+    return Array.from(this.sessions.keys());
+  }
 }
