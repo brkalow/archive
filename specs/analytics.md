@@ -113,9 +113,11 @@ Core stats tracked in daily rollups:
 | `sessions_interactive` | Interactive sessions (feedback enabled) |
 | `sessions_live` | Live-streamed sessions |
 | `prompts_sent` | User messages sent |
+| `tools_invoked` | Total tool invocations across all tools |
+| `subagents_invoked` | Task tool invocations (subagent spawns) |
 | `lines_added` | Lines of code added |
 | `lines_removed` | Lines of code removed |
-| `files_changed` | Files modified |
+| `files_changed` | Total files changed in diffs |
 | `tool_{name}` | Per-tool invocation counts |
 
 Tool stats use a dynamic naming pattern (`tool_read`, `tool_edit`, `tool_bash`, etc.) to track usage of each tool separately. Tool names are sanitized to lowercase alphanumeric with underscores.
@@ -157,6 +159,8 @@ Summary statistics for a period.
     "sessions_interactive": 15,
     "sessions_live": 28,
     "prompts_sent": 350,
+    "tools_invoked": 2450,
+    "subagents_invoked": 120,
     "lines_added": 5420,
     "lines_removed": 1230,
     "files_changed": 89
@@ -213,7 +217,17 @@ Combined endpoint for dashboard (single request for all data).
 {
   "period": "week",
   "date_range": { "start": "2025-01-10", "end": "2025-01-17" },
-  "summary": { ... },
+  "summary": {
+    "sessions_created": 42,
+    "sessions_interactive": 15,
+    "sessions_live": 28,
+    "prompts_sent": 350,
+    "tools_invoked": 2450,
+    "subagents_invoked": 120,
+    "lines_added": 5420,
+    "lines_removed": 1230,
+    "files_changed": 89
+  },
   "tools": [ ... ],
   "timeseries": {
     "sessions": [ ... ]
@@ -258,7 +272,7 @@ for (const msg of parsedMessages) {
 ```typescript
 // PUT /api/sessions/:id/diff
 analytics.recordDiffUpdated(sessionId, {
-  filesChanged: diffs.length,
+  filesChanged,
   additions,
   deletions
 }, { clientId });
@@ -303,7 +317,8 @@ Clients are identified via the `X-Openctl-Client-ID` header. This is typically a
 ## Stats Dashboard
 
 The `/stats` route renders a server-side dashboard showing:
-- **Summary cards** - Sessions, prompts, files changed
+- **Summary cards** - Sessions, prompts, tool calls, subagents
+- **File stats** - Files changed
 - **Code stats** - Lines added (green) / removed (red)
 - **Sessions chart** - SVG bar chart of sessions over time
 - **Tool breakdown** - Horizontal bar chart of tool usage

@@ -98,6 +98,7 @@ export function initializeDatabase(dbPath: string = process.env.DATABASE_PATH ||
   safeAddColumn(db, "diffs", "additions", "INTEGER DEFAULT 0");
   safeAddColumn(db, "diffs", "deletions", "INTEGER DEFAULT 0");
   safeAddColumn(db, "diffs", "is_session_relevant", "INTEGER DEFAULT 1");
+  safeAddColumn(db, "diffs", "status", "TEXT DEFAULT 'modified'");
   safeAddColumn(db, "sessions", "model", "TEXT");
   safeAddColumn(db, "sessions", "harness", "TEXT");
   safeAddColumn(db, "sessions", "repo_url", "TEXT");
@@ -270,6 +271,8 @@ export type Message = {
   message_index: number;
 };
 
+export type DiffStatus = "added" | "removed" | "modified";
+
 export type Diff = {
   id: number;
   session_id: string;
@@ -279,6 +282,7 @@ export type Diff = {
   additions: number; // Pre-computed
   deletions: number; // Pre-computed
   is_session_relevant: boolean; // True if file was touched in conversation
+  status: DiffStatus; // Whether file was added, removed, or modified
 };
 
 // Code review types
@@ -321,6 +325,8 @@ export type StatType =
   | "lines_added"
   | "lines_removed"
   | "files_changed"
+  | "tools_invoked"
+  | "subagents_invoked"
   | `tool_${string}`;
 
 // Raw event record

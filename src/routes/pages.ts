@@ -34,6 +34,8 @@ export function createPageRoutes(repo: SessionRepository) {
           sessions_interactive: summary.sessions_interactive ?? 0,
           sessions_live: summary.sessions_live ?? 0,
           prompts_sent: summary.prompts_sent ?? 0,
+          tools_invoked: summary.tools_invoked ?? 0,
+          subagents_invoked: summary.subagents_invoked ?? 0,
           lines_added: summary.lines_added ?? 0,
           lines_removed: summary.lines_removed ?? 0,
           files_changed: summary.files_changed ?? 0,
