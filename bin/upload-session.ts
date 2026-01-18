@@ -21,6 +21,7 @@ import { $ } from "bun";
 import { existsSync } from "fs";
 import { basename, join } from "path";
 import { Glob } from "bun";
+import { getAdapterById, getFileModifyingToolsForAdapter, extractFilePathFromTool } from "../cli/adapters";
 
 // UUID v4 pattern
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -449,8 +450,14 @@ function extractGitBranch(sessionContent: string): string | null {
   return null;
 }
 
-function extractTouchedFiles(sessionContent: string, projectPath?: string): string[] {
-  // Parse JSONL and look for Write/Edit/NotebookEdit tool_use blocks
+function extractTouchedFiles(sessionContent: string, projectPath?: string, harness?: string): string[] {
+  // Get adapter-specific file modifying tools, or fall back to defaults
+  const adapter = harness ? getAdapterById(harness) : null;
+  const fileModifyingTools = adapter
+    ? getFileModifyingToolsForAdapter(adapter)
+    : ["Write", "Edit", "NotebookEdit"];
+
+  // Parse JSONL and look for file-modifying tool_use blocks
   const files = new Set<string>();
   const lines = sessionContent.split("\n").filter(Boolean);
 
@@ -463,9 +470,12 @@ function extractTouchedFiles(sessionContent: string, projectPath?: string): stri
       if (!Array.isArray(content)) continue;
 
       for (const block of content) {
-        if (block.type === "tool_use" && ["Write", "Edit", "NotebookEdit"].includes(block.name)) {
+        if (block.type === "tool_use" && fileModifyingTools.includes(block.name)) {
           const input = block.input as Record<string, unknown>;
-          let path = (input.file_path || input.notebook_path) as string;
+          // Use adapter's extractFilePath if available, otherwise fall back
+          let path = adapter
+            ? extractFilePathFromTool(adapter, block.name, input)
+            : (input.file_path || input.notebook_path) as string;
           if (path) {
             // Make path relative to project if it's absolute
             if (projectPath && path.startsWith(projectPath)) {
@@ -682,7 +692,7 @@ Options:
   }
 
   // Extract files touched by the session (for filtering diff)
-  const touchedFiles = extractTouchedFiles(sessionContent, extractedProjectPath || undefined);
+  const touchedFiles = extractTouchedFiles(sessionContent, extractedProjectPath || undefined, options.harness);
   if (touchedFiles.length > 0) {
     console.log(`Touched files: ${touchedFiles.length}`);
   }

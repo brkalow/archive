@@ -6,6 +6,7 @@ import type {
   ImageBlock,
   FileBlock,
 } from "../db/schema";
+import type { AdapterUIConfig, ToolIconCategory } from "../../cli/adapters/types";
 
 // Map of tool_use_id to tool_result for inline rendering
 type ToolResultMap = Map<string, ToolResultBlock>;
@@ -46,8 +47,44 @@ const toolIcons = {
   default: `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>`,
 };
 
+// Map icon categories to SVG icons
+const iconsByCategory: Record<ToolIconCategory, string> = {
+  file: toolIcons.file,
+  edit: toolIcons.edit,
+  terminal: toolIcons.terminal,
+  search: toolIcons.search,
+  web: toolIcons.web,
+  todo: toolIcons.todo,
+  question: toolIcons.question,
+  task: toolIcons.task,
+  thinking: toolIcons.thinking,
+  mcp: toolIcons.gear,
+  default: toolIcons.default,
+};
+
 // Get the appropriate icon for a tool
-export function getToolIcon(toolName: string): string {
+export function getToolIcon(toolName: string, adapterConfig?: AdapterUIConfig | null): string {
+  // Try adapter config first if available
+  if (adapterConfig?.tools) {
+    // Check exact match
+    if (adapterConfig.tools[toolName]) {
+      return iconsByCategory[adapterConfig.tools[toolName].icon];
+    }
+    // Check MCP prefixes
+    if (adapterConfig.mcpToolPrefixes) {
+      for (const prefix of adapterConfig.mcpToolPrefixes) {
+        if (toolName.startsWith(prefix)) {
+          return iconsByCategory.mcp;
+        }
+      }
+    }
+    // Use default from adapter config
+    if (adapterConfig.defaultToolIcon) {
+      return iconsByCategory[adapterConfig.defaultToolIcon];
+    }
+  }
+
+  // Fallback to hardcoded logic for backward compatibility
   // MCP tools get gear icon
   if (toolName.startsWith("mcp__")) {
     return toolIcons.gear;
@@ -223,18 +260,35 @@ function stripLineNumbersFromCode(code: string): string {
   return lines.map((line) => line.replace(/^\s*\d+[→:\|\t]\s?/, "")).join("\n");
 }
 
-export function stripSystemTags(text: string): string {
-  // Remove <system_instruction>...</system_instruction> tags and content
-  let cleaned = text.replace(/<system_instruction>[\s\S]*?<\/system_instruction>/gi, "");
-  // Remove <system-instruction>...</system-instruction> tags and content
-  cleaned = cleaned.replace(/<system-instruction>[\s\S]*?<\/system-instruction>/gi, "");
-  // Remove <system-reminder>...</system-reminder> tags and content
-  cleaned = cleaned.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/gi, "");
-  // Remove <local-command-caveat>...</local-command-caveat> tags and content
-  cleaned = cleaned.replace(/<local-command-caveat>[\s\S]*?<\/local-command-caveat>/gi, "");
-  // Remove <local-command-stdout>...</local-command-stdout> tags and content
-  // (these are handled by extractCommandInfo when paired with command-name, this is a fallback)
-  cleaned = cleaned.replace(/<local-command-stdout>[\s\S]*?<\/local-command-stdout>/gi, "");
+export function stripSystemTags(text: string, adapterConfig?: AdapterUIConfig | null): string {
+  let cleaned = text;
+
+  // Use adapter config if available
+  if (adapterConfig?.systemTags) {
+    for (const tagPattern of adapterConfig.systemTags) {
+      if (tagPattern.style === "regex" && tagPattern.pattern) {
+        cleaned = cleaned.replace(tagPattern.pattern, "");
+      } else {
+        // XML style (default)
+        const regex = new RegExp(`<${tagPattern.tag}>[\\s\\S]*?<\\/${tagPattern.tag}>`, "gi");
+        cleaned = cleaned.replace(regex, "");
+      }
+    }
+  } else {
+    // Fallback to hardcoded tags for backward compatibility
+    // Remove <system_instruction>...</system_instruction> tags and content
+    cleaned = cleaned.replace(/<system_instruction>[\s\S]*?<\/system_instruction>/gi, "");
+    // Remove <system-instruction>...</system-instruction> tags and content
+    cleaned = cleaned.replace(/<system-instruction>[\s\S]*?<\/system-instruction>/gi, "");
+    // Remove <system-reminder>...</system-reminder> tags and content
+    cleaned = cleaned.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/gi, "");
+    // Remove <local-command-caveat>...</local-command-caveat> tags and content
+    cleaned = cleaned.replace(/<local-command-caveat>[\s\S]*?<\/local-command-caveat>/gi, "");
+    // Remove <local-command-stdout>...</local-command-stdout> tags and content
+    // (these are handled by extractCommandInfo when paired with command-name, this is a fallback)
+    cleaned = cleaned.replace(/<local-command-stdout>[\s\S]*?<\/local-command-stdout>/gi, "");
+  }
+
   // Trim leading/trailing whitespace
   return cleaned.trim();
 }

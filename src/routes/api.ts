@@ -3,6 +3,8 @@ import type { Message, Diff, ContentBlock, ToolUseBlock, ToolResultBlock, ImageB
 import { getDateRange, parsePeriod, fillTimeseriesGaps } from "../analytics/queries";
 import { AnalyticsRecorder } from "../analytics/events";
 import { getClientId } from "../utils/request";
+import { getAdapterById, getFileModifyingToolsForAdapter, extractFilePathFromTool } from "../../cli/adapters";
+import type { AdapterUIConfig } from "../../cli/adapters";
 
 // Helper to calculate content length from content blocks
 function calculateContentLength(contentBlocks: Array<{ type: string; text?: string }>): number {
@@ -162,7 +164,16 @@ export function createApiRoutes(repo: SessionRepository) {
         shareUrl = `${baseUrl}/s/${session.share_token}`;
       }
 
-      return json({ session, messages, diffs, shareUrl, review });
+      // Include adapter UI config if available
+      let adapterUIConfig: AdapterUIConfig | null = null;
+      if (session.harness) {
+        const adapter = getAdapterById(session.harness);
+        if (adapter?.getUIConfig) {
+          adapterUIConfig = adapter.getUIConfig();
+        }
+      }
+
+      return json({ session, messages, diffs, shareUrl, review, adapterUIConfig });
     },
 
     // Get diffs for a session
@@ -189,7 +200,16 @@ export function createApiRoutes(repo: SessionRepository) {
 
       const shareUrl = baseUrl ? `${baseUrl}/s/${session.share_token}` : null;
 
-      return json({ session, messages, diffs, shareUrl, review });
+      // Include adapter UI config if available
+      let adapterUIConfig: AdapterUIConfig | null = null;
+      if (session.harness) {
+        const adapter = getAdapterById(session.harness);
+        if (adapter?.getUIConfig) {
+          adapterUIConfig = adapter.getUIConfig();
+        }
+      }
+
+      return json({ session, messages, diffs, shareUrl, review, adapterUIConfig });
     },
 
     // Create session
@@ -223,8 +243,11 @@ export function createApiRoutes(repo: SessionRepository) {
           messages = parseSessionData(sessionData, id);
         }
 
+        // Extract harness for adapter-aware file detection
+        const harness = (formData.get("harness") as string) || null;
+
         // Extract files touched in the conversation for diff relevance detection
-        const touchedFiles = extractTouchedFiles(messages);
+        const touchedFiles = extractTouchedFiles(messages, harness || undefined);
 
         let diffs: Omit<Diff, "id">[] = [];
         if (diffFile && diffFile.size > 0) {
@@ -291,7 +314,7 @@ export function createApiRoutes(repo: SessionRepository) {
             share_token: null,
             project_path: (formData.get("project_path") as string) || null,
             model: (formData.get("model") as string) || null,
-            harness: (formData.get("harness") as string) || null,
+            harness,
             repo_url: (formData.get("repo_url") as string) || null,
             status: "archived",
             last_activity_at: null,
@@ -395,8 +418,11 @@ export function createApiRoutes(repo: SessionRepository) {
           repo.addMessages(messages);
         }
 
+        // Get harness for adapter-aware file detection (prefer form data, fall back to existing)
+        const harness = (formData.get("harness") as string) || existing.harness;
+
         // Extract files touched in the conversation for diff relevance detection
-        const touchedFiles = extractTouchedFiles(messages);
+        const touchedFiles = extractTouchedFiles(messages, harness || undefined);
 
         // Process diff data
         const diffFile = formData.get("diff_file") as File | null;
@@ -862,7 +888,7 @@ export function createApiRoutes(repo: SessionRepository) {
 
         const diffContent = await req.text();
         const messages = repo.getMessages(sessionId);
-        const touchedFiles = extractTouchedFiles(messages);
+        const touchedFiles = extractTouchedFiles(messages, session.harness || undefined);
         const diffs = parseDiffData(diffContent, sessionId, touchedFiles);
 
         // Replace existing diffs
@@ -945,7 +971,7 @@ export function createApiRoutes(repo: SessionRepository) {
         // Update diff if provided
         if (final_diff) {
           const messages = repo.getMessages(sessionId);
-          const touchedFiles = extractTouchedFiles(messages);
+          const touchedFiles = extractTouchedFiles(messages, session.harness || undefined);
           const diffs = parseDiffData(final_diff, sessionId, touchedFiles);
           repo.clearDiffs(sessionId);
           repo.addDiffs(diffs);
@@ -1427,14 +1453,20 @@ function extractMessage(
 }
 
 // Diff relevance detection helpers
-function extractTouchedFiles(messages: Omit<Message, "id">[]): Set<string> {
+function extractTouchedFiles(messages: Omit<Message, "id">[], adapterId?: string): Set<string> {
   const files = new Set<string>();
+  const adapter = adapterId ? getAdapterById(adapterId) : null;
+  const fileModifyingTools = adapter
+    ? getFileModifyingToolsForAdapter(adapter)
+    : ["Write", "Edit", "NotebookEdit"];
 
   for (const msg of messages) {
     for (const block of msg.content_blocks || []) {
-      if (block.type === "tool_use" && ["Write", "Edit", "NotebookEdit"].includes(block.name)) {
+      if (block.type === "tool_use" && fileModifyingTools.includes(block.name)) {
         const input = block.input as Record<string, unknown>;
-        const path = (input.file_path || input.notebook_path) as string;
+        const path = adapter
+          ? extractFilePathFromTool(adapter, block.name, input)
+          : (input.file_path || input.notebook_path) as string;
         if (path) files.add(normalizePath(path));
       }
     }

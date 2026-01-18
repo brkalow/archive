@@ -14,6 +14,7 @@ import type {
   NormalizedMessage,
   ContentBlock,
 } from "../adapters/types";
+import { getFileModifyingToolsForAdapter, extractFilePathFromTool } from "../adapters";
 import { isRepoAllowed } from "../lib/config";
 import { debug } from "../lib/debug";
 import { captureGitDiff, getRepoIdentifier, getRepoHttpsUrl } from "../lib/git";
@@ -22,9 +23,6 @@ import { ApiClient } from "./api-client";
 
 /** Debounce delay for diff capture (ms) */
 const DIFF_DEBOUNCE_MS = 2000;
-
-/** Tool names that modify files and should trigger diff capture */
-const FILE_MODIFYING_TOOLS = ["Write", "Edit", "NotebookEdit"];
 
 /** Pattern to detect the collaborate command in messages */
 const COLLABORATE_COMMAND_PATTERN = /\/(?:openctl:)?collaborate/i;
@@ -336,22 +334,26 @@ export class SessionTracker {
     messages: NormalizedMessage[]
   ): void {
     let shouldCaptureDiff = false;
+    const fileModifyingTools = getFileModifyingToolsForAdapter(session.adapter);
 
     for (const msg of messages) {
       for (const block of msg.content_blocks) {
         if (
           block.type === "tool_use" &&
           typeof block.name === "string" &&
-          FILE_MODIFYING_TOOLS.includes(block.name)
+          fileModifyingTools.includes(block.name)
         ) {
           debug(`File-modifying tool detected: ${block.name}`);
           shouldCaptureDiff = true;
 
-          // Extract file path from tool input
-          const filePath = this.extractFilePathFromToolUse(block);
-          if (filePath) {
-            session.modifiedFiles.add(filePath);
-            debug(`Tracked modified file: ${filePath}`);
+          // Extract file path from tool input using adapter
+          const input = block.input as Record<string, unknown> | undefined;
+          if (input) {
+            const filePath = extractFilePathFromTool(session.adapter, block.name, input);
+            if (filePath) {
+              session.modifiedFiles.add(filePath);
+              debug(`Tracked modified file: ${filePath}`);
+            }
           }
         }
       }
@@ -406,28 +408,6 @@ export class SessionTracker {
   }
 
   /**
-   * Extract file path from a file-modifying tool_use block.
-   */
-  private extractFilePathFromToolUse(block: ContentBlock): string | null {
-    const input = block.input as Record<string, unknown> | undefined;
-    if (!input || typeof input !== "object") {
-      return null;
-    }
-
-    // Write and Edit use file_path
-    if (typeof input.file_path === "string") {
-      return input.file_path;
-    }
-
-    // NotebookEdit uses notebook_path
-    if (typeof input.notebook_path === "string") {
-      return input.notebook_path;
-    }
-
-    return null;
-  }
-
-  /**
    * Scan existing session file content for file-modifying tool calls.
    * This is used when picking up a session mid-way to capture files
    * that were already modified before we started watching.
@@ -438,6 +418,7 @@ export class SessionTracker {
     try {
       const content = await Bun.file(session.localPath).text();
       const lines = content.split("\n");
+      const fileModifyingTools = getFileModifyingToolsForAdapter(session.adapter);
 
       for (const line of lines) {
         const trimmed = line.trim();
@@ -467,13 +448,14 @@ export class SessionTracker {
             typeof block === "object" &&
             block.type === "tool_use" &&
             typeof block.name === "string" &&
-            FILE_MODIFYING_TOOLS.includes(block.name)
+            fileModifyingTools.includes(block.name)
           ) {
-            const filePath = this.extractFilePathFromToolUse(
-              block as ContentBlock
-            );
-            if (filePath) {
-              session.modifiedFiles.add(filePath);
+            const input = block.input as Record<string, unknown> | undefined;
+            if (input) {
+              const filePath = extractFilePathFromTool(session.adapter, block.name, input);
+              if (filePath) {
+                session.modifiedFiles.add(filePath);
+              }
             }
           }
         }
