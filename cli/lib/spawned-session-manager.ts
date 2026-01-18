@@ -86,6 +86,23 @@ export class SpawnedSessionManager {
     );
     console.log(`[spawner] Command: claude ${args.join(" ")}`);
 
+    // Check if claude command exists
+    const whichResult = Bun.spawnSync(["which", "claude"]);
+    if (whichResult.exitCode !== 0) {
+      const error = "Claude CLI not found. Please install it with: npm install -g @anthropic-ai/claude-code";
+      console.error(`[spawner] ${error}`);
+      this.sendToServer({
+        type: "session_ended",
+        session_id: request.session_id,
+        exit_code: 1,
+        reason: "error",
+        error,
+      });
+      return;
+    }
+    const claudePath = whichResult.stdout.toString().trim();
+    console.log(`[spawner] Using claude at: ${claudePath}`);
+
     try {
       const proc = Bun.spawn(["claude", ...args], {
         cwd: request.cwd,
@@ -94,6 +111,15 @@ export class SpawnedSessionManager {
         stdout: "pipe",
         stderr: "pipe",
       });
+
+      // Wait briefly for process to start and check if it's still running
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      if (proc.exitCode !== null) {
+        // Process already exited - likely an error
+        const stderr = proc.stderr ? await new Response(proc.stderr).text() : "";
+        throw new Error(`Claude process exited immediately (code ${proc.exitCode}): ${stderr}`);
+      }
 
       const session: SpawnedSession = {
         id: request.session_id,
@@ -112,8 +138,10 @@ export class SpawnedSessionManager {
 
       // Get stdin writer - verify stdin is a WritableStream
       if (!proc.stdin || typeof proc.stdin.getWriter !== "function") {
+        // This shouldn't happen if the process started successfully
+        const stdinType = proc.stdin ? typeof proc.stdin : "null";
         throw new Error(
-          "Failed to get stdin writer - claude command may not be available"
+          `Failed to get stdin writer (stdin type: ${stdinType}). Process may have failed to start.`
         );
       }
       session.stdinWriter = proc.stdin.getWriter();
