@@ -14,11 +14,11 @@ When you discover something critical for effective development in this project, 
 
 ## Quick Start
 
-When running the dev server, use a different PORT than the default to avoid overlap with parallel agents:
-
 ```sh
-PORT=3001 bun run dev
+bun run dev
 ```
+
+The dev server defaults to port 3000 and automatically selects the next available port if busy.
 
 ## Architecture Notes
 
