@@ -30,6 +30,13 @@ interface PermissionRequest {
   content?: string;
 }
 
+// FileSink type from Bun - stdin when using "pipe"
+interface FileSink {
+  write(data: string | ArrayBuffer | ArrayBufferView): number;
+  flush(): void;
+  end(): void;
+}
+
 interface SpawnedSession {
   id: string; // Server-assigned session ID
   claudeSessionId?: string; // Claude's internal session ID (from init message)
@@ -37,7 +44,7 @@ interface SpawnedSession {
   cwd: string;
   startedAt: Date;
   state: "starting" | "running" | "waiting" | "ending" | "ended";
-  stdinWriter: WritableStreamDefaultWriter<Uint8Array> | null;
+  stdin: FileSink | null; // Direct FileSink reference for writing
   pendingToolUseId?: string; // For AskUserQuestion relay
   pendingPermissionId?: string; // For permission relay
   permissionRequests: Map<string, PermissionRequest>; // Track permission requests by ID
@@ -121,13 +128,26 @@ export class SpawnedSessionManager {
         throw new Error(`Claude process exited immediately (code ${proc.exitCode}): ${stderr}`);
       }
 
+      // Verify stdin is available (FileSink from Bun.spawn with stdin: "pipe")
+      if (!proc.stdin) {
+        throw new Error("Failed to get stdin - process may have failed to start");
+      }
+
+      // Check if it's a FileSink (has write method) or WritableStream (has getWriter)
+      const stdin = proc.stdin as unknown as FileSink;
+      if (typeof stdin.write !== "function") {
+        throw new Error(
+          `stdin doesn't have write method (type: ${typeof proc.stdin}). Bun version incompatibility?`
+        );
+      }
+
       const session: SpawnedSession = {
         id: request.session_id,
         proc,
         cwd: request.cwd,
         startedAt: new Date(),
         state: "starting",
-        stdinWriter: null,
+        stdin, // Store FileSink directly
         permissionRequests: new Map(),
         outputBuffer: "",
         outputHistory: [],
@@ -135,16 +155,6 @@ export class SpawnedSessionManager {
       };
 
       this.sessions.set(request.session_id, session);
-
-      // Get stdin writer - verify stdin is a WritableStream
-      if (!proc.stdin || typeof proc.stdin.getWriter !== "function") {
-        // This shouldn't happen if the process started successfully
-        const stdinType = proc.stdin ? typeof proc.stdin : "null";
-        throw new Error(
-          `Failed to get stdin writer (stdin type: ${stdinType}). Process may have failed to start.`
-        );
-      }
-      session.stdinWriter = proc.stdin.getWriter();
 
       // Stream stdout
       if (proc.stdout) {
@@ -444,8 +454,8 @@ export class SpawnedSessionManager {
       return;
     }
 
-    if (!session.stdinWriter) {
-      console.error(`[spawner] No stdin writer for session: ${sessionId}`);
+    if (!session.stdin) {
+      console.error(`[spawner] No stdin for session: ${sessionId}`);
       return;
     }
 
@@ -456,7 +466,8 @@ export class SpawnedSessionManager {
       }) + "\n";
 
     try {
-      await session.stdinWriter.write(new TextEncoder().encode(message));
+      session.stdin.write(message);
+      session.stdin.flush();
       session.state = "running";
       console.log(`[spawner] Sent input to session ${sessionId}`);
     } catch (error) {
@@ -472,7 +483,7 @@ export class SpawnedSessionManager {
 
     try {
       // Close stdin to signal EOF
-      session.stdinWriter?.close();
+      session.stdin?.end();
 
       // Give Claude a moment to finish, then force kill
       setTimeout(() => {
@@ -525,7 +536,7 @@ export class SpawnedSessionManager {
     result: string
   ): Promise<void> {
     const session = this.sessions.get(sessionId);
-    if (!session || !session.stdinWriter) return;
+    if (!session || !session.stdin) return;
 
     const message =
       JSON.stringify({
@@ -543,7 +554,8 @@ export class SpawnedSessionManager {
       }) + "\n";
 
     try {
-      await session.stdinWriter.write(new TextEncoder().encode(message));
+      session.stdin.write(message);
+      session.stdin.flush();
       session.pendingToolUseId = undefined;
       console.log(`[spawner] Injected tool result for ${toolUseId}`);
     } catch (error) {
@@ -561,7 +573,7 @@ export class SpawnedSessionManager {
     allow: boolean
   ): Promise<void> {
     const session = this.sessions.get(sessionId);
-    if (!session || !session.stdinWriter) {
+    if (!session || !session.stdin) {
       console.error(
         `[spawner] Session not found for permission response: ${sessionId}`
       );
@@ -584,7 +596,8 @@ export class SpawnedSessionManager {
       }) + "\n";
 
     try {
-      await session.stdinWriter.write(new TextEncoder().encode(response));
+      session.stdin.write(response);
+      session.stdin.flush();
       session.permissionRequests.delete(requestId);
       session.pendingPermissionId = undefined;
       console.log(
