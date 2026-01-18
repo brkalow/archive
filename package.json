@@ -14,10 +14,14 @@
     "upload": "bun run ./cli/index.ts upload",
     "build:cli": "bun run scripts/build-cli.ts",
     "build:cli:test": "bun run scripts/build-cli.ts --test",
-    "build:cli:release": "bun run scripts/build-cli.ts --archive"
+    "build:cli:release": "bun run scripts/build-cli.ts --archive",
+    "seed": "bun run scripts/seed.ts",
+    "test": "bun test"
   },
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "@types/react": "^18.3.16",
+    "@types/react-dom": "^18.3.5"
   },
   "peerDependencies": {
     "typescript": "^5"
@@ -25,6 +29,9 @@
   "dependencies": {
     "@pierre/diffs": "^1.0.4",
     "bun-plugin-tailwind": "^0.1.2",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.28.0",
     "tailwindcss": "^4.1.18"
   }
 }

@@ -1,0 +1,250 @@
+import { useState, useEffect } from 'react';
+import { BrowserRouter, Routes, Route, useParams } from 'react-router-dom';
+import { GettingStartedPage } from './components/GettingStartedPage';
+import { SessionListPage } from './components/SessionListPage';
+import { SessionDetailPage } from './components/SessionDetailPage';
+import { renderComponentsShowcase } from './views';
+import type { Session, Message, Diff, Review, Annotation } from '../db/schema';
+
+// API types
+interface ReviewWithCount extends Review {
+  annotation_count: number;
+}
+
+interface SessionDetailData {
+  session: Session;
+  messages: Message[];
+  diffs: Diff[];
+  shareUrl: string | null;
+  review?: ReviewWithCount | null;
+}
+
+interface AnnotationsData {
+  review: Review | null;
+  annotations_by_diff: Record<number, Annotation[]>;
+}
+
+// API helpers
+async function fetchSessions(): Promise<Session[]> {
+  const res = await fetch('/api/sessions');
+  if (!res.ok) return [];
+  const data = await res.json();
+  return data.sessions || [];
+}
+
+async function fetchSessionDetail(id: string): Promise<SessionDetailData | null> {
+  const res = await fetch(`/api/sessions/${encodeURIComponent(id)}`);
+  if (!res.ok) return null;
+  return res.json();
+}
+
+async function fetchSharedSession(shareToken: string): Promise<SessionDetailData | null> {
+  const res = await fetch(`/api/s/${encodeURIComponent(shareToken)}`);
+  if (!res.ok) return null;
+  return res.json();
+}
+
+async function fetchAnnotations(sessionId: string): Promise<AnnotationsData | null> {
+  const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/annotations`);
+  if (!res.ok) return null;
+  return res.json();
+}
+
+// Loading spinner component
+function LoadingSpinner() {
+  return (
+    <div className="flex items-center justify-center py-16">
+      <div className="flex items-center gap-2 text-text-muted">
+        <div className="w-5 h-5 border-2 border-text-muted border-t-transparent rounded-full animate-spin" />
+        <span>Loading...</span>
+      </div>
+    </div>
+  );
+}
+
+// Session list loader
+function SessionListLoader() {
+  const [sessions, setSessions] = useState<Session[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetchSessions()
+      .then(setSessions)
+      .catch(() => setError('Failed to load sessions'));
+  }, []);
+
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 text-center">
+        <p className="text-diff-del">{error}</p>
+      </div>
+    );
+  }
+
+  if (sessions === null) {
+    return <LoadingSpinner />;
+  }
+
+  return <SessionListPage sessions={sessions} />;
+}
+
+// Session detail loader
+function SessionDetailLoader() {
+  const { id } = useParams<{ id: string }>();
+  const [data, setData] = useState<{
+    session: Session;
+    messages: Message[];
+    diffs: Diff[];
+    shareUrl: string | null;
+    review: Review | null;
+    annotationsByDiff: Record<number, Annotation[]>;
+  } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!id) return;
+
+    // Fetch session data and annotations in parallel (Vercel best practice: async-parallel)
+    Promise.all([
+      fetchSessionDetail(id),
+      fetchAnnotations(id),
+    ])
+      .then(([sessionData, annotationsData]) => {
+        if (!sessionData) {
+          setError('Session not found');
+          return;
+        }
+        setData({
+          session: sessionData.session,
+          messages: sessionData.messages,
+          diffs: sessionData.diffs,
+          shareUrl: sessionData.shareUrl,
+          review: annotationsData?.review || null,
+          annotationsByDiff: annotationsData?.annotations_by_diff || {},
+        });
+      })
+      .catch(() => setError('Failed to load session'));
+  }, [id]);
+
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 text-center">
+        <h1 className="text-2xl font-semibold mb-2">Session Not Found</h1>
+        <p className="text-text-muted mb-4">{error}</p>
+        <a href="/" className="text-accent-primary hover:underline">Go Home</a>
+      </div>
+    );
+  }
+
+  if (data === null) {
+    return <LoadingSpinner />;
+  }
+
+  return (
+    <SessionDetailPage
+      session={data.session}
+      messages={data.messages}
+      diffs={data.diffs}
+      shareUrl={data.shareUrl}
+      review={data.review}
+      annotationsByDiff={data.annotationsByDiff}
+    />
+  );
+}
+
+// Shared session loader
+function SharedSessionLoader() {
+  const { shareToken } = useParams<{ shareToken: string }>();
+  const [data, setData] = useState<{
+    session: Session;
+    messages: Message[];
+    diffs: Diff[];
+  } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!shareToken) return;
+
+    fetchSharedSession(shareToken)
+      .then(sessionData => {
+        if (!sessionData) {
+          setError('Shared session not found');
+          return;
+        }
+        setData({
+          session: sessionData.session,
+          messages: sessionData.messages,
+          diffs: sessionData.diffs,
+        });
+      })
+      .catch(() => setError('Failed to load shared session'));
+  }, [shareToken]);
+
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 text-center">
+        <h1 className="text-2xl font-semibold mb-2">Session Not Found</h1>
+        <p className="text-text-muted mb-4">{error}</p>
+        <a href="/" className="text-accent-primary hover:underline">Go Home</a>
+      </div>
+    );
+  }
+
+  if (data === null) {
+    return <LoadingSpinner />;
+  }
+
+  return (
+    <SessionDetailPage
+      session={data.session}
+      messages={data.messages}
+      diffs={data.diffs}
+      shareUrl={null}
+      review={null}
+      annotationsByDiff={{}}
+    />
+  );
+}
+
+// Components showcase page
+function ComponentsShowcasePage() {
+  const [html, setHtml] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Render the showcase HTML
+    setHtml(renderComponentsShowcase());
+  }, []);
+
+  if (html === null) {
+    return <LoadingSpinner />;
+  }
+
+  return <div dangerouslySetInnerHTML={{ __html: html }} />;
+}
+
+// Not found page
+function NotFound() {
+  return (
+    <div className="flex flex-col items-center justify-center py-16 text-center">
+      <h1 className="text-2xl font-semibold mb-2">Page Not Found</h1>
+      <p className="text-text-muted mb-4">The page you're looking for doesn't exist.</p>
+      <a href="/" className="text-accent-primary hover:underline">Go Home</a>
+    </div>
+  );
+}
+
+// Main App component with router
+export function App() {
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<GettingStartedPage />} />
+        <Route path="/sessions" element={<SessionListLoader />} />
+        <Route path="/sessions/:id" element={<SessionDetailLoader />} />
+        <Route path="/s/:shareToken" element={<SharedSessionLoader />} />
+        <Route path="/_components" element={<ComponentsShowcasePage />} />
+        <Route path="*" element={<NotFound />} />
+      </Routes>
+    </BrowserRouter>
+  );
+}
