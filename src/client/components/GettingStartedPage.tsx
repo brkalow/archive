@@ -39,7 +39,7 @@ export function GettingStartedPage() {
       {/* Install command */}
       <div className="flex items-center gap-3 px-6 py-4 border border-bg-elevated rounded bg-bg-secondary/50 backdrop-blur mb-20 max-w-xl w-full">
         <span className="text-text-muted font-mono">$</span>
-        <code className="flex-1 font-mono text-text-primary text-sm">
+        <code className="flex-1 min-w-0 overflow-x-auto font-mono text-text-primary text-sm">
           curl -fsSL https://openctl.dev/setup/install.sh | bash
         </code>
         <button
