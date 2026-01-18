@@ -1,5 +1,7 @@
 # Implementation Plan: Page Components and Router
 
+> **ABANDONED**: This plan was superseded by migrating directly to React. See `plans/react_migration_parallel.md` for the approach that was used instead.
+
 Create page-level components and integrate with the router for automatic lifecycle management.
 
 **Spec reference:** `specs/component_model.md` - Migration Phase 3 (Page Components)

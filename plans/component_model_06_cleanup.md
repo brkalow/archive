@@ -1,5 +1,7 @@
 # Implementation Plan: Cleanup and Consolidation
 
+> **ABANDONED**: This plan was superseded by migrating directly to React. See `plans/react_migration_parallel.md` for the approach that was used instead.
+
 Remove legacy patterns and consolidate remaining module-level state.
 
 **Spec reference:** `specs/component_model.md` - Migration Phase 4 (Cleanup)

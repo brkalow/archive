@@ -1,5 +1,7 @@
 # Implementation Plan: Message Components
 
+> **ABANDONED**: This plan was superseded by migrating directly to React. See `plans/react_migration_parallel.md` for the approach that was used instead.
+
 Migrate message and content block rendering to JSX components.
 
 **Spec reference:** `specs/component_model.md` - Example Components (MessageBlock)

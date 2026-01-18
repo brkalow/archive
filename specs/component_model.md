@@ -1,5 +1,7 @@
 # Component Model Spec
 
+> **ABANDONED**: This spec was superseded by migrating directly to React instead of building a custom component model. The React migration is complete. This document is preserved for historical reference only.
+
 A lightweight vanilla JS component abstraction with JSX for the openctl client.
 
 ## Motivation

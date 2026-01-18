@@ -1,5 +1,7 @@
 # Implementation Plan: DiffBlock Component
 
+> **ABANDONED**: This plan was superseded by migrating directly to React. See `plans/react_migration_parallel.md` for the approach that was used instead.
+
 Migrate diff rendering to the component system, validating cleanup patterns.
 
 **Spec reference:** `specs/component_model.md` - Example Components (DiffBlock)

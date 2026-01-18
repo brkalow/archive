@@ -1,5 +1,7 @@
 # Implementation Plan: MessageList Component
 
+> **ABANDONED**: This plan was superseded by migrating directly to React. See `plans/react_migration_parallel.md` for the approach that was used instead.
+
 Create a MessageList component that manages message collection and live session updates.
 
 **Spec reference:** `specs/component_model.md` - File Structure (MessageList), Migration Phase 2

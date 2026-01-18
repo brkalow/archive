@@ -1,5 +1,7 @@
 # Implementation Plan: Component Model Foundation
 
+> **ABANDONED**: This plan was superseded by migrating directly to React. See `plans/react_migration_parallel.md` for the approach that was used instead.
+
 Set up the JSX runtime, Component base class, and TypeScript configuration.
 
 **Spec reference:** `specs/component_model.md` - JSX Runtime, Component Base Class, TypeScript Configuration
