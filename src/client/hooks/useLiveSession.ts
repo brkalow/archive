@@ -45,6 +45,26 @@ export function useLiveSession(options: UseLiveSessionOptions): UseLiveSessionRe
   // Use ref for manager to avoid re-creating on re-render
   const managerRef = useRef<LiveSessionManager | null>(null);
 
+  // Store callbacks in refs to avoid reconnecting WebSocket when callbacks change
+  const onCompleteRef = useRef(onComplete);
+  const onConnectionChangeRef = useRef(onConnectionChange);
+  const onDiffUpdateRef = useRef(onDiffUpdate);
+  const onInteractiveInfoRef = useRef(onInteractiveInfo);
+  const onClaudeStateRef = useRef(onClaudeState);
+  const onFeedbackQueuedRef = useRef(onFeedbackQueued);
+  const onFeedbackStatusRef = useRef(onFeedbackStatus);
+
+  // Keep refs up to date with latest callback values
+  useEffect(() => {
+    onCompleteRef.current = onComplete;
+    onConnectionChangeRef.current = onConnectionChange;
+    onDiffUpdateRef.current = onDiffUpdate;
+    onInteractiveInfoRef.current = onInteractiveInfo;
+    onClaudeStateRef.current = onClaudeState;
+    onFeedbackQueuedRef.current = onFeedbackQueued;
+    onFeedbackStatusRef.current = onFeedbackStatus;
+  });
+
   // Reactive state
   const [messages, setMessages] = useState<Message[]>(() => initialMessages);
   const [isConnected, setIsConnected] = useState(false);
@@ -97,35 +117,35 @@ export function useLiveSession(options: UseLiveSessionOptions): UseLiveSessionRe
       },
 
       onDiff: (_files) => {
-        onDiffUpdate?.();
+        onDiffUpdateRef.current?.();
       },
 
       onComplete: () => {
-        onComplete?.();
+        onCompleteRef.current?.();
       },
 
       onConnectionChange: (connected: boolean) => {
         setIsConnected(connected);
-        onConnectionChange?.(connected);
+        onConnectionChangeRef.current?.(connected);
       },
 
       onInteractiveInfo: (interactive: boolean, state: "running" | "waiting" | "unknown") => {
         setIsInteractive(interactive);
         setClaudeState(state);
-        onInteractiveInfo?.(interactive, state);
+        onInteractiveInfoRef.current?.(interactive, state);
       },
 
       onClaudeState: (state: "running" | "waiting") => {
         setClaudeState(state);
-        onClaudeState?.(state);
+        onClaudeStateRef.current?.(state);
       },
 
       onFeedbackQueued: (messageId: string, position: number) => {
-        onFeedbackQueued?.(messageId, position);
+        onFeedbackQueuedRef.current?.(messageId, position);
       },
 
       onFeedbackStatus: (messageId: string, status: "approved" | "rejected" | "expired") => {
-        onFeedbackStatus?.(messageId, status);
+        onFeedbackStatusRef.current?.(messageId, status);
       },
     });
 
@@ -137,17 +157,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseLiveSessionRe
       manager.destroy();
       managerRef.current = null;
     };
-  }, [
-    sessionId,
-    enabled,
-    onComplete,
-    onConnectionChange,
-    onDiffUpdate,
-    onInteractiveInfo,
-    onClaudeState,
-    onFeedbackQueued,
-    onFeedbackStatus,
-  ]);
+  }, [sessionId, enabled]);
 
   return {
     messages,

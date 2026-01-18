@@ -33,7 +33,15 @@ const annotationConfig: Record<AnnotationType, { label: string; badgeClass: stri
 };
 
 export function DiffBlock(props: DiffBlockProps) {
-  const { filename, additions, deletions, initiallyExpanded = false } = props;
+  const {
+    filename,
+    additions,
+    deletions,
+    diffContent,
+    annotations,
+    reviewModel,
+    initiallyExpanded = false,
+  } = props;
   const [expanded, setExpanded] = useState(initiallyExpanded);
   const diffInstanceRef = useRef<FileDiffType<AnnotationMetadata> | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -73,8 +81,6 @@ export function DiffBlock(props: DiffBlockProps) {
   const renderDiff = useCallback(async (): Promise<void> => {
     if (!containerRef.current) return;
 
-    const { diffContent, filename: propFilename, annotations, reviewModel } = props;
-
     try {
       // Lazy load @pierre/diffs to reduce initial bundle size
       const { FileDiff, getSingularPatch } = await import('@pierre/diffs');
@@ -90,7 +96,7 @@ export function DiffBlock(props: DiffBlockProps) {
           type: a.annotation_type,
           content: a.content,
           model: reviewModel,
-          filename: propFilename,
+          filename: filename,
           lineNumber: a.line_number,
         },
       }));
@@ -118,7 +124,7 @@ export function DiffBlock(props: DiffBlockProps) {
       console.error('Failed to render diff:', err);
       renderFallback(diffContent);
     }
-  }, [props, renderFallback]);
+  }, [diffContent, filename, annotations, reviewModel, renderFallback]);
 
   // Lazy render diff when expanded
   useEffect(() => {

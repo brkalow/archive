@@ -41,6 +41,15 @@ export function SessionDetailPage(props: SessionDetailPageProps) {
 
   // Refs
   const messageListHandleRef = useRef<MessageListHandle | null>(null);
+  const isMountedRef = useRef(true);
+
+  // Track mounted state for async callbacks
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   // Hooks
   const { showToast } = useToast();
@@ -63,19 +72,24 @@ export function SessionDetailPage(props: SessionDetailPageProps) {
   const handleDiffUpdate = useCallback(async () => {
     try {
       const res = await fetch(`/api/sessions/${encodeURIComponent(session.id)}/diffs`);
+      if (!isMountedRef.current) return;
       if (res.ok) {
         const data = await res.json();
+        if (!isMountedRef.current) return;
         setCurrentDiffs(data.diffs || []);
       }
 
       // Also fetch annotations
       const annotationsRes = await fetch(`/api/sessions/${encodeURIComponent(session.id)}/annotations`);
+      if (!isMountedRef.current) return;
       if (annotationsRes.ok) {
         const annotationsData = await annotationsRes.json();
+        if (!isMountedRef.current) return;
         setCurrentAnnotationsByDiff(annotationsData?.annotations_by_diff || {});
         setCurrentReview(annotationsData?.review || null);
       }
     } catch (error) {
+      if (!isMountedRef.current) return;
       console.error("Failed to update diffs:", error);
     }
   }, [session.id]);

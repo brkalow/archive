@@ -2,12 +2,6 @@ import { useState, useCallback } from 'react';
 import { formatMarkdown, escapeHtml, getToolIcon, stripSystemTags } from '../blocks';
 import type { ToolUseBlock as ToolUseBlockType, ToolResultBlock } from '../../db/schema';
 
-declare global {
-  interface Window {
-    copyToClipboard: (text: string) => Promise<void>;
-  }
-}
-
 interface ToolBlockProps {
   block: ToolUseBlockType;
   result?: ToolResultBlock;

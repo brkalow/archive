@@ -13,7 +13,7 @@ function getToastClasses(type: ToastType): string {
     case 'error':
       return `${baseClasses} bg-red-600`;
     case 'info':
-      return `${baseClasses} bg-accent-600`;
+      return `${baseClasses} bg-blue-600`;
   }
 }
 
