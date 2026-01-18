@@ -325,7 +325,6 @@ export type StatType =
   | "lines_added"
   | "lines_removed"
   | "files_changed"
-  | "files_modified"
   | "tools_invoked"
   | "subagents_invoked"
   | `tool_${string}`;
@@ -369,7 +368,6 @@ export type MessageSentProperties = {
 
 export type DiffUpdatedProperties = {
   files_changed: number;
-  files_modified: number;
   additions: number;
   deletions: number;
 };

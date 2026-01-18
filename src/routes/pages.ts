@@ -39,7 +39,6 @@ export function createPageRoutes(repo: SessionRepository) {
           lines_added: summary.lines_added ?? 0,
           lines_removed: summary.lines_removed ?? 0,
           files_changed: summary.files_changed ?? 0,
-          files_modified: summary.files_modified ?? 0,
         },
         tools,
         timeseries: sessionsTimeseries,

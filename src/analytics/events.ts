@@ -161,7 +161,6 @@ export class AnalyticsRecorder {
     sessionId: string,
     stats: {
       filesChanged: number;
-      filesModified: number;
       additions: number;
       deletions: number;
     },
@@ -170,11 +169,10 @@ export class AnalyticsRecorder {
     } = {}
   ): void {
     const { clientId } = options;
-    const { filesChanged, filesModified, additions, deletions } = stats;
+    const { filesChanged, additions, deletions } = stats;
 
     const properties: DiffUpdatedProperties = {
       files_changed: filesChanged,
-      files_modified: filesModified,
       additions,
       deletions,
     };
@@ -183,7 +181,6 @@ export class AnalyticsRecorder {
     this.repo.recordMultipleStats(
       [
         { statType: "files_changed", value: filesChanged },
-        { statType: "files_modified", value: filesModified },
         { statType: "lines_added", value: additions },
         { statType: "lines_removed", value: deletions },
       ],

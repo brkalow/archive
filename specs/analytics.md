@@ -100,7 +100,7 @@ DO UPDATE SET value = value + excluded.value
 | `session.created` | Session created (live or upload) | `model`, `harness`, `interactive`, `is_live` |
 | `session.completed` | Live session ends | `duration_seconds`, `message_count` |
 | `message.sent` | User prompt pushed | `content_length` |
-| `diff.updated` | Code changes recorded | `files_changed`, `files_modified`, `additions`, `deletions` |
+| `diff.updated` | Code changes recorded | `files_changed`, `additions`, `deletions` |
 | `tool.invoked` | Tool use detected | `tool_name` |
 
 ## Stat Types
@@ -118,7 +118,6 @@ Core stats tracked in daily rollups:
 | `lines_added` | Lines of code added |
 | `lines_removed` | Lines of code removed |
 | `files_changed` | Total files changed in diffs |
-| `files_modified` | Existing files modified (subset of files_changed) |
 | `tool_{name}` | Per-tool invocation counts |
 
 Tool stats use a dynamic naming pattern (`tool_read`, `tool_edit`, `tool_bash`, etc.) to track usage of each tool separately. Tool names are sanitized to lowercase alphanumeric with underscores.
@@ -164,8 +163,7 @@ Summary statistics for a period.
     "subagents_invoked": 120,
     "lines_added": 5420,
     "lines_removed": 1230,
-    "files_changed": 89,
-    "files_modified": 56
+    "files_changed": 89
   }
 }
 ```
@@ -228,8 +226,7 @@ Combined endpoint for dashboard (single request for all data).
     "subagents_invoked": 120,
     "lines_added": 5420,
     "lines_removed": 1230,
-    "files_changed": 89,
-    "files_modified": 56
+    "files_changed": 89
   },
   "tools": [ ... ],
   "timeseries": {
@@ -276,7 +273,6 @@ for (const msg of parsedMessages) {
 // PUT /api/sessions/:id/diff
 analytics.recordDiffUpdated(sessionId, {
   filesChanged,
-  filesModified,
   additions,
   deletions
 }, { clientId });
@@ -322,7 +318,7 @@ Clients are identified via the `X-Openctl-Client-ID` header. This is typically a
 
 The `/stats` route renders a server-side dashboard showing:
 - **Summary cards** - Sessions, prompts, tool calls, subagents
-- **File stats** - Files changed, files modified
+- **File stats** - Files changed
 - **Code stats** - Lines added (green) / removed (red)
 - **Sessions chart** - SVG bar chart of sessions over time
 - **Tool breakdown** - Horizontal bar chart of tool usage

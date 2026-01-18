@@ -844,7 +844,6 @@ export function createApiRoutes(repo: SessionRepository) {
 
         return json({
           files_changed: fileStats.filesChanged,
-          files_modified: fileStats.filesModified,
           additions: fileStats.additions,
           deletions: fileStats.deletions,
         });
@@ -1019,7 +1018,6 @@ export function createApiRoutes(repo: SessionRepository) {
           lines_added: summary.lines_added ?? 0,
           lines_removed: summary.lines_removed ?? 0,
           files_changed: summary.files_changed ?? 0,
-          files_modified: summary.files_modified ?? 0,
         },
       });
     },
@@ -1051,7 +1049,6 @@ export function createApiRoutes(repo: SessionRepository) {
         "lines_added",
         "lines_removed",
         "files_changed",
-        "files_modified",
       ];
 
       if (!validStats.includes(statType) && !statType.startsWith("tool_")) {
@@ -1126,7 +1123,6 @@ export function createApiRoutes(repo: SessionRepository) {
           lines_added: summary.lines_added ?? 0,
           lines_removed: summary.lines_removed ?? 0,
           files_changed: summary.files_changed ?? 0,
-          files_modified: summary.files_modified ?? 0,
         },
         tools,
         timeseries: {
@@ -1474,23 +1470,20 @@ function parseDiffData(
  */
 function calculateFileStats(diffs: Omit<Diff, "id">[]): {
   filesChanged: number;
-  filesModified: number;
   additions: number;
   deletions: number;
 } {
   let filesChanged = 0;
-  let filesModified = 0;
   let additions = 0;
   let deletions = 0;
 
   for (const diff of diffs) {
     if (diff.is_session_relevant) {
       filesChanged++;
-      if (diff.status === "modified") filesModified++;
     }
     additions += diff.additions || 0;
     deletions += diff.deletions || 0;
   }
 
-  return { filesChanged, filesModified, additions, deletions };
+  return { filesChanged, additions, deletions };
 }

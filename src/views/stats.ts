@@ -13,7 +13,6 @@ interface StatsPageData {
     lines_added: number;
     lines_removed: number;
     files_changed: number;
-    files_modified: number;
   };
   tools: Array<{ tool: string; count: number }>;
   timeseries: Array<{ date: string; value: number }>;
@@ -40,10 +39,9 @@ export function renderStatsPage(data: StatsPageData): string {
         ${renderStatCard("Subagents", data.summary.subagents_invoked, "cpu-chip")}
       </div>
 
-      <!-- File Stats Cards -->
-      <div class="grid grid-cols-2 gap-4 mb-8">
+      <!-- File Stats Card -->
+      <div class="grid grid-cols-1 gap-4 mb-8">
         ${renderStatCard("Files Changed", data.summary.files_changed, "document-text")}
-        ${renderStatCard("Files Modified", data.summary.files_modified, "pencil")}
       </div>
 
       <!-- Code Stats Cards -->
