@@ -8,6 +8,8 @@ interface StatsPageData {
     sessions_interactive: number;
     sessions_live: number;
     prompts_sent: number;
+    tools_invoked: number;
+    subagents_invoked: number;
     lines_added: number;
     lines_removed: number;
     files_changed: number;
@@ -32,8 +34,13 @@ export function renderStatsPage(data: StatsPageData): string {
       <!-- Summary Cards -->
       <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
         ${renderStatCard("Sessions", data.summary.sessions_created, "chart-bar")}
-        ${renderStatCard("Interactive", data.summary.sessions_interactive, "chat-bubble-left-right")}
         ${renderStatCard("Prompts", data.summary.prompts_sent, "command-line")}
+        ${renderStatCard("Tool Calls", data.summary.tools_invoked, "wrench")}
+        ${renderStatCard("Subagents", data.summary.subagents_invoked, "cpu-chip")}
+      </div>
+
+      <!-- File Stats Card -->
+      <div class="grid grid-cols-1 gap-4 mb-8">
         ${renderStatCard("Files Changed", data.summary.files_changed, "document-text")}
       </div>
 
@@ -169,6 +176,39 @@ function renderCodeStatCard(
   `;
 }
 
+function renderFileStatCard(
+  label: string,
+  value: number,
+  icon: string,
+  color: "green" | "yellow" | "red"
+): string {
+  const colorClasses = {
+    green: "bg-[#86efac]/10 text-[#86efac]",
+    yellow: "bg-[#fde68a]/10 text-[#fde68a]",
+    red: "bg-[#fda4af]/10 text-[#fda4af]",
+  }[color];
+
+  const textColor = {
+    green: "text-[#86efac]",
+    yellow: "text-[#fde68a]",
+    red: "text-[#fda4af]",
+  }[color];
+
+  return `
+    <div class="bg-bg-secondary border border-bg-elevated rounded-md p-4">
+      <div class="flex items-center gap-3">
+        <div class="p-2 ${colorClasses} rounded-md">
+          ${getIcon(icon)}
+        </div>
+        <div>
+          <p class="text-2xl font-semibold ${textColor} tabular-nums">${formatNumber(value)}</p>
+          <p class="text-xs text-text-muted">${label}</p>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
 function renderToolTable(tools: Array<{ tool: string; count: number }>): string {
   if (tools.length === 0) {
     return `<p class="text-text-muted text-xs">No tool usage data</p>`;
@@ -297,6 +337,15 @@ function getIcon(name: string): string {
     </svg>`,
     "minus": `<svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.5 12h-15"/>
+    </svg>`,
+    "wrench": `<svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21.75 6.75a4.5 4.5 0 01-4.884 4.484c-1.076-.091-2.264.071-2.95.904l-7.152 8.684a2.548 2.548 0 11-3.586-3.586l8.684-7.152c.833-.686.995-1.874.904-2.95a4.5 4.5 0 016.336-4.486l-3.276 3.276a3.004 3.004 0 002.25 2.25l3.276-3.276c.256.565.398 1.192.398 1.852z"/>
+    </svg>`,
+    "cpu-chip": `<svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.25 3v1.5M4.5 8.25H3m18 0h-1.5M4.5 12H3m18 0h-1.5m-15 3.75H3m18 0h-1.5M8.25 19.5V21M12 3v1.5m0 15V21m3.75-18v1.5m0 15V21m-9-1.5h10.5a2.25 2.25 0 002.25-2.25V6.75a2.25 2.25 0 00-2.25-2.25H6.75A2.25 2.25 0 004.5 6.75v10.5a2.25 2.25 0 002.25 2.25zm.75-12h9v9h-9v-9z"/>
+    </svg>`,
+    "pencil": `<svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10"/>
     </svg>`,
   };
 

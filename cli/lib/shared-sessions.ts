@@ -8,6 +8,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { readdir, stat } from "fs/promises";
 import { dirname, join } from "path";
+import * as readline from "readline";
 
 const SHARED_SESSIONS_PATH = join(Bun.env.HOME || "~", ".openctl", "shared-sessions.json");
 
@@ -347,4 +348,301 @@ function decodeProjectPath(encoded: string): string {
 
   // Simple fallback: replace hyphens with slashes
   return "/" + encoded.replace(/-/g, "/").replace(/\/+/g, "/");
+}
+
+/**
+ * Information about a local session file.
+ */
+export interface LocalSessionInfo {
+  /** Session UUID */
+  uuid: string;
+  /** Absolute path to the session file */
+  filePath: string;
+  /** Decoded project path */
+  projectPath: string;
+  /** Project name (basename of projectPath) */
+  projectName: string;
+  /** Last modified timestamp */
+  modifiedAt: Date;
+  /** Preview of the first user message (truncated) */
+  titlePreview: string;
+}
+
+/**
+ * List recent local sessions across all projects.
+ * Scans ~/.claude/projects/ and returns sessions sorted by modification time (newest first).
+ */
+export async function listRecentSessions(limit: number = 10): Promise<LocalSessionInfo[]> {
+  const home = Bun.env.HOME;
+  if (!home) {
+    return [];
+  }
+
+  const projectsDir = join(home, ".claude", "projects");
+  if (!existsSync(projectsDir)) {
+    return [];
+  }
+
+  const sessions: LocalSessionInfo[] = [];
+  await collectSessions(projectsDir, sessions);
+
+  // Sort by modification time (newest first) and limit
+  sessions.sort((a, b) => b.modifiedAt.getTime() - a.modifiedAt.getTime());
+  return sessions.slice(0, limit);
+}
+
+/**
+ * Recursively collect session files from a directory.
+ */
+async function collectSessions(dir: string, sessions: LocalSessionInfo[]): Promise<void> {
+  try {
+    const entries = await readdir(dir, { withFileTypes: true });
+
+    for (const entry of entries) {
+      const fullPath = join(dir, entry.name);
+
+      if (entry.isDirectory()) {
+        // Skip subagent directories
+        if (entry.name === "subagents") {
+          continue;
+        }
+        await collectSessions(fullPath, sessions);
+      } else if (entry.name.endsWith(".jsonl")) {
+        try {
+          const fileStat = await stat(fullPath);
+          const uuid = entry.name.replace(".jsonl", "");
+          const projectPath = extractProjectPathFromSessionPath(fullPath) || "";
+          const projectName = projectPath.split("/").pop() || projectPath;
+          const titlePreview = await extractTitlePreview(fullPath);
+
+          sessions.push({
+            uuid,
+            filePath: fullPath,
+            projectPath,
+            projectName,
+            modifiedAt: fileStat.mtime,
+            titlePreview,
+          });
+        } catch {
+          // Skip files we can't read
+        }
+      }
+    }
+  } catch {
+    // Ignore directory read errors
+  }
+}
+
+/**
+ * Extract a title preview from the first user message in a session file.
+ * Only reads the first ~16KB to avoid loading large files entirely.
+ */
+async function extractTitlePreview(filePath: string): Promise<string> {
+  const MAX_BYTES = 16384; // 16KB should be enough to find first user message
+
+  try {
+    const file = Bun.file(filePath);
+    const stream = file.stream();
+    const reader = stream.getReader();
+
+    let buffer = "";
+    let bytesRead = 0;
+
+    // Read chunks until we have enough data or find the first user message
+    while (bytesRead < MAX_BYTES) {
+      const { value, done } = await reader.read();
+      if (done) break;
+
+      buffer += new TextDecoder().decode(value);
+      bytesRead += value.length;
+
+      // Try to extract title from what we have so far
+      const title = extractTitleFromBuffer(buffer);
+      if (title) {
+        reader.releaseLock();
+        return title;
+      }
+    }
+
+    reader.releaseLock();
+
+    // Final attempt with all buffered content
+    const title = extractTitleFromBuffer(buffer);
+    if (title) {
+      return title;
+    }
+  } catch {
+    // Ignore read errors
+  }
+
+  return "Untitled Session";
+}
+
+/**
+ * Try to extract a title from a buffer of JSONL content.
+ */
+function extractTitleFromBuffer(buffer: string): string | null {
+  const lines = buffer.split("\n");
+
+  for (const line of lines) {
+    if (!line.trim()) continue;
+
+    try {
+      const parsed = JSON.parse(line);
+      const messageData = parsed.message || parsed;
+      const role = messageData.role;
+
+      if (role === "human" || role === "user") {
+        let content = "";
+        const rawContent = messageData.content;
+
+        if (typeof rawContent === "string") {
+          content = rawContent;
+        } else if (Array.isArray(rawContent)) {
+          // Find first text block
+          for (const block of rawContent) {
+            if (block.type === "text" && typeof block.text === "string") {
+              content = block.text;
+              break;
+            }
+          }
+        }
+
+        if (content) {
+          // Strip system tags
+          content = content
+            .replace(/<system_instruction>[\s\S]*?<\/system_instruction>/gi, "")
+            .replace(/<system-instruction>[\s\S]*?<\/system-instruction>/gi, "")
+            .replace(/<system-reminder>[\s\S]*?<\/system-reminder>/gi, "")
+            .replace(/<local-command-caveat>[\s\S]*?<\/local-command-caveat>/gi, "")
+            .replace(/\n/g, " ")
+            .replace(/\s+/g, " ")
+            .trim();
+
+          if (content) {
+            // Truncate to ~60 chars at word boundary
+            if (content.length <= 60) {
+              return content;
+            }
+            const truncated = content.slice(0, 60);
+            const lastSpace = truncated.lastIndexOf(" ");
+            if (lastSpace > 30) {
+              return truncated.slice(0, lastSpace) + "...";
+            }
+            return truncated + "...";
+          }
+        }
+      }
+    } catch {
+      // Skip malformed or incomplete lines
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Format a relative time string (e.g., "2 hours ago", "1 day ago").
+ */
+function formatRelativeTime(date: Date): string {
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffSeconds = Math.floor(diffMs / 1000);
+  const diffMinutes = Math.floor(diffSeconds / 60);
+  const diffHours = Math.floor(diffMinutes / 60);
+  const diffDays = Math.floor(diffHours / 24);
+
+  if (diffMinutes < 1) {
+    return "just now";
+  } else if (diffMinutes < 60) {
+    return `${diffMinutes} minute${diffMinutes === 1 ? "" : "s"} ago`;
+  } else if (diffHours < 24) {
+    return `${diffHours} hour${diffHours === 1 ? "" : "s"} ago`;
+  } else if (diffDays < 7) {
+    return `${diffDays} day${diffDays === 1 ? "" : "s"} ago`;
+  } else {
+    return date.toLocaleDateString();
+  }
+}
+
+/**
+ * Read a single line from stdin using Bun's stream API.
+ * Useful for simple Y/N prompts outside of readline interface.
+ */
+export async function readLine(): Promise<string> {
+  const decoder = new TextDecoder();
+  const reader = Bun.stdin.stream().getReader();
+  const { value } = await reader.read();
+  reader.releaseLock();
+  if (!value) {
+    return "";
+  }
+  return decoder.decode(value).trim();
+}
+
+/**
+ * Selection result from promptSessionSelection.
+ * - session: User selected a valid session
+ * - cancelled=true: User explicitly cancelled (q, quit, empty) or no sessions
+ * - cancelled=false with null session: Invalid input
+ */
+export interface SessionSelectionResult {
+  session: LocalSessionInfo | null;
+  cancelled: boolean;
+}
+
+/**
+ * Prompt user to select a session from a list.
+ * Returns a result indicating the selected session, cancellation, or invalid input.
+ */
+export async function promptSessionSelection(
+  sessions: LocalSessionInfo[]
+): Promise<SessionSelectionResult> {
+  if (!process.stdin.isTTY) {
+    console.error("Interactive session selection requires a TTY.");
+    return { session: null, cancelled: true };
+  }
+
+  if (sessions.length === 0) {
+    console.log("No sessions found.");
+    return { session: null, cancelled: true };
+  }
+
+  console.log("\nRecent sessions:\n");
+
+  for (let i = 0; i < sessions.length; i++) {
+    const session = sessions[i];
+    const timeAgo = formatRelativeTime(session.modifiedAt);
+    const num = String(i + 1).padStart(2, " ");
+    console.log(`  ${num}. [${timeAgo}] ${session.projectName}`);
+    console.log(`      "${session.titlePreview}"`);
+  }
+
+  console.log();
+
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+
+  return new Promise((resolve) => {
+    rl.question(`Select session (1-${sessions.length}, or q to quit): `, (answer) => {
+      rl.close();
+
+      const trimmed = answer.trim().toLowerCase();
+      if (trimmed === "q" || trimmed === "quit" || trimmed === "") {
+        resolve({ session: null, cancelled: true });
+        return;
+      }
+
+      const num = parseInt(trimmed, 10);
+      if (isNaN(num) || num < 1 || num > sessions.length) {
+        console.error(`Invalid selection: ${answer}`);
+        resolve({ session: null, cancelled: false });
+        return;
+      }
+
+      resolve({ session: sessions[num - 1], cancelled: false });
+    });
+  });
 }

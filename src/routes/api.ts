@@ -1,5 +1,5 @@
 import { SessionRepository } from "../db/repository";
-import type { Message, Diff, ContentBlock, ToolUseBlock, ToolResultBlock, ImageBlock, SessionStatus, AnnotationType, StatType } from "../db/schema";
+import type { Message, Diff, DiffStatus, ContentBlock, ToolUseBlock, ToolResultBlock, ImageBlock, SessionStatus, AnnotationType, StatType } from "../db/schema";
 import { getDateRange, parsePeriod, fillTimeseriesGaps } from "../analytics/queries";
 import { AnalyticsRecorder } from "../analytics/events";
 import { getClientId, getClientIP } from "../utils/request";
@@ -7,6 +7,8 @@ import { daemonConnections } from "../lib/daemon-connections";
 import { spawnedSessionRegistry } from "../lib/spawned-session-registry";
 import { spawnSessionLimiter } from "../lib/rate-limiter";
 import { logSessionStarted } from "../lib/audit-log";
+import { getAdapterById, getFileModifyingToolsForAdapter, extractFilePathFromTool } from "../../cli/adapters";
+import type { AdapterUIConfig } from "../../cli/adapters";
 
 // Helper to calculate content length from content blocks
 function calculateContentLength(contentBlocks: Array<{ type: string; text?: string }>): number {
@@ -166,7 +168,16 @@ export function createApiRoutes(repo: SessionRepository) {
         shareUrl = `${baseUrl}/s/${session.share_token}`;
       }
 
-      return json({ session, messages, diffs, shareUrl, review });
+      // Include adapter UI config if available
+      let adapterUIConfig: AdapterUIConfig | null = null;
+      if (session.harness) {
+        const adapter = getAdapterById(session.harness);
+        if (adapter?.getUIConfig) {
+          adapterUIConfig = adapter.getUIConfig();
+        }
+      }
+
+      return json({ session, messages, diffs, shareUrl, review, adapterUIConfig });
     },
 
     // Get diffs for a session
@@ -193,7 +204,16 @@ export function createApiRoutes(repo: SessionRepository) {
 
       const shareUrl = baseUrl ? `${baseUrl}/s/${session.share_token}` : null;
 
-      return json({ session, messages, diffs, shareUrl, review });
+      // Include adapter UI config if available
+      let adapterUIConfig: AdapterUIConfig | null = null;
+      if (session.harness) {
+        const adapter = getAdapterById(session.harness);
+        if (adapter?.getUIConfig) {
+          adapterUIConfig = adapter.getUIConfig();
+        }
+      }
+
+      return json({ session, messages, diffs, shareUrl, review, adapterUIConfig });
     },
 
     // Create session
@@ -227,8 +247,11 @@ export function createApiRoutes(repo: SessionRepository) {
           messages = parseSessionData(sessionData, id);
         }
 
+        // Extract harness for adapter-aware file detection
+        const harness = (formData.get("harness") as string) || null;
+
         // Extract files touched in the conversation for diff relevance detection
-        const touchedFiles = extractTouchedFiles(messages);
+        const touchedFiles = extractTouchedFiles(messages, harness || undefined);
 
         let diffs: Omit<Diff, "id">[] = [];
         if (diffFile && diffFile.size > 0) {
@@ -295,7 +318,7 @@ export function createApiRoutes(repo: SessionRepository) {
             share_token: null,
             project_path: (formData.get("project_path") as string) || null,
             model: (formData.get("model") as string) || null,
-            harness: (formData.get("harness") as string) || null,
+            harness,
             repo_url: (formData.get("repo_url") as string) || null,
             status: "archived",
             last_activity_at: null,
@@ -327,16 +350,10 @@ export function createApiRoutes(repo: SessionRepository) {
 
         // Record diff stats if provided
         if (diffs && diffs.length > 0) {
-          const totalAdditions = diffs.reduce((sum, d) => sum + (d.additions || 0), 0);
-          const totalDeletions = diffs.reduce((sum, d) => sum + (d.deletions || 0), 0);
-          const filesChanged = diffs.filter(d => d.is_session_relevant).length;
+          const fileStats = calculateFileStats(diffs);
 
-          if (filesChanged > 0 || totalAdditions > 0 || totalDeletions > 0) {
-            analytics.recordDiffUpdated(
-              session.id,
-              { filesChanged, additions: totalAdditions, deletions: totalDeletions },
-              { clientId: clientId || undefined }
-            );
+          if (fileStats.filesChanged > 0 || fileStats.additions > 0 || fileStats.deletions > 0) {
+            analytics.recordDiffUpdated(session.id, fileStats, { clientId: clientId || undefined });
           }
         }
 
@@ -399,8 +416,11 @@ export function createApiRoutes(repo: SessionRepository) {
           repo.addMessages(messages);
         }
 
+        // Get harness for adapter-aware file detection (prefer form data, fall back to existing)
+        const harness = (formData.get("harness") as string) || existing.harness;
+
         // Extract files touched in the conversation for diff relevance detection
-        const touchedFiles = extractTouchedFiles(messages);
+        const touchedFiles = extractTouchedFiles(messages, harness || undefined);
 
         // Process diff data
         const diffFile = formData.get("diff_file") as File | null;
@@ -826,20 +846,15 @@ export function createApiRoutes(repo: SessionRepository) {
 
         const diffContent = await req.text();
         const messages = repo.getMessages(sessionId);
-        const touchedFiles = extractTouchedFiles(messages);
+        const touchedFiles = extractTouchedFiles(messages, session.harness || undefined);
         const diffs = parseDiffData(diffContent, sessionId, touchedFiles);
 
         // Replace existing diffs
         repo.clearDiffs(sessionId);
         repo.addDiffs(diffs);
 
-        // Calculate totals
-        let additions = 0;
-        let deletions = 0;
-        for (const d of diffs) {
-          additions += d.additions || 0;
-          deletions += d.deletions || 0;
-        }
+        // Calculate file stats
+        const fileStats = calculateFileStats(diffs);
 
         // Broadcast diff update
         broadcastToSession(sessionId, {
@@ -848,22 +863,19 @@ export function createApiRoutes(repo: SessionRepository) {
             filename: d.filename || "unknown",
             additions: d.additions || 0,
             deletions: d.deletions || 0,
+            status: d.status,
           })),
         });
 
         // Record analytics for diff update
-        if (diffs.length > 0 || additions > 0 || deletions > 0) {
-          analytics.recordDiffUpdated(
-            sessionId,
-            { filesChanged: diffs.length, additions, deletions },
-            { clientId: clientId || undefined }
-          );
+        if (fileStats.filesChanged > 0 || fileStats.additions > 0 || fileStats.deletions > 0) {
+          analytics.recordDiffUpdated(sessionId, fileStats, { clientId: clientId || undefined });
         }
 
         return json({
-          files_changed: diffs.length,
-          additions,
-          deletions,
+          files_changed: fileStats.filesChanged,
+          additions: fileStats.additions,
+          deletions: fileStats.deletions,
         });
       } catch (error) {
         console.error("Error updating diff:", error);
@@ -903,7 +915,7 @@ export function createApiRoutes(repo: SessionRepository) {
         // Update diff if provided
         if (final_diff) {
           const messages = repo.getMessages(sessionId);
-          const touchedFiles = extractTouchedFiles(messages);
+          const touchedFiles = extractTouchedFiles(messages, session.harness || undefined);
           const diffs = parseDiffData(final_diff, sessionId, touchedFiles);
           repo.clearDiffs(sessionId);
           repo.addDiffs(diffs);
@@ -1031,6 +1043,8 @@ export function createApiRoutes(repo: SessionRepository) {
           sessions_interactive: summary.sessions_interactive ?? 0,
           sessions_live: summary.sessions_live ?? 0,
           prompts_sent: summary.prompts_sent ?? 0,
+          tools_invoked: summary.tools_invoked ?? 0,
+          subagents_invoked: summary.subagents_invoked ?? 0,
           lines_added: summary.lines_added ?? 0,
           lines_removed: summary.lines_removed ?? 0,
           files_changed: summary.files_changed ?? 0,
@@ -1060,6 +1074,8 @@ export function createApiRoutes(repo: SessionRepository) {
         "sessions_interactive",
         "sessions_live",
         "prompts_sent",
+        "tools_invoked",
+        "subagents_invoked",
         "lines_added",
         "lines_removed",
         "files_changed",
@@ -1132,6 +1148,8 @@ export function createApiRoutes(repo: SessionRepository) {
           sessions_interactive: summary.sessions_interactive ?? 0,
           sessions_live: summary.sessions_live ?? 0,
           prompts_sent: summary.prompts_sent ?? 0,
+          tools_invoked: summary.tools_invoked ?? 0,
+          subagents_invoked: summary.subagents_invoked ?? 0,
           lines_added: summary.lines_added ?? 0,
           lines_removed: summary.lines_removed ?? 0,
           files_changed: summary.files_changed ?? 0,
@@ -1715,14 +1733,20 @@ function extractMessage(
 }
 
 // Diff relevance detection helpers
-function extractTouchedFiles(messages: Omit<Message, "id">[]): Set<string> {
+function extractTouchedFiles(messages: Omit<Message, "id">[], adapterId?: string): Set<string> {
   const files = new Set<string>();
+  const adapter = adapterId ? getAdapterById(adapterId) : null;
+  const fileModifyingTools = adapter
+    ? getFileModifyingToolsForAdapter(adapter)
+    : ["Write", "Edit", "NotebookEdit"];
 
   for (const msg of messages) {
     for (const block of msg.content_blocks || []) {
-      if (block.type === "tool_use" && ["Write", "Edit", "NotebookEdit"].includes(block.name)) {
+      if (block.type === "tool_use" && fileModifyingTools.includes(block.name)) {
         const input = block.input as Record<string, unknown>;
-        const path = (input.file_path || input.notebook_path) as string;
+        const path = adapter
+          ? extractFilePathFromTool(adapter, block.name, input)
+          : (input.file_path || input.notebook_path) as string;
         if (path) files.add(normalizePath(path));
       }
     }
@@ -1735,13 +1759,29 @@ function normalizePath(path: string): string {
   return path.replace(/^\.\//, "").replace(/\/+/g, "/");
 }
 
-function countDiffStats(content: string): { additions: number; deletions: number } {
+function countDiffStats(content: string): { additions: number; deletions: number; status: DiffStatus } {
   let additions = 0, deletions = 0;
+  let isNewFile = false;
+  let isDeletedFile = false;
+
   for (const line of content.split("\n")) {
     if (line.startsWith("+") && !line.startsWith("+++")) additions++;
     else if (line.startsWith("-") && !line.startsWith("---")) deletions++;
+    // Detect new file: "--- /dev/null" or "new file mode"
+    else if (line.startsWith("--- /dev/null") || line.startsWith("new file mode")) isNewFile = true;
+    // Detect deleted file: "+++ /dev/null" or "deleted file mode"
+    else if (line.startsWith("+++ /dev/null") || line.startsWith("deleted file mode")) isDeletedFile = true;
   }
-  return { additions, deletions };
+
+  // Determine file status
+  let status: DiffStatus = "modified";
+  if (isNewFile && !isDeletedFile) {
+    status = "added";
+  } else if (isDeletedFile && !isNewFile) {
+    status = "removed";
+  }
+
+  return { additions, deletions, status };
 }
 
 function parseDiffData(
@@ -1774,8 +1814,8 @@ function parseDiffData(
       }
     }
 
-    // Calculate stats and relevance
-    const { additions, deletions } = countDiffStats(partTrimmed);
+    // Calculate stats, relevance, and status
+    const { additions, deletions, status } = countDiffStats(partTrimmed);
     let isRelevant = true;
 
     if (touchedFiles && filename) {
@@ -1794,12 +1834,13 @@ function parseDiffData(
       additions,
       deletions,
       is_session_relevant: isRelevant,
+      status,
     });
   });
 
   // If no "diff --git" markers, treat as single diff
   if (diffs.length === 0 && trimmed) {
-    const { additions, deletions } = countDiffStats(trimmed);
+    const { additions, deletions, status } = countDiffStats(trimmed);
     diffs.push({
       session_id: sessionId,
       filename: null,
@@ -1808,8 +1849,33 @@ function parseDiffData(
       additions,
       deletions,
       is_session_relevant: true,
+      status,
     });
   }
 
   return diffs;
+}
+
+/**
+ * Calculate file stats from diffs.
+ * Only counts session-relevant diffs for file counts.
+ */
+function calculateFileStats(diffs: Omit<Diff, "id">[]): {
+  filesChanged: number;
+  additions: number;
+  deletions: number;
+} {
+  let filesChanged = 0;
+  let additions = 0;
+  let deletions = 0;
+
+  for (const diff of diffs) {
+    if (diff.is_session_relevant) {
+      filesChanged++;
+    }
+    additions += diff.additions || 0;
+    deletions += diff.deletions || 0;
+  }
+
+  return { filesChanged, additions, deletions };
 }

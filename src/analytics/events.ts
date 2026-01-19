@@ -143,7 +143,14 @@ export class AnalyticsRecorder {
     // Sanitize tool name to ensure safe stat type
     const sanitizedName = sanitizeToolName(toolName);
     if (sanitizedName) {
+      // Track individual tool usage
       this.repo.incrementDailyStat(`tool_${sanitizedName}` as StatType, { clientId });
+      // Track total tool invocations
+      this.repo.incrementDailyStat("tools_invoked", { clientId });
+      // Track subagent invocations (Task tool)
+      if (sanitizedName === "task") {
+        this.repo.incrementDailyStat("subagents_invoked", { clientId });
+      }
     }
   }
 
@@ -218,6 +225,8 @@ export class AnalyticsRecorder {
 
     // Aggregate counts
     let promptCount = 0;
+    let totalToolCount = 0;
+    let subagentCount = 0;
     const toolCounts = new Map<string, number>();
 
     for (const msg of messages) {
@@ -231,6 +240,11 @@ export class AnalyticsRecorder {
             const sanitized = sanitizeToolName(block.name);
             if (sanitized) {
               toolCounts.set(sanitized, (toolCounts.get(sanitized) ?? 0) + 1);
+              totalToolCount++;
+              // Track subagent invocations (Task tool)
+              if (sanitized === "task") {
+                subagentCount++;
+              }
             }
           }
         }
@@ -242,6 +256,14 @@ export class AnalyticsRecorder {
 
     if (promptCount > 0) {
       stats.push({ statType: "prompts_sent", value: promptCount });
+    }
+
+    if (totalToolCount > 0) {
+      stats.push({ statType: "tools_invoked", value: totalToolCount });
+    }
+
+    if (subagentCount > 0) {
+      stats.push({ statType: "subagents_invoked", value: subagentCount });
     }
 
     for (const [tool, count] of Array.from(toolCounts.entries())) {

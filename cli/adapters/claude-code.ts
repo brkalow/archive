@@ -5,7 +5,45 @@ import type {
   SessionInfo,
   ParseContext,
   ContentBlock,
+  ToolConfig,
+  ToolIconCategory,
+  SystemTagPattern,
+  AdapterUIConfig,
 } from "./types";
+
+// Tool configuration for Claude Code
+const CLAUDE_CODE_TOOLS: Record<string, ToolConfig> = {
+  Read: { icon: "file" },
+  Write: { icon: "edit", modifiesFiles: true, filePathProperty: "file_path" },
+  Edit: { icon: "edit", modifiesFiles: true, filePathProperty: "file_path" },
+  NotebookEdit: { icon: "edit", modifiesFiles: true, filePathProperty: "notebook_path" },
+  Bash: { icon: "terminal" },
+  KillShell: { icon: "terminal" },
+  Glob: { icon: "search" },
+  Grep: { icon: "search" },
+  WebFetch: { icon: "web" },
+  WebSearch: { icon: "web" },
+  Task: { icon: "task", renderer: "task" },
+  TaskOutput: { icon: "task" },
+  TodoWrite: { icon: "todo", renderer: "todo_write" },
+  AskUserQuestion: { icon: "question", renderer: "ask_user_question" },
+  "mcp__conductor__AskUserQuestion": { icon: "question", renderer: "ask_user_question" },
+};
+
+const CLAUDE_CODE_SYSTEM_TAGS: SystemTagPattern[] = [
+  { tag: "system_instruction" },
+  { tag: "system-instruction" },
+  { tag: "system-reminder" },
+  { tag: "local-command-caveat" },
+  { tag: "local-command-stdout" },
+];
+
+const CLAUDE_CODE_UI_CONFIG: AdapterUIConfig = {
+  tools: CLAUDE_CODE_TOOLS,
+  systemTags: CLAUDE_CODE_SYSTEM_TAGS,
+  defaultToolIcon: "default",
+  mcpToolPrefixes: ["mcp__"],
+};
 
 /**
  * Claude Code adapter for parsing .claude/projects session files
@@ -201,6 +239,42 @@ export const claudeCodeAdapter: HarnessAdapter = {
 
     return truncated + "...";
   },
+
+  // UI Configuration methods
+  getUIConfig(): AdapterUIConfig {
+    return CLAUDE_CODE_UI_CONFIG;
+  },
+
+  getFileModifyingTools(): string[] {
+    return Object.entries(CLAUDE_CODE_TOOLS)
+      .filter(([_, config]) => config.modifiesFiles)
+      .map(([name]) => name);
+  },
+
+  extractFilePath(toolName: string, input: Record<string, unknown>): string | null {
+    const config = CLAUDE_CODE_TOOLS[toolName];
+    if (!config?.filePathProperty) return null;
+    const value = input[config.filePathProperty];
+    return typeof value === "string" ? value : null;
+  },
+
+  getToolIcon(toolName: string): ToolIconCategory {
+    if (CLAUDE_CODE_TOOLS[toolName]) return CLAUDE_CODE_TOOLS[toolName].icon;
+    for (const prefix of CLAUDE_CODE_UI_CONFIG.mcpToolPrefixes || []) {
+      if (toolName.startsWith(prefix)) return "mcp";
+    }
+    return "default";
+  },
+
+  stripSystemTags(text: string): string {
+    return stripSystemTags(text);
+  },
+
+  normalizeRole(rawRole: string): "user" | "assistant" | null {
+    if (rawRole === "human" || rawRole === "user") return "user";
+    if (rawRole === "assistant") return "assistant";
+    return null;
+  },
 };
 
 /**
@@ -303,18 +377,20 @@ function tryDecodePath(
 }
 
 /**
- * Strip system instruction and reminder tags from text
+ * Strip system instruction and reminder tags from text.
+ * Uses CLAUDE_CODE_SYSTEM_TAGS config for consistency.
  */
 function stripSystemTags(text: string): string {
-  // Remove <system_instruction>...</system_instruction> tags and content
-  let cleaned = text.replace(/<system_instruction>[\s\S]*?<\/system_instruction>/gi, "");
-  // Remove <system-instruction>...</system-instruction> tags and content
-  cleaned = cleaned.replace(/<system-instruction>[\s\S]*?<\/system-instruction>/gi, "");
-  // Remove <system-reminder>...</system-reminder> tags and content
-  cleaned = cleaned.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/gi, "");
-  // Remove <local-command-caveat>...</local-command-caveat> tags and content
-  cleaned = cleaned.replace(/<local-command-caveat>[\s\S]*?<\/local-command-caveat>/gi, "");
-  // Trim leading/trailing whitespace
+  let cleaned = text;
+  for (const tagPattern of CLAUDE_CODE_SYSTEM_TAGS) {
+    if (tagPattern.style === "regex" && tagPattern.pattern) {
+      cleaned = cleaned.replace(tagPattern.pattern, "");
+    } else {
+      // XML style (default)
+      const regex = new RegExp(`<${tagPattern.tag}>[\\s\\S]*?<\\/${tagPattern.tag}>`, "gi");
+      cleaned = cleaned.replace(regex, "");
+    }
+  }
   return cleaned.trim();
 }
 

@@ -98,6 +98,7 @@ export function initializeDatabase(dbPath: string = process.env.DATABASE_PATH ||
   safeAddColumn(db, "diffs", "additions", "INTEGER DEFAULT 0");
   safeAddColumn(db, "diffs", "deletions", "INTEGER DEFAULT 0");
   safeAddColumn(db, "diffs", "is_session_relevant", "INTEGER DEFAULT 1");
+  safeAddColumn(db, "diffs", "status", "TEXT DEFAULT 'modified'");
   safeAddColumn(db, "sessions", "model", "TEXT");
   safeAddColumn(db, "sessions", "harness", "TEXT");
   safeAddColumn(db, "sessions", "repo_url", "TEXT");
@@ -119,6 +120,15 @@ export function initializeDatabase(dbPath: string = process.env.DATABASE_PATH ||
 
   // Remote session support (daemon-spawned headless sessions)
   safeAddColumn(db, "sessions", "remote", "INTEGER DEFAULT 0");
+
+  // Agent session ID for multi-agent support (alias/replacement for claude_session_id).
+  // This column will be used by future adapters (Cursor, Codex, opencode) to store their
+  // native session identifiers. For now, it's backfilled from claude_session_id for
+  // existing sessions. New sessions should populate this field via the adapter.
+  safeAddColumn(db, "sessions", "agent_session_id", "TEXT");
+  // Backfill agent_session_id from claude_session_id for existing sessions
+  db.run(`UPDATE sessions SET agent_session_id = claude_session_id WHERE agent_session_id IS NULL AND claude_session_id IS NOT NULL`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_sessions_agent_session_id ON sessions(agent_session_id)`)
 
   // Feedback messages table (for interactive sessions)
   db.run(`
@@ -186,6 +196,7 @@ export type Session = {
   title: string;
   description: string | null;
   claude_session_id: string | null;
+  agent_session_id: string | null;
   pr_url: string | null;
   share_token: string | null;
   project_path: string | null;
@@ -274,6 +285,8 @@ export type Message = {
   message_index: number;
 };
 
+export type DiffStatus = "added" | "removed" | "modified";
+
 export type Diff = {
   id: number;
   session_id: string;
@@ -283,6 +296,7 @@ export type Diff = {
   additions: number; // Pre-computed
   deletions: number; // Pre-computed
   is_session_relevant: boolean; // True if file was touched in conversation
+  status: DiffStatus; // Whether file was added, removed, or modified
 };
 
 // Code review types
@@ -325,6 +339,8 @@ export type StatType =
   | "lines_added"
   | "lines_removed"
   | "files_changed"
+  | "tools_invoked"
+  | "subagents_invoked"
   | `tool_${string}`;
 
 // Raw event record

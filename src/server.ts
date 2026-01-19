@@ -19,8 +19,36 @@ import homepage from "../public/index.html";
 // Import install script as text
 import installScript from "../install.sh" with { type: "text" };
 
-const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
+const DEFAULT_PORT = 3000;
 const HOST = process.env.HOST || "0.0.0.0";
+
+/**
+ * Get the port to use. If PORT env is set, use it.
+ * Otherwise try default port, falling back to 0 (OS picks) if unavailable.
+ */
+function getPort(): number {
+  if (process.env.PORT) {
+    return parseInt(process.env.PORT);
+  }
+
+  // Check if default port is available
+  try {
+    const listener = Bun.listen({
+      hostname: HOST,
+      port: DEFAULT_PORT,
+      socket: { data() {} },
+    });
+    listener.stop();
+    return DEFAULT_PORT;
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === "EADDRINUSE") {
+      return 0; // Let OS pick
+    }
+    throw e;
+  }
+}
+
+const PORT = getPort();
 
 // Initialize database and repository
 const db = initializeDatabase();
@@ -961,6 +989,9 @@ const server = Bun.serve({
   },
 });
 
+if (server.port !== DEFAULT_PORT && !process.env.PORT) {
+  console.log(`Port ${DEFAULT_PORT} in use, using ${server.port} instead`);
+}
 console.log(`openctl running at http://${HOST}:${server.port}`);
 
 // Idle timeout checker - runs every minute

@@ -36,6 +36,8 @@ export class SessionRepository {
     getLiveSessions: Statement;
     // Session lookup by claude_session_id
     getSessionByClaudeSessionId: Statement;
+    // Session lookup by agent_session_id
+    getSessionByAgentSessionId: Statement;
     // Feedback message statements
     insertFeedbackMessage: Statement;
     updateFeedbackStatus: Statement;
@@ -123,6 +125,13 @@ export class SessionRepository {
       getSessionByClaudeSessionId: db.prepare(`
         SELECT * FROM sessions
         WHERE claude_session_id = ?
+        ORDER BY created_at DESC
+        LIMIT 1
+      `),
+      // Session lookup by agent_session_id (most recent first)
+      getSessionByAgentSessionId: db.prepare(`
+        SELECT * FROM sessions
+        WHERE agent_session_id = ?
         ORDER BY created_at DESC
         LIMIT 1
       `),
@@ -361,6 +370,15 @@ export class SessionRepository {
    */
   getSessionByClaudeSessionId(claudeSessionId: string): Session | null {
     const result = this.stmts.getSessionByClaudeSessionId.get(claudeSessionId) as Record<string, unknown> | null;
+    return result ? this.normalizeSession(result) : null;
+  }
+
+  /**
+   * Find a session by agent_session_id.
+   * Returns most recent session with matching agent ID.
+   */
+  getSessionByAgentSessionId(agentSessionId: string): Session | null {
+    const result = this.stmts.getSessionByAgentSessionId.get(agentSessionId) as Record<string, unknown> | null;
     return result ? this.normalizeSession(result) : null;
   }
 
