@@ -5,10 +5,11 @@
  *
  * Commands:
  *   daemon    Manage the background daemon (start/stop/status)
- *   upload    Upload a session to the server
+ *   upload    Upload a completed session to the server
+ *   share     Share a live session for real-time viewing
  *   config    Manage CLI configuration
  *   repo      Manage repository access control
- *   session   Manage sessions (list/delete)
+ *   session   Manage sessions (list/delete/unshare)
  *   setup     Install openctl integrations (e.g., Claude Code plugin)
  *   list      Alias for 'session list'
  */
@@ -19,10 +20,12 @@ import { config } from "./commands/config";
 import { repo } from "./commands/repo";
 import { session } from "./commands/session";
 import { setup } from "./commands/setup";
+import { share } from "./commands/share";
 
 const commands: Record<string, (args: string[]) => Promise<void>> = {
   daemon,
   upload,
+  share,
   config,
   repo,
   session,
@@ -42,11 +45,12 @@ Upload, stream, and manage Claude Code sessions.
 Usage: openctl <command> [options]
 
 Commands:
+  upload    Upload a completed session to the server
+  share     Share a live session for real-time viewing
   daemon    Manage the background daemon (start/stop/status)
-  upload    Upload a session to the server
   config    Manage CLI configuration
   repo      Manage repository access control
-  session   Manage sessions (list/delete)
+  session   Manage sessions (list/delete/unshare)
   setup     Install openctl integrations (e.g., Claude Code plugin)
   list      Alias for 'session list'
 

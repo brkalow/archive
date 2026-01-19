@@ -8,6 +8,7 @@ import { basename, join } from "path";
 import { Glob } from "bun";
 import { getClientId } from "../lib/client-id";
 import { DEFAULT_SERVER, getServerUrl } from "../lib/config";
+import { listRecentSessions, promptSessionSelection } from "../lib/shared-sessions";
 import * as readline from "readline";
 
 async function promptConfirmation(message: string): Promise<boolean> {
@@ -59,6 +60,7 @@ interface ParsedOptions {
   server: string;
   yes: boolean;
   help: boolean;
+  list: boolean;
 }
 
 function parseArgs(args: string[]): ParsedOptions {
@@ -69,6 +71,7 @@ function parseArgs(args: string[]): ParsedOptions {
     server: getServerUrl(),
     yes: false,
     help: false,
+    list: false,
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -113,6 +116,10 @@ function parseArgs(args: string[]): ParsedOptions {
       case "--help":
       case "-h":
         options.help = true;
+        break;
+      case "--list":
+      case "-l":
+        options.list = true;
         break;
     }
   }
@@ -644,18 +651,24 @@ Usage:
   openctl upload [options]
 
 Options:
-  --session, -s   Session UUID or path to JSONL file (default: auto-detect current session)
+  -s, --session   Session UUID or path to JSONL file (default: auto-detect current session)
                   Can be a UUID like "c28995d0-7cba-4974-8268-32b94ac183a4" or a file path
-  --title, -t     Session title (default: derived from first user message)
-  --model, -m     Model used (default: auto-detect from session)
+  -l, --list      Interactively select from recent sessions
+  -t, --title     Session title (default: derived from first user message)
+  -m, --model     Model used (default: auto-detect from session)
   --harness       Harness/client used (default: "Claude Code")
   --repo          GitHub repository URL (default: auto-detect from git remote)
-  --diff, -d      Include git diff (default: true)
+  -d, --diff      Include git diff (default: true)
   --no-diff       Exclude git diff
-  --review, -r    Generate code review using Claude CLI (requires diff)
+  -r, --review    Generate code review using Claude CLI (requires diff)
   --server        Server URL (default: from config or ${DEFAULT_SERVER})
-  --yes, -y       Skip confirmation prompt when auto-detecting session
-  --help, -h      Show this help
+  -y, --yes       Skip confirmation prompt when auto-detecting session
+  -h, --help      Show this help
+
+Examples:
+  openctl upload                   # Upload current/latest session
+  openctl upload --list            # Pick from recent sessions
+  openctl upload -s abc-123-def    # Upload a specific session
   `);
 }
 
@@ -670,7 +683,16 @@ export async function upload(args: string[]): Promise<void> {
   // Find session file
   let sessionPath = options.session;
   let autoDetected = false;
-  if (!sessionPath) {
+
+  if (options.list) {
+    // Interactive list mode
+    const sessions = await listRecentSessions(10);
+    const result = await promptSessionSelection(sessions);
+    if (!result.session) {
+      process.exit(result.cancelled ? 0 : 1);
+    }
+    sessionPath = result.session.filePath;
+  } else if (!sessionPath) {
     console.log("Auto-detecting current session...");
     sessionPath = await findCurrentSession();
     if (!sessionPath) {

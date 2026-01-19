@@ -1,17 +1,10 @@
 import { parseArgs } from "util";
-import { getServerUrl, isRepoAllowed, addAllowedRepo } from "../lib/config";
+import { getServerUrl } from "../lib/config";
 import { getClientId } from "../lib/client-id";
-import { getRepoIdentifier, getRepoHttpsUrl } from "../lib/git";
-import { getDaemonStatus } from "../daemon";
 import { ApiClient } from "../daemon/api-client";
-import { getAdapterForPath } from "../adapters";
 import {
-  addSharedSession,
   removeSharedSession,
   getSharedSessions,
-  findSessionByUuid,
-  findLatestSessionForProject,
-  extractProjectPathFromSessionPath,
 } from "../lib/shared-sessions";
 
 export async function session(args: string[]): Promise<void> {
@@ -22,10 +15,6 @@ export async function session(args: string[]): Promise<void> {
       return sessionList(args.slice(1));
     case "delete":
       return sessionDelete(args.slice(1));
-    case "start":
-      return sessionStart(args.slice(1));
-    case "share":
-      return sessionShare(args.slice(1));
     case "unshare":
       return sessionUnshare(args.slice(1));
     case "feedback":
@@ -42,7 +31,6 @@ Usage: openctl session <subcommand> [options]
 Subcommands:
   list              List sessions on the server
   delete <id>       Delete a session
-  share [id]        Share a session (defaults to latest for current project)
   unshare [id]      Stop sharing a session
   feedback [id]     Check for pending feedback (outputs JSON)
 
@@ -57,9 +45,6 @@ Options for 'delete':
   --force           Skip confirmation prompt
   --server <url>    Server URL (default: from config)
 
-Options for 'share':
-  --server <url>    Server URL (default: from config)
-
 Options for 'unshare':
   --server <url>    Server URL to unshare from (default: all servers)
 
@@ -71,8 +56,6 @@ Examples:
   openctl session list              # List recent sessions
   openctl session list --mine       # List only my sessions
   openctl session delete abc123     # Delete a session
-  openctl session share             # Share current session (uses CLAUDE_SESSION_ID)
-  openctl session share abc-123     # Share a specific session by UUID
   openctl session unshare abc-123   # Stop sharing a session
   `);
 }
@@ -213,131 +196,6 @@ async function readLine(): Promise<string> {
   return decoder.decode(value).trim();
 }
 
-async function sessionStart(_args: string[]): Promise<void> {
-  console.error("Error: 'session start' is not yet implemented.");
-  console.error("Use Claude Code directly and upload sessions with 'openctl upload'.");
-  process.exit(1);
-}
-
-async function sessionShare(args: string[]): Promise<void> {
-  const { values, positionals } = parseArgs({
-    args,
-    options: {
-      server: { type: "string", short: "s" },
-    },
-    allowPositionals: true,
-  });
-
-  // 1. Get session UUID and path
-  let sessionUuid = positionals[0] || Bun.env.CLAUDE_SESSION_ID;
-  let sessionPath: string | null = null;
-  let projectPath: string | null = null;
-
-  if (sessionUuid) {
-    // Explicit session ID provided - find its path
-    sessionPath = await findSessionByUuid(sessionUuid);
-    if (!sessionPath) {
-      console.error(`Error: Session not found: ${sessionUuid}`);
-      process.exit(1);
-    }
-    projectPath = extractProjectPathFromSessionPath(sessionPath);
-  } else {
-    // No session ID - find latest session for current project
-    const cwd = process.cwd();
-    const latest = await findLatestSessionForProject(cwd);
-    if (!latest) {
-      console.error("Error: No session found for current project.");
-      console.error("Make sure you're in a project directory with an active Claude Code session.");
-      process.exit(1);
-    }
-    sessionUuid = latest.uuid;
-    sessionPath = latest.filePath;
-    projectPath = cwd;
-    console.log(`Found session: ${sessionUuid.slice(0, 8)}...`);
-  }
-
-  // 2. Get server URL
-  const serverUrl = getServerUrl(values.server);
-
-  // 3. Check repo allowlist
-  const repoId = await getRepoIdentifier(projectPath || process.cwd());
-  if (!repoId) {
-    console.error("Error: Could not determine repository identifier.");
-    console.error("Make sure you're in a git repository or the session is from a git project.");
-    process.exit(2);
-  }
-
-  if (!isRepoAllowed(serverUrl, repoId)) {
-    // Interactive: prompt to allow
-    if (process.stdin.isTTY) {
-      console.log(`This repository hasn't been allowed for sharing with ${serverUrl}.`);
-      process.stdout.write("Allow this repository? [y/N] ");
-      const response = await readLine();
-      if (response.toLowerCase() === "y") {
-        addAllowedRepo(serverUrl, repoId);
-        console.log("Repository allowed.");
-      } else {
-        console.error("Aborted: Repository not allowed.");
-        console.error("Run: openctl repo allow");
-        process.exit(2);
-      }
-    } else {
-      console.error("Error: Repository not allowed. Run: openctl repo allow");
-      process.exit(2);
-    }
-  }
-
-  // 4. Get adapter for session info
-  const adapter = getAdapterForPath(sessionPath);
-  if (!adapter) {
-    console.error("Error: No adapter found for session file.");
-    process.exit(3);
-  }
-
-  const sessionInfo = adapter.getSessionInfo(sessionPath);
-  const repoUrl = await getRepoHttpsUrl(projectPath || process.cwd());
-
-  // 5. Create session on server immediately
-  console.log(`Creating session on ${serverUrl}...`);
-  const api = new ApiClient(serverUrl);
-
-  let serverSession;
-  try {
-    serverSession = await api.createLiveSession({
-      title: "Live Session",
-      project_path: sessionInfo.projectPath,
-      harness_session_id: sessionInfo.harnessSessionId,
-      harness: adapter.id,
-      model: sessionInfo.model,
-      repo_url: repoUrl ?? undefined,
-    });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    console.error(`Error: Failed to create session on server: ${message}`);
-    process.exit(4);
-  }
-
-  const sessionUrl = `${serverUrl}/sessions/${serverSession.id}`;
-
-  // 6. Add to shared sessions with server session info (for daemon to pick up)
-  await addSharedSession(sessionUuid, sessionPath, serverUrl, {
-    sessionId: serverSession.id,
-  });
-
-  // 7. Ensure daemon is running (for live streaming)
-  const status = await getDaemonStatus();
-  if (!status.running) {
-    console.log("Starting daemon for live streaming...");
-    await startDaemonBackground(serverUrl);
-  }
-
-  if (serverSession.resumed) {
-    console.log(`Resumed existing session: ${sessionUrl}`);
-  } else {
-    console.log(`Session shared: ${sessionUrl}`);
-  }
-}
-
 async function sessionUnshare(args: string[]): Promise<void> {
   const { values, positionals } = parseArgs({
     args,
@@ -392,21 +250,6 @@ async function sessionUnshare(args: string[]): Promise<void> {
 
   await removeSharedSession(sessionUuid, serverUrl);
   console.log(`Session unshared${serverUrl ? ` from ${serverUrl}` : ""}.`);
-}
-
-/**
- * Start daemon in background (detached process).
- */
-async function startDaemonBackground(serverUrl: string): Promise<void> {
-  // Find the CLI entry point
-  const cliPath = new URL("../index.ts", import.meta.url).pathname;
-
-  const proc = Bun.spawn(["bun", "run", cliPath, "daemon", "start", "--server", serverUrl], {
-    stdout: "ignore",
-    stderr: "ignore",
-    stdin: "ignore",
-  });
-  proc.unref();
 }
 
 interface PendingFeedback {

@@ -56,19 +56,23 @@ The `openctl` CLI provides commands for managing sessions and configuring the se
 openctl <command> [options]
 
 Commands:
+  upload    Upload a completed session to the server
+  share     Share a live session for real-time viewing
   daemon    Manage the background daemon (start/stop/status)
-  upload    Upload a session to the server
   config    Manage CLI configuration
   repo      Manage repository access control
-  session   Manage sessions (list/delete/start)
+  session   Manage sessions (list/delete/unshare)
   list      Alias for 'session list'
 ```
 
-### Upload a Session
+### Upload a Completed Session
 
 ```bash
 # Upload the current session (auto-detects from working directory)
 openctl upload
+
+# Pick from recent sessions interactively
+openctl upload --list
 
 # Upload a specific session by UUID
 openctl upload --session c28995d0-7cba-4974-8268-32b94ac183a4
@@ -80,9 +84,22 @@ openctl upload --title "Fixed authentication bug"
 openctl upload --review
 ```
 
+### Share a Live Session
+
+```bash
+# Share the current session for real-time viewing
+openctl share
+
+# Pick from recent sessions interactively
+openctl share --list
+
+# Share a specific session by UUID
+openctl share abc-123-def
+```
+
 ### Background Daemon
 
-The daemon watches for active Claude Code sessions and streams them to the server in real-time.
+The daemon watches for shared sessions and streams them to the server in real-time.
 
 ```bash
 # Start the daemon

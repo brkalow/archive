@@ -62,14 +62,14 @@ export function GettingStartedPage() {
               <span className="text-text-primary">openctl</span>{' '}
               <span className="text-accent-primary">upload</span>
             </span>
-            <span className="text-text-muted">upload a session</span>
+            <span className="text-text-muted">upload completed sessions</span>
           </div>
           <div className="flex items-center justify-between px-5 py-3">
             <span>
               <span className="text-text-primary">openctl</span>{' '}
-              <span className="text-accent-primary">daemon start</span>
+              <span className="text-accent-primary">share</span>
             </span>
-            <span className="text-text-muted">live stream sessions</span>
+            <span className="text-text-muted">share live sessions</span>
           </div>
           <div className="flex items-center justify-between px-5 py-3">
             <span>
