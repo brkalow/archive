@@ -8,6 +8,7 @@ interface StatsPageData {
     sessions_interactive: number;
     sessions_live: number;
     prompts_sent: number;
+    messages_total: number;
     tools_invoked: number;
     subagents_invoked: number;
     lines_added: number;
@@ -32,9 +33,10 @@ export function renderStatsPage(data: StatsPageData): string {
       </div>
 
       <!-- Summary Cards -->
-      <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+      <div class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
         ${renderStatCard("Sessions", data.summary.sessions_created, "chart-bar")}
         ${renderStatCard("Prompts", data.summary.prompts_sent, "command-line")}
+        ${renderStatCard("Messages", data.summary.messages_total, "chat-bubble-left-right")}
         ${renderStatCard("Tool Calls", data.summary.tools_invoked, "wrench")}
         ${renderStatCard("Subagents", data.summary.subagents_invoked, "cpu-chip")}
       </div>

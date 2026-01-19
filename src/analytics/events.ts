@@ -115,6 +115,20 @@ export class AnalyticsRecorder {
     });
 
     this.repo.incrementDailyStat("prompts_sent", { clientId });
+    this.repo.incrementDailyStat("messages_total", { clientId });
+  }
+
+  /**
+   * Record assistant message for total message count tracking
+   */
+  recordAssistantMessage(
+    sessionId: string,
+    options: {
+      clientId?: string;
+    } = {}
+  ): void {
+    const { clientId } = options;
+    this.repo.incrementDailyStat("messages_total", { clientId });
   }
 
   /**
@@ -225,11 +239,17 @@ export class AnalyticsRecorder {
 
     // Aggregate counts
     let promptCount = 0;
+    let messageCount = 0;
     let totalToolCount = 0;
     let subagentCount = 0;
     const toolCounts = new Map<string, number>();
 
     for (const msg of messages) {
+      // Count all user and assistant messages for total
+      if (msg.role === "user" || msg.role === "assistant") {
+        messageCount++;
+      }
+
       if (msg.role === "user") {
         promptCount++;
       }
@@ -253,6 +273,10 @@ export class AnalyticsRecorder {
 
     // Build stats array
     const stats: Array<{ statType: StatType; value: number }> = [];
+
+    if (messageCount > 0) {
+      stats.push({ statType: "messages_total", value: messageCount });
+    }
 
     if (promptCount > 0) {
       stats.push({ statType: "prompts_sent", value: promptCount });

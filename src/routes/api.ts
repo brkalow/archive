@@ -743,11 +743,16 @@ export function createApiRoutes(repo: SessionRepository) {
             });
           }
 
-          // Track tool invocations from assistant messages
-          if (msg.role === "assistant" && msg.content_blocks) {
-            analytics.recordToolsFromMessage(sessionId, msg.content_blocks as Array<{ type: string; name?: string }>, {
+          // Track assistant messages and tool invocations
+          if (msg.role === "assistant") {
+            analytics.recordAssistantMessage(sessionId, {
               clientId: clientId || undefined,
             });
+            if (msg.content_blocks) {
+              analytics.recordToolsFromMessage(sessionId, msg.content_blocks as Array<{ type: string; name?: string }>, {
+                clientId: clientId || undefined,
+              });
+            }
           }
         }
 
@@ -1043,6 +1048,7 @@ export function createApiRoutes(repo: SessionRepository) {
           sessions_interactive: summary.sessions_interactive ?? 0,
           sessions_live: summary.sessions_live ?? 0,
           prompts_sent: summary.prompts_sent ?? 0,
+          messages_total: summary.messages_total ?? 0,
           tools_invoked: summary.tools_invoked ?? 0,
           subagents_invoked: summary.subagents_invoked ?? 0,
           lines_added: summary.lines_added ?? 0,
@@ -1148,6 +1154,7 @@ export function createApiRoutes(repo: SessionRepository) {
           sessions_interactive: summary.sessions_interactive ?? 0,
           sessions_live: summary.sessions_live ?? 0,
           prompts_sent: summary.prompts_sent ?? 0,
+          messages_total: summary.messages_total ?? 0,
           tools_invoked: summary.tools_invoked ?? 0,
           subagents_invoked: summary.subagents_invoked ?? 0,
           lines_added: summary.lines_added ?? 0,

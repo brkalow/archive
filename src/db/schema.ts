@@ -336,6 +336,7 @@ export type StatType =
   | "sessions_interactive"
   | "sessions_live"
   | "prompts_sent"
+  | "messages_total"
   | "lines_added"
   | "lines_removed"
   | "files_changed"
