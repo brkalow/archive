@@ -1415,18 +1415,19 @@ export function createApiRoutes(repo: SessionRepository) {
     /**
      * POST /api/sessions/spawn
      * Spawn a new session on a connected daemon.
-     * Requires client ID header.
+     * Requires authentication (user token or client ID).
      */
     async spawnSession(req: Request): Promise<Response> {
       try {
-        // Require client ID for session creation
+        // Require either user auth or client ID
+        const auth = await extractAuth(req);
         const clientId = getClientId(req);
-        if (!clientId) {
-          return jsonError("X-Openctl-Client-ID header required", 401);
-        }
+        const authError = requireAuth(auth);
+        if (authError) return authError;
 
-        // Rate limit by client ID
-        const rateCheck = spawnSessionLimiter.check(`spawn:${clientId}`);
+        // Rate limit by user ID or client ID
+        const rateLimitKey = auth.userId ? `spawn:user:${auth.userId}` : `spawn:client:${clientId}`;
+        const rateCheck = spawnSessionLimiter.check(rateLimitKey);
 
         if (!rateCheck.allowed) {
           return json({
@@ -1630,18 +1631,19 @@ export function createApiRoutes(repo: SessionRepository) {
     /**
      * POST /api/sessions/:id/resume
      * Resume a disconnected session when daemon reconnects.
-     * Requires client ID header.
+     * Requires authentication (user token or client ID).
      */
     async resumeSession(sessionId: string, req: Request): Promise<Response> {
       try {
-        // Require client ID
+        // Require either user auth or client ID
+        const auth = await extractAuth(req);
         const clientId = getClientId(req);
-        if (!clientId) {
-          return jsonError("X-Openctl-Client-ID header required", 401);
-        }
+        const authError = requireAuth(auth);
+        if (authError) return authError;
 
-        // Rate limit by client ID
-        const rateCheck = spawnSessionLimiter.check(`resume:${clientId}`);
+        // Rate limit by user ID or client ID
+        const rateLimitKey = auth.userId ? `resume:user:${auth.userId}` : `resume:client:${clientId}`;
+        const rateCheck = spawnSessionLimiter.check(rateLimitKey);
 
         if (!rateCheck.allowed) {
           return json({
@@ -1728,15 +1730,15 @@ export function createApiRoutes(repo: SessionRepository) {
     /**
      * GET /api/sessions/:id/info
      * Get session info for both spawned and archived sessions.
-     * Requires client ID header. Returns 403 if not authorized.
+     * Requires authentication (user token or client ID). Returns 403 if not authorized.
      */
     async getSessionInfo(sessionId: string, req: Request): Promise<Response> {
       const auth = await extractAuth(req);
       const clientId = getClientId(req);
 
-      if (!clientId) {
-        return jsonError("X-Openctl-Client-ID header required", 401);
-      }
+      // Require either user auth or client ID
+      const authError = requireAuth(auth);
+      if (authError) return authError;
 
       // Check if it's a spawned session first
       const spawned = spawnedSessionRegistry.getSession(sessionId);
