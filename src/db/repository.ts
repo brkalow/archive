@@ -618,8 +618,10 @@ export class SessionRepository {
    *
    * Ownership is granted if:
    * - The user_id matches the session's user_id, OR
-   * - The client_id matches the session's client_id, OR
-   * - The session has no owner (legacy) and the requester has any identity
+   * - The client_id matches the session's client_id
+   *
+   * Sessions with no owner (legacy) are NOT accessible via this method.
+   * They must be accessed via share_token or migrated to have an owner.
    */
   verifyOwnership(
     sessionId: string,
@@ -650,15 +652,11 @@ export class SessionRepository {
       (clientId && result.client_id === clientId) ||
       false;
 
-    // Legacy sessions (no owner) allow any authenticated requester
-    const isLegacy = !result.user_id && !result.client_id;
-    const allowed = isOwner || (isLegacy && (!!userId || !!clientId));
-
     if (requireOwner && !isOwner) {
       return { allowed: false, isOwner: false };
     }
 
-    return { allowed, isOwner };
+    return { allowed: isOwner, isOwner };
   }
 
   /**

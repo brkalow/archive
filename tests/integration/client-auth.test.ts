@@ -41,7 +41,7 @@ describe("Client ID Authentication", () => {
         // Delete session
         const deleteMatch = url.pathname.match(/^\/api\/sessions\/([^\/]+)$/);
         if (deleteMatch && req.method === "DELETE") {
-          return api.deleteSession(deleteMatch[1]!, req);
+          return api.deleteSession(req, deleteMatch[1]!);
         }
 
         // Patch session (JSON body for title updates)
@@ -152,7 +152,7 @@ describe("Client ID Authentication", () => {
         }),
       });
 
-      expect(res.status).toBe(401);
+      expect(res.status).toBe(403);
     });
 
     test("owner can complete session", async () => {
@@ -180,7 +180,7 @@ describe("Client ID Authentication", () => {
         body: JSON.stringify({}),
       });
 
-      expect(res.status).toBe(401);
+      expect(res.status).toBe(403);
     });
 
     test("owner can delete session", async () => {
@@ -267,7 +267,7 @@ describe("Client ID Authentication", () => {
       legacySessionId = session.id;
     });
 
-    test("any authenticated client can access legacy session", async () => {
+    test("random client cannot access legacy session", async () => {
       const res = await fetch(`http://localhost:${serverPort}/api/sessions/${legacySessionId}/messages`, {
         method: "POST",
         headers: {
@@ -279,10 +279,11 @@ describe("Client ID Authentication", () => {
         }),
       });
 
-      expect(res.ok).toBe(true);
+      // Legacy sessions (no owner) should not be accessible
+      expect(res.status).toBe(403);
     });
 
-    test("any authenticated client can delete legacy session", async () => {
+    test("random client cannot delete legacy session", async () => {
       const res = await fetch(`http://localhost:${serverPort}/api/sessions/${legacySessionId}`, {
         method: "DELETE",
         headers: {
@@ -290,7 +291,8 @@ describe("Client ID Authentication", () => {
         },
       });
 
-      expect(res.ok).toBe(true);
+      // Legacy sessions (no owner) should not be accessible
+      expect(res.status).toBe(403);
     });
   });
 });

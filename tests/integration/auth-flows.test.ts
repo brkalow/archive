@@ -146,8 +146,8 @@ describe("Auth Flows - Dual Ownership Model", () => {
       expect(result.isOwner).toBe(false);
     });
 
-    test("allows any authenticated requester for legacy sessions", () => {
-      // Session with no user_id or client_id
+    test("denies access to legacy sessions without matching owner", () => {
+      // Session with no user_id or client_id (legacy)
       const session = repo.createSession({
         id: "legacy_session",
         title: "Legacy",
@@ -164,12 +164,14 @@ describe("Auth Flows - Dual Ownership Model", () => {
         interactive: false,
       });
 
-      // Any identity should work
+      // Legacy sessions should NOT be accessible without matching owner
       const resultWithUser = repo.verifyOwnership(session.id, "any-user", null);
-      expect(resultWithUser.allowed).toBe(true);
+      expect(resultWithUser.allowed).toBe(false);
+      expect(resultWithUser.isOwner).toBe(false);
 
       const resultWithClient = repo.verifyOwnership(session.id, null, "any-client");
-      expect(resultWithClient.allowed).toBe(true);
+      expect(resultWithClient.allowed).toBe(false);
+      expect(resultWithClient.isOwner).toBe(false);
     });
   });
 
@@ -218,6 +220,75 @@ describe("Auth Flows - Dual Ownership Model", () => {
     test("returns empty for no identity", () => {
       const sessions = repo.getSessionsByOwner(undefined, undefined);
       expect(sessions).toHaveLength(0);
+    });
+  });
+
+  describe("session upload with user ID", () => {
+    test("upsertSessionWithDataAndReview stores user_id when provided", () => {
+      const { session } = repo.upsertSessionWithDataAndReview(
+        {
+          id: "upload_test_session",
+          title: "Uploaded Session",
+          description: null,
+          claude_session_id: "claude_123",
+          agent_session_id: "claude_123",
+          pr_url: null,
+          share_token: null,
+          project_path: "/tmp",
+          model: "claude-3-opus",
+          harness: "claude-code",
+          repo_url: null,
+          status: "archived",
+          last_activity_at: null,
+          interactive: false,
+        },
+        [], // no messages
+        [], // no diffs
+        undefined, // no review
+        "upload-client-123", // client_id
+        "upload-user-456" // user_id
+      );
+
+      expect(session.id).toBe("upload_test_session");
+      expect(session.client_id).toBe("upload-client-123");
+      expect(session.user_id).toBe("upload-user-456");
+
+      // Verify the session can be accessed by user_id
+      const { allowed, isOwner } = repo.verifyOwnership(session.id, "upload-user-456", null);
+      expect(allowed).toBe(true);
+      expect(isOwner).toBe(true);
+    });
+
+    test("upsertSessionWithDataAndReview works without user_id (client-only upload)", () => {
+      const { session } = repo.upsertSessionWithDataAndReview(
+        {
+          id: "client_only_upload",
+          title: "Client-Only Upload",
+          description: null,
+          claude_session_id: "claude_456",
+          agent_session_id: "claude_456",
+          pr_url: null,
+          share_token: null,
+          project_path: "/tmp",
+          model: null,
+          harness: null,
+          repo_url: null,
+          status: "archived",
+          last_activity_at: null,
+          interactive: false,
+        },
+        [],
+        [],
+        undefined,
+        "client-only-123" // client_id only, no user_id
+      );
+
+      expect(session.client_id).toBe("client-only-123");
+      expect(session.user_id).toBeNull();
+
+      // Can still access by client_id
+      const { allowed } = repo.verifyOwnership(session.id, null, "client-only-123");
+      expect(allowed).toBe(true);
     });
   });
 

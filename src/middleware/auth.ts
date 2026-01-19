@@ -3,12 +3,25 @@
  * Extracts and verifies Clerk tokens, provides user context.
  */
 
-import { createClerkClient} from '@clerk/backend';
+import { createClerkClient } from '@clerk/backend';
 
 const clerkClient = createClerkClient({
   secretKey: process.env.CLERK_SECRET_KEY,
   publishableKey: process.env.PUBLIC_CLERK_PUBLISHABLE_KEY,
-})
+});
+
+/**
+ * Get authorized parties for CSRF protection.
+ * These are the domains allowed to make authenticated requests.
+ */
+function getAuthorizedParties(): string[] {
+  const parties = ['https://openctl.dev'];
+  // Include localhost unless explicitly in production
+  if (process.env.NODE_ENV !== 'production') {
+    parties.push('http://localhost:3000');
+  }
+  return parties;
+}
 
 /**
  * Authentication context extracted from a request.
@@ -42,13 +55,15 @@ export async function extractAuth(req: Request): Promise<AuthContext> {
   if (secretKey) {
     try {
       const authState = await clerkClient.authenticateRequest(req, {
-        acceptsToken: ['session_token', 'oauth_token']
+        acceptsToken: ['session_token', 'oauth_token'],
+        authorizedParties: getAuthorizedParties(),
       });
+
       userId = authState.isAuthenticated ? authState.toAuth().userId : null;
     } catch (error) {
       // Token verification failed
       // Log in development, but don't expose details
-      if (process.env.NODE_ENV === "development") {
+      if (process.env.NODE_ENV !== "production") {
         console.warn("Token verification failed:", error);
       }
     }

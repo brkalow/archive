@@ -92,27 +92,27 @@ const server = Bun.serve({
       GET: (req) => {
         const url = new URL(req.url);
         const baseUrl = `${url.protocol}//${url.host}`;
-        return api.getSessionDetail(req.params.id, baseUrl);
+        return api.getSessionDetail(req, req.params.id, baseUrl);
       },
       POST: (req) => api.updateSession(req, req.params.id),
       PATCH: (req) => api.patchSession(req, req.params.id),
-      DELETE: (req) => api.deleteSession(req.params.id, req),
+      DELETE: (req) => api.deleteSession(req, req.params.id),
     },
 
     "/api/sessions/:id/share": {
-      POST: (req) => api.shareSession(req.params.id),
+      POST: (req) => api.shareSession(req, req.params.id),
     },
 
     "/api/sessions/:id/export": {
-      GET: (req) => api.getSessionJson(req.params.id),
+      GET: (req) => api.getSessionJson(req, req.params.id),
     },
 
     "/api/sessions/:id/diffs": {
-      GET: (req) => api.getSessionDiffs(req.params.id),
+      GET: (req) => api.getSessionDiffs(req, req.params.id),
     },
 
     "/api/sessions/:id/annotations": {
-      GET: (req) => api.getAnnotations(req.params.id),
+      GET: (req) => api.getAnnotations(req, req.params.id),
     },
 
     "/api/s/:shareToken": {

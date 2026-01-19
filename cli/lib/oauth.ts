@@ -8,6 +8,10 @@ import { findAvailablePort, createCallbackServer, signState, validateState } fro
 import { getKeychain, type Tokens } from "./keychain";
 import { getServerUrl } from "./config";
 
+// we hardcode the hosted openctl values here as fallbacks
+const CLIENT_ID = process.env.OAUTH_CLIENT_ID || "h7unXTYKVq14bjrl";
+const OAUTH_DOMAIN = process.env.OAUTH_DOMAIN || "clerk.openctl.dev";
+
 /**
  * OAuth configuration.
  */
@@ -51,8 +55,7 @@ async function fetchOIDCDiscovery(issuer: string): Promise<{
  */
 export async function getOAuthConfig(serverUrl?: string): Promise<OAuthConfig> {
   const server = serverUrl || getServerUrl();
-  const clerkDomain = process.env.CLERK_OAUTH_DOMAIN || "clerk.openctl.dev";
-  const issuer = `https://${clerkDomain}`;
+  const issuer = `https://${OAUTH_DOMAIN}`;
 
   // Check cache
   const cached = discoveryCache.get(issuer);
@@ -66,7 +69,7 @@ export async function getOAuthConfig(serverUrl?: string): Promise<OAuthConfig> {
 
     const config: OAuthConfig = {
       serverUrl: server,
-      clientId: process.env.CLERK_OAUTH_CLIENT_ID || "cli_openctl",
+      clientId: CLIENT_ID,
       authorizationEndpoint: discovery.authorization_endpoint,
       tokenEndpoint: discovery.token_endpoint,
       userinfoEndpoint: discovery.userinfo_endpoint,
@@ -82,7 +85,7 @@ export async function getOAuthConfig(serverUrl?: string): Promise<OAuthConfig> {
 
     return {
       serverUrl: server,
-      clientId: process.env.CLERK_OAUTH_CLIENT_ID || "cli_openctl",
+      clientId: CLIENT_ID,
       authorizationEndpoint: `${issuer}/oauth/authorize`,
       tokenEndpoint: `${issuer}/oauth/token`,
       userinfoEndpoint: `${issuer}/oauth/userinfo`,
