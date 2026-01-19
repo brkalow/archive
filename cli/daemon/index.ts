@@ -11,12 +11,16 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync, watch, type FSWatcher } from "fs";
 import { dirname, join } from "path";
 import { getAdapterForPath, getEnabledAdapters } from "../adapters";
+import { getClientId } from "../lib/client-id";
 import { getAllowedRepos } from "../lib/config";
+import { DaemonWebSocket } from "../lib/daemon-ws";
 import { setVerbose, debug } from "../lib/debug";
 import {
   getSharedSessionsForServer,
   getSharedSessionsPath,
 } from "../lib/shared-sessions";
+import { SpawnedSessionManager } from "../lib/spawned-session-manager";
+import type { ServerToDaemonMessage } from "../types/daemon-ws";
 import { SessionTracker } from "./session-tracker";
 import { SessionWatcher } from "./watcher";
 
@@ -36,6 +40,8 @@ let tracker: SessionTracker | null = null;
 let watcher: SessionWatcher | null = null;
 let statusInterval: ReturnType<typeof setInterval> | null = null;
 let sharedSessionsWatcher: FSWatcher | null = null;
+let daemonWs: DaemonWebSocket | null = null;
+let sessionManager: SpawnedSessionManager | null = null;
 
 export async function startDaemon(options: DaemonOptions): Promise<void> {
   // Enable debug logging if verbose
@@ -98,6 +104,9 @@ To allow a specific repository:
 
   // Start watching shared sessions allowlist
   watchSharedSessions(options.server, tracker);
+
+  // Initialize WebSocket connection to server
+  initWebSocket(options.server);
 
   // Start status file updates
   updateStatusFile();
@@ -182,6 +191,101 @@ async function handleSharedSessionsChange(
   }
 }
 
+/**
+ * Initialize WebSocket connection to server for bidirectional communication.
+ * This enables browser-initiated sessions where the server can send commands to the daemon.
+ */
+function initWebSocket(serverUrl: string): void {
+  const clientId = getClientId();
+
+  // Create session manager with send function (bound to WebSocket)
+  sessionManager = new SpawnedSessionManager((message) => {
+    daemonWs?.send(message);
+  });
+
+  daemonWs = new DaemonWebSocket({
+    serverUrl,
+    clientId,
+    onMessage: handleServerMessage,
+    onConnect: () => {
+      console.log("[daemon] WebSocket connected to server");
+    },
+    onDisconnect: () => {
+      console.log("[daemon] WebSocket disconnected from server");
+    },
+  });
+
+  daemonWs.connect();
+}
+
+/**
+ * Handle messages received from the server over WebSocket.
+ * These are commands from the browser UI (start session, send input, etc.)
+ */
+function handleServerMessage(message: ServerToDaemonMessage): void {
+  if (!sessionManager) {
+    console.error("[daemon] Session manager not initialized");
+    return;
+  }
+
+  switch (message.type) {
+    case "start_session":
+      debug(`[daemon] Received start_session: ${message.session_id}`);
+      console.log(`[daemon] Starting session ${message.session_id} in ${message.cwd}`);
+      sessionManager.startSession(message).catch((error) => {
+        console.error(`[daemon] Failed to start session ${message.session_id}:`, error);
+      });
+      break;
+
+    case "send_input":
+      debug(`[daemon] Received send_input: ${message.session_id}`);
+      sessionManager.sendInput(message.session_id, message.content);
+      break;
+
+    case "end_session":
+      debug(`[daemon] Received end_session: ${message.session_id}`);
+      sessionManager.endSession(message.session_id);
+      break;
+
+    case "interrupt_session":
+      debug(`[daemon] Received interrupt_session: ${message.session_id}`);
+      sessionManager.interruptSession(message.session_id);
+      break;
+
+    case "permission_response":
+      debug(`[daemon] Received permission_response: ${message.session_id}`);
+      sessionManager.respondToPermission(
+        message.session_id,
+        message.request_id,
+        message.allow
+      );
+      break;
+
+    case "question_response":
+      debug(`[daemon] Received question_response: ${message.session_id}`);
+      sessionManager.injectToolResult(
+        message.session_id,
+        message.tool_use_id,
+        message.answer
+      );
+      break;
+
+    case "control_response":
+      debug(`[daemon] Received control_response: ${message.session_id}`);
+      sessionManager.respondToControlRequest(
+        message.session_id,
+        message.request_id,
+        message.response.subtype === "success"
+          ? message.response.response
+          : { behavior: "deny", message: message.response.error }
+      );
+      break;
+
+    default:
+      console.warn("[daemon] Unknown message type:", (message as { type: string }).type);
+  }
+}
+
 async function shutdown(): Promise<void> {
   console.log("\nShutting down...");
 
@@ -193,6 +297,23 @@ async function shutdown(): Promise<void> {
   if (sharedSessionsWatcher) {
     sharedSessionsWatcher.close();
     sharedSessionsWatcher = null;
+  }
+
+  // End all active spawned sessions
+  if (sessionManager) {
+    const activeSessions = sessionManager.getActiveSessions();
+    console.log(`[daemon] Ending ${activeSessions.length} active spawned session(s)`);
+
+    for (const session of activeSessions) {
+      await sessionManager.endSession(session.id);
+    }
+    sessionManager = null;
+  }
+
+  // Disconnect WebSocket
+  if (daemonWs) {
+    daemonWs.disconnect();
+    daemonWs = null;
   }
 
   if (watcher) {

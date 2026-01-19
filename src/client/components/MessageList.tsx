@@ -111,6 +111,17 @@ export function MessageList(props: MessageListProps) {
 
   const showTypingIndicator = pendingToolCalls.size > 0;
 
+  // Filter out user messages that only contain tool_result blocks
+  // (these are rendered inline with their corresponding tool_use blocks)
+  const visibleMessages = useMemo(() => {
+    return messages.filter(message => {
+      if (message.role === 'user' && message.content_blocks?.length) {
+        return message.content_blocks.some(block => block.type !== 'tool_result');
+      }
+      return true;
+    });
+  }, [messages]);
+
   return (
     <div className="message-list-container relative h-full">
       <div
@@ -118,15 +129,15 @@ export function MessageList(props: MessageListProps) {
         className="conversation-panel flex-1 overflow-y-auto flex flex-col h-full"
         onScroll={handleScroll}
       >
-        {messages.map((message, i) => {
-          const prevRole = i > 0 ? messages[i - 1]?.role : null;
+        {visibleMessages.map((message, i) => {
+          const prevRole = i > 0 ? visibleMessages[i - 1]?.role : null;
           const roleChanged = prevRole !== null && prevRole !== message.role;
           return (
             <div key={message.id || i} className={roleChanged ? 'mt-2' : ''}>
               <MessageBlock
                 message={message}
                 toolResults={toolResults}
-                showRoleBadge={i === 0 || message.role !== messages[i - 1]?.role}
+                showRoleBadge={i === 0 || message.role !== visibleMessages[i - 1]?.role}
                 messageIndex={i}
               />
             </div>

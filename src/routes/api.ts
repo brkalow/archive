@@ -2,7 +2,11 @@ import { SessionRepository } from "../db/repository";
 import type { Message, Diff, DiffStatus, ContentBlock, ToolUseBlock, ToolResultBlock, ImageBlock, SessionStatus, AnnotationType, StatType } from "../db/schema";
 import { getDateRange, parsePeriod, fillTimeseriesGaps } from "../analytics/queries";
 import { AnalyticsRecorder } from "../analytics/events";
-import { getClientId } from "../utils/request";
+import { getClientId, getClientIP } from "../utils/request";
+import { daemonConnections } from "../lib/daemon-connections";
+import { spawnedSessionRegistry } from "../lib/spawned-session-registry";
+import { spawnSessionLimiter } from "../lib/rate-limiter";
+import { logSessionStarted } from "../lib/audit-log";
 import { getAdapterById, getFileModifyingToolsForAdapter, extractFilePathFromTool } from "../../cli/adapters";
 import type { AdapterUIConfig } from "../../cli/adapters";
 
@@ -1156,6 +1160,356 @@ export function createApiRoutes(repo: SessionRepository) {
         },
       });
     },
+
+    // === Daemon Status Endpoints ===
+
+    /**
+     * GET /api/daemon/status
+     * Returns the status of connected daemons
+     */
+    getDaemonStatus(): Response {
+      // Import dynamically to avoid circular dependencies
+      const { daemonConnections } = require("../lib/daemon-connections");
+      const status = daemonConnections.getStatus();
+      return json(status);
+    },
+
+    /**
+     * GET /api/daemon/repos
+     * Returns list of allowed repositories for spawning sessions.
+     * For v1, returns an empty list - the DirectoryPicker allows custom path entry.
+     * Future: could be populated from daemon capabilities or user settings.
+     */
+    getDaemonRepos(): Response {
+      // Placeholder implementation - could be enhanced based on:
+      // 1. Hard-coded list from config
+      // 2. Fetched from connected daemon
+      // 3. User's configured repo allowlist
+      const repos: Array<{ path: string; name: string; recent?: boolean }> = [];
+
+      return json({ repos });
+    },
+
+    /**
+     * GET /api/daemon/list
+     * Returns all connected daemons (for multi-daemon scenarios)
+     */
+    listConnectedDaemons(): Response {
+      const daemons = daemonConnections.getAllConnected().map((d: { clientId: string; connectedAt: Date; capabilities: unknown; activeSpawnedSessions: Set<string> }) => ({
+        client_id: d.clientId,
+        connected_at: d.connectedAt.toISOString(),
+        capabilities: d.capabilities,
+        active_sessions: d.activeSpawnedSessions.size,
+      }));
+
+      return json({ daemons });
+    },
+
+    // === Spawned Session Endpoints ===
+
+    /**
+     * POST /api/sessions/spawn
+     * Spawn a new session on a connected daemon.
+     */
+    async spawnSession(req: Request): Promise<Response> {
+      try {
+        // Rate limit by client IP or client ID
+        const clientId = getClientId(req) || getClientIP(req);
+        const rateCheck = spawnSessionLimiter.check(`spawn:${clientId}`);
+
+        if (!rateCheck.allowed) {
+          return json({
+            error: "Rate limit exceeded",
+            retry_after_ms: rateCheck.resetIn,
+          }, 429);
+        }
+
+        // Check daemon is connected
+        const daemon = daemonConnections.getAnyConnectedDaemon();
+        if (!daemon) {
+          return jsonError("No daemon connected", 503);
+        }
+
+        // Parse request
+        const body = await req.json() as {
+          prompt?: string;
+          cwd?: string;
+          harness?: string;
+          model?: string;
+          permission_mode?: "relay" | "auto-safe" | "auto";
+        };
+
+        // Validate required fields
+        if (!body.prompt?.trim()) {
+          return jsonError("prompt is required", 400);
+        }
+        if (!body.cwd?.trim()) {
+          return jsonError("cwd is required", 400);
+        }
+
+        // Validate harness is supported
+        const harness = body.harness || "claude-code";
+        const supportedHarness = daemon.capabilities.spawnable_harnesses.find(
+          (h) => h.id === harness && h.available
+        );
+        if (!supportedHarness) {
+          return jsonError(`Harness '${harness}' is not available`, 400);
+        }
+
+        // Check concurrent session limit for this daemon
+        if (!daemonConnections.canAcceptSession(daemon.clientId)) {
+          return json({
+            error: "Maximum concurrent sessions reached",
+            max_sessions: daemonConnections.getMaxConcurrentSessions(),
+          }, 429);
+        }
+
+        // Generate session ID
+        const sessionId = generateSpawnedSessionId();
+
+        // Create DB session for persistence (status: live, interactive: true, remote: true)
+        repo.createSession({
+          id: sessionId,
+          title: body.prompt.slice(0, 100) + (body.prompt.length > 100 ? "..." : ""),
+          description: null,
+          claude_session_id: null, // Will be updated when Claude initializes
+          pr_url: null,
+          share_token: null,
+          project_path: body.cwd,
+          model: body.model || null,
+          harness: harness,
+          repo_url: null,
+          status: "live",
+          last_activity_at: new Date().toISOString().replace("T", " ").slice(0, 19),
+          interactive: true,
+          remote: true,  // Mark as remote/spawned session
+        });
+
+        // Create ephemeral session record in registry (tracks daemon connection and permissions)
+        spawnedSessionRegistry.createSession({
+          id: sessionId,
+          daemonClientId: daemon.clientId,
+          cwd: body.cwd,
+          harness,
+          model: body.model,
+          status: "starting",
+          createdAt: new Date(),
+        });
+
+        // Register session with daemon connection
+        daemonConnections.registerSpawnedSession(daemon.clientId, sessionId);
+
+        // Log session start for audit
+        logSessionStarted(sessionId, body.cwd, body.prompt, {
+          type: "browser",
+          ip_address: getClientIP(req),
+          user_agent: req.headers.get("User-Agent") || undefined,
+          client_id: getClientId(req) || undefined,
+        });
+
+        // Send start_session to daemon
+        const sent = daemonConnections.sendToDaemon(daemon.clientId, {
+          type: "start_session",
+          session_id: sessionId,
+          prompt: body.prompt,
+          cwd: body.cwd,
+          harness,
+          model: body.model,
+          permission_mode: body.permission_mode || "relay",
+        });
+
+        if (!sent) {
+          // Clean up all session state on failure
+          spawnedSessionRegistry.deleteSession(sessionId);
+          daemonConnections.unregisterSpawnedSession(daemon.clientId, sessionId);
+          repo.deleteSession(sessionId);
+          return jsonError("Failed to send to daemon", 500);
+        }
+
+        return json({
+          session_id: sessionId,
+          status: "starting",
+          harness,
+        }, 201);
+      } catch (error) {
+        console.error("Error spawning session:", error);
+        return jsonError("Failed to spawn session", 500);
+      }
+    },
+
+    /**
+     * GET /api/sessions/spawned
+     * List active spawned sessions.
+     */
+    getSpawnedSessions(): Response {
+      const sessions = spawnedSessionRegistry.getActiveSessions();
+
+      return json({
+        sessions: sessions.map((s) => ({
+          id: s.id,
+          status: s.status,
+          cwd: s.cwd,
+          harness: s.harness,
+          model: s.model,
+          created_at: s.createdAt.toISOString(),
+          last_activity_at: s.lastActivityAt?.toISOString(),
+        })),
+      });
+    },
+
+    /**
+     * POST /api/sessions/:id/resume
+     * Resume a disconnected session when daemon reconnects.
+     */
+    async resumeSession(sessionId: string, req: Request): Promise<Response> {
+      try {
+        // Rate limit by client IP or client ID
+        const clientId = getClientId(req) || getClientIP(req) || "anonymous";
+        const rateCheck = spawnSessionLimiter.check(`resume:${clientId}`);
+
+        if (!rateCheck.allowed) {
+          return json({
+            error: "Rate limit exceeded",
+            retry_after_ms: rateCheck.resetIn,
+          }, 429);
+        }
+
+        // Check daemon is connected
+        const daemon = daemonConnections.getAnyConnectedDaemon();
+        if (!daemon) {
+          return jsonError("No daemon connected", 503);
+        }
+
+        // Get session from registry
+        const session = spawnedSessionRegistry.getSession(sessionId);
+        if (!session) {
+          return jsonError("Session not found", 404);
+        }
+
+        // Validate session is in disconnected state
+        if (session.status !== "disconnected") {
+          return jsonError(`Session is not disconnected (status: ${session.status})`, 400);
+        }
+
+        // Check for recovery info
+        const recoveryInfo = spawnedSessionRegistry.getRecoveryInfo(sessionId);
+        if (!recoveryInfo || !recoveryInfo.canResume) {
+          return jsonError("Session cannot be resumed (no recovery info)", 400);
+        }
+
+        // Check concurrent session limit for this daemon
+        if (!daemonConnections.canAcceptSession(daemon.clientId)) {
+          return json({
+            error: "Maximum concurrent sessions reached",
+            max_sessions: daemonConnections.getMaxConcurrentSessions(),
+          }, 429);
+        }
+
+        // Update registry to point to new daemon
+        spawnedSessionRegistry.updateSession(sessionId, {
+          daemonClientId: daemon.clientId,
+          status: "starting",
+          error: undefined,
+        });
+
+        // Register session with new daemon connection
+        daemonConnections.registerSpawnedSession(daemon.clientId, sessionId);
+
+        console.log(`[api] Resuming session ${sessionId} with claude_session_id ${recoveryInfo.claudeSessionId}`);
+
+        // Send start_session to daemon with resume_session_id
+        const sent = daemonConnections.sendToDaemon(daemon.clientId, {
+          type: "start_session",
+          session_id: sessionId,
+          prompt: "", // Empty prompt when resuming - Claude continues from previous state
+          cwd: recoveryInfo.cwd,
+          harness: session.harness,
+          model: session.model,
+          resume_session_id: recoveryInfo.claudeSessionId,
+        });
+
+        if (!sent) {
+          spawnedSessionRegistry.updateSession(sessionId, {
+            status: "disconnected",
+            error: "Failed to send resume to daemon",
+          });
+          daemonConnections.unregisterSpawnedSession(daemon.clientId, sessionId);
+          return jsonError("Failed to send to daemon", 500);
+        }
+
+        return json({
+          session_id: sessionId,
+          status: "starting",
+          resumed: true,
+          claude_session_id: recoveryInfo.claudeSessionId,
+        });
+      } catch (error) {
+        console.error("Error resuming session:", error);
+        return jsonError("Failed to resume session", 500);
+      }
+    },
+
+    /**
+     * GET /api/sessions/:id/info
+     * Get session info for both spawned and archived sessions.
+     */
+    getSessionInfo(sessionId: string): Response {
+      // Check if it's a spawned session first
+      const spawned = spawnedSessionRegistry.getSession(sessionId);
+      if (spawned) {
+        return json({
+          id: spawned.id,
+          type: "spawned",
+          status: spawned.status,
+          cwd: spawned.cwd,
+          harness: spawned.harness,
+          model: spawned.model,
+          created_at: spawned.createdAt.toISOString(),
+          claude_session_id: spawned.claudeSessionId,
+          last_activity_at: spawned.lastActivityAt?.toISOString(),
+          ended_at: spawned.endedAt?.toISOString(),
+          exit_code: spawned.exitCode,
+          error: spawned.error,
+        });
+      }
+
+      // Fall back to DB session
+      const dbSession = repo.getSession(sessionId);
+      if (dbSession) {
+        return json({
+          id: dbSession.id,
+          type: "archived",
+          status: dbSession.status,
+          title: dbSession.title,
+          description: dbSession.description,
+          project_path: dbSession.project_path,
+          model: dbSession.model,
+          harness: dbSession.harness,
+          claude_session_id: dbSession.claude_session_id,
+          created_at: dbSession.created_at,
+          last_activity_at: dbSession.last_activity_at,
+        });
+      }
+
+      return jsonError("Session not found", 404);
+    },
+
+    /**
+     * GET /api/health
+     * Health check endpoint for monitoring.
+     */
+    getHealth(): Response {
+      const daemonStatus = daemonConnections.getStatus();
+      const activeSpawned = spawnedSessionRegistry.getActiveSessions().length;
+
+      return json({
+        status: "healthy",
+        version: process.env.npm_package_version || "unknown",
+        daemon_connected: daemonStatus.connected,
+        active_spawned_sessions: activeSpawned,
+        uptime_seconds: Math.floor(process.uptime()),
+      });
+    },
   };
 }
 
@@ -1235,6 +1589,12 @@ function generateId(): string {
   const timestamp = Date.now().toString(36);
   const randomPart = crypto.randomUUID().replace(/-/g, "").substring(0, 8);
   return `sess_${timestamp}_${randomPart}`;
+}
+
+function generateSpawnedSessionId(): string {
+  const timestamp = Date.now();
+  const randomPart = Math.random().toString(36).slice(2, 10);
+  return `spawn_${timestamp}_${randomPart}`;
 }
 
 function generateShareToken(): string {

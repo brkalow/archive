@@ -118,6 +118,9 @@ export function initializeDatabase(dbPath: string = process.env.DATABASE_PATH ||
   // Interactive session support
   safeAddColumn(db, "sessions", "interactive", "INTEGER DEFAULT 0");
 
+  // Remote session support (daemon-spawned headless sessions)
+  safeAddColumn(db, "sessions", "remote", "INTEGER DEFAULT 0");
+
   // Agent session ID for multi-agent support (alias/replacement for claude_session_id).
   // This column will be used by future adapters (Cursor, Codex, opencode) to store their
   // native session identifiers. For now, it's backfilled from claude_session_id for
@@ -125,7 +128,7 @@ export function initializeDatabase(dbPath: string = process.env.DATABASE_PATH ||
   safeAddColumn(db, "sessions", "agent_session_id", "TEXT");
   // Backfill agent_session_id from claude_session_id for existing sessions
   db.run(`UPDATE sessions SET agent_session_id = claude_session_id WHERE agent_session_id IS NULL AND claude_session_id IS NOT NULL`);
-  db.run(`CREATE INDEX IF NOT EXISTS idx_sessions_agent_session_id ON sessions(agent_session_id)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_sessions_agent_session_id ON sessions(agent_session_id)`)
 
   // Feedback messages table (for interactive sessions)
   db.run(`
@@ -204,6 +207,7 @@ export type Session = {
   last_activity_at: string | null;
   client_id: string | null;
   interactive: boolean;
+  remote: boolean;  // true for daemon-spawned headless sessions
   created_at: string;
   updated_at: string;
 };
