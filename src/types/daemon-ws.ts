@@ -1,0 +1,204 @@
+/**
+ * Daemon WebSocket Message Types (Server-side copy)
+ *
+ * Types shared with cli/types/daemon-ws.ts
+ * Keep in sync manually until we have a shared package
+ */
+
+// ============================================
+// Daemon -> Server Messages
+// ============================================
+
+export interface DaemonConnectedMessage {
+  type: "daemon_connected";
+  client_id: string;
+  capabilities: {
+    can_spawn_sessions: boolean;
+    spawnable_harnesses: SpawnableHarnessInfo[];
+  };
+}
+
+export interface SpawnableHarnessInfo {
+  id: string; // "claude-code", "aider", etc.
+  name: string; // Human-readable name
+  available: boolean; // Is the CLI installed?
+  supports_permission_relay: boolean;
+  supports_streaming: boolean;
+  default_model?: string;
+}
+
+export interface SessionOutputMessage {
+  type: "session_output";
+  session_id: string;
+  messages: StreamJsonMessage[];
+}
+
+export interface SessionEndedMessage {
+  type: "session_ended";
+  session_id: string;
+  exit_code: number;
+  error?: string;
+  reason?: "completed" | "user_terminated" | "error" | "timeout";
+}
+
+export interface PermissionPromptMessage {
+  type: "permission_prompt";
+  session_id: string;
+  request_id: string;
+  tool: string;
+  description: string;
+  details: Record<string, unknown>;
+}
+
+export interface QuestionPromptMessage {
+  type: "question_prompt";
+  session_id: string;
+  tool_use_id: string;
+  question: string;
+  options?: string[];
+}
+
+// ============================================
+// Control Request/Response Types (SDK format)
+// Using types from @anthropic-ai/claude-agent-sdk
+// ============================================
+
+// Import and re-export PermissionResult from the SDK
+import type { PermissionResult as SDKPermissionResult } from "@anthropic-ai/claude-agent-sdk";
+export type PermissionResult = SDKPermissionResult;
+
+/** Control request from Claude Code (matches SDKControlRequest format) */
+export interface ControlRequestMessage {
+  type: "control_request";
+  session_id: string; // Added by daemon when relaying
+  request_id: string;
+  request: {
+    subtype: "can_use_tool";
+    tool_name: string;
+    input: Record<string, unknown>;
+    tool_use_id: string;
+    permission_suggestions?: unknown[];
+    blocked_path?: string;
+    decision_reason?: string;
+    agent_id?: string;
+  };
+}
+
+/** Control response to send back to Claude (matches SDKControlResponse format) */
+export interface ControlResponseMessage {
+  type: "control_response";
+  session_id: string;
+  request_id: string;
+  response:
+    | {
+        subtype: "success";
+        request_id: string;
+        response: PermissionResult;
+      }
+    | {
+        subtype: "error";
+        request_id: string;
+        error: string;
+      };
+}
+
+export interface SessionDiffMessage {
+  type: "session_diff";
+  session_id: string;
+  diff: string;
+  /** Files modified by the session (for relevance filtering) */
+  modified_files: string[];
+}
+
+export type DaemonToServerMessage =
+  | DaemonConnectedMessage
+  | SessionOutputMessage
+  | SessionEndedMessage
+  | PermissionPromptMessage
+  | QuestionPromptMessage
+  | SessionDiffMessage
+  | ControlRequestMessage;
+
+// ============================================
+// Server -> Daemon Messages
+// ============================================
+
+export interface StartSessionMessage {
+  type: "start_session";
+  session_id: string; // Server-assigned ID
+  prompt: string; // Initial prompt
+  cwd: string; // Working directory
+  harness?: string; // "claude-code" (default), "aider", etc.
+  model?: string; // Model to use
+  permission_mode?: "relay" | "auto-safe" | "auto";
+  resume_session_id?: string; // Harness session ID to resume
+}
+
+export interface SendInputMessage {
+  type: "send_input";
+  session_id: string;
+  content: string;
+}
+
+export interface EndSessionMessage {
+  type: "end_session";
+  session_id: string;
+}
+
+export interface InterruptSessionMessage {
+  type: "interrupt_session";
+  session_id: string;
+}
+
+export interface PermissionResponseMessage {
+  type: "permission_response";
+  session_id: string;
+  request_id: string;
+  allow: boolean;
+}
+
+export interface QuestionResponseMessage {
+  type: "question_response";
+  session_id: string;
+  tool_use_id: string;
+  answer: string;
+}
+
+export type ServerToDaemonMessage =
+  | StartSessionMessage
+  | SendInputMessage
+  | EndSessionMessage
+  | InterruptSessionMessage
+  | PermissionResponseMessage
+  | QuestionResponseMessage
+  | ControlResponseMessage;
+
+// ============================================
+// Stream JSON types (from Claude Code output)
+// ============================================
+
+export interface StreamJsonMessage {
+  type: "system" | "assistant" | "user" | "result";
+  subtype?: string;
+  message?: {
+    id?: string;
+    role: string;
+    content: ContentBlock[];
+    model?: string;
+    usage?: { input_tokens: number; output_tokens: number };
+  };
+  session_id?: string;
+  cwd?: string;
+  duration_ms?: number;
+  is_error?: boolean;
+}
+
+export interface ContentBlock {
+  type: "text" | "tool_use" | "tool_result" | "thinking";
+  text?: string;
+  id?: string;
+  name?: string;
+  input?: Record<string, unknown>;
+  tool_use_id?: string;
+  content?: string;
+}

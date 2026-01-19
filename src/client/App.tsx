@@ -5,6 +5,7 @@ import { SessionListPage } from './components/SessionListPage';
 import { SessionDetailPage } from './components/SessionDetailPage';
 import { UserMenu } from './components/UserMenu';
 import { ProtectedRoute } from './components/ProtectedRoute';
+import { SpawnedSessionView } from './components/SpawnedSessionView';
 import { renderComponentsShowcase } from './views';
 import type { Session, Message, Diff, Review, Annotation } from '../db/schema';
 
@@ -24,6 +25,18 @@ interface SessionDetailData {
 interface AnnotationsData {
   review: Review | null;
   annotations_by_diff: Record<number, Annotation[]>;
+}
+
+// Session info response for detecting spawned vs archived sessions
+interface SessionInfoResponse {
+  id: string;
+  type: "spawned" | "archived";
+  status: string;
+  cwd?: string;
+  harness?: string;
+  model?: string;
+  title?: string;
+  created_at?: string;
 }
 
 // API helpers
@@ -48,6 +61,12 @@ async function fetchSharedSession(shareToken: string): Promise<SessionDetailData
 
 async function fetchAnnotations(sessionId: string): Promise<AnnotationsData | null> {
   const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/annotations`);
+  if (!res.ok) return null;
+  return res.json();
+}
+
+async function fetchSessionInfo(sessionId: string): Promise<SessionInfoResponse | null> {
+  const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/info`);
   if (!res.ok) return null;
   return res.json();
 }
@@ -90,9 +109,10 @@ function SessionListLoader() {
   return <SessionListPage sessions={sessions} />;
 }
 
-// Session detail loader
+// Session detail loader - handles both spawned and archived sessions
 function SessionDetailLoader() {
   const { id } = useParams<{ id: string }>();
+  const [sessionInfo, setSessionInfo] = useState<SessionInfoResponse | null>(null);
   const [data, setData] = useState<{
     session: Session;
     messages: Message[];
@@ -102,30 +122,49 @@ function SessionDetailLoader() {
     annotationsByDiff: Record<number, Annotation[]>;
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (!id) return;
 
-    // Fetch session data and annotations in parallel (Vercel best practice: async-parallel)
-    Promise.all([
-      fetchSessionDetail(id),
-      fetchAnnotations(id),
-    ])
-      .then(([sessionData, annotationsData]) => {
-        if (!sessionData) {
+    // First, fetch session info to determine if it's spawned or archived
+    fetchSessionInfo(id)
+      .then((info) => {
+        if (!info) {
           setError('Session not found');
+          setLoading(false);
           return;
         }
-        setData({
-          session: sessionData.session,
-          messages: sessionData.messages,
-          diffs: sessionData.diffs,
-          shareUrl: sessionData.shareUrl,
-          review: annotationsData?.review || null,
-          annotationsByDiff: annotationsData?.annotations_by_diff || {},
+
+        setSessionInfo(info);
+
+        // If spawned, we don't need to fetch archived session data
+        if (info.type === 'spawned') {
+          setLoading(false);
+          return;
+        }
+
+        // For archived sessions, fetch full session data and annotations in parallel
+        return Promise.all([
+          fetchSessionDetail(id),
+          fetchAnnotations(id),
+        ]).then(([sessionData, annotationsData]) => {
+          if (!sessionData) {
+            setError('Session not found');
+            return;
+          }
+          setData({
+            session: sessionData.session,
+            messages: sessionData.messages,
+            diffs: sessionData.diffs,
+            shareUrl: sessionData.shareUrl,
+            review: annotationsData?.review || null,
+            annotationsByDiff: annotationsData?.annotations_by_diff || {},
+          });
         });
       })
-      .catch(() => setError('Failed to load session'));
+      .catch(() => setError('Failed to load session'))
+      .finally(() => setLoading(false));
   }, [id]);
 
   if (error) {
@@ -138,20 +177,38 @@ function SessionDetailLoader() {
     );
   }
 
-  if (data === null) {
+  if (loading) {
     return <LoadingSpinner />;
   }
 
-  return (
-    <SessionDetailPage
-      session={data.session}
-      messages={data.messages}
-      diffs={data.diffs}
-      shareUrl={data.shareUrl}
-      review={data.review}
-      annotationsByDiff={data.annotationsByDiff}
-    />
-  );
+  // Render SpawnedSessionView for spawned sessions
+  if (sessionInfo?.type === 'spawned' && id) {
+    return (
+      <SpawnedSessionView
+        sessionId={id}
+        cwd={sessionInfo.cwd || ''}
+        harness={sessionInfo.harness || 'claude-code'}
+        model={sessionInfo.model}
+        createdAt={sessionInfo.created_at}
+      />
+    );
+  }
+
+  // Render archived session view
+  if (data) {
+    return (
+      <SessionDetailPage
+        session={data.session}
+        messages={data.messages}
+        diffs={data.diffs}
+        shareUrl={data.shareUrl}
+        review={data.review}
+        annotationsByDiff={data.annotationsByDiff}
+      />
+    );
+  }
+
+  return <LoadingSpinner />;
 }
 
 // Shared session loader

@@ -1,6 +1,9 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { stripSystemTags } from '../blocks';
+import { useDaemonStatus } from '../hooks/useDaemonStatus';
+import { NewSessionButton } from './NewSessionButton';
+import { useClipboard } from '../hooks';
 import type { Session } from '../../db/schema';
 
 interface SessionListPageProps {
@@ -9,6 +12,7 @@ interface SessionListPageProps {
 
 export function SessionListPage({ sessions }: SessionListPageProps) {
   const [searchQuery, setSearchQuery] = useState('');
+  const daemonStatus = useDaemonStatus();
 
   // Derive filtered sessions from search query (Vercel: rerender-derived-state)
   const filteredSessions = useMemo(() => {
@@ -33,19 +37,22 @@ export function SessionListPage({ sessions }: SessionListPageProps) {
     <div className="session-list-page max-w-[1400px] mx-auto px-6 lg:px-10 py-8">
       <div className="flex items-center justify-between gap-6 mb-8">
         <h1 className="text-xl font-semibold text-text-primary tracking-tight">Sessions</h1>
-        <div className="w-full max-w-sm">
-          <input
-            type="search"
-            placeholder="Search sessions..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-bg-secondary border border-bg-elevated rounded-md px-4 py-2.5 text-sm text-text-primary placeholder:text-text-muted focus:outline focus:outline-2 focus:outline-accent-primary focus:outline-offset-2 transition-all"
-          />
+        <div className="flex items-center gap-4">
+          <NewSessionButton />
+          <div className="w-full max-w-sm">
+            <input
+              type="search"
+              placeholder="Search sessions..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full bg-bg-secondary border border-bg-elevated rounded-md px-4 py-2.5 text-sm text-text-primary placeholder:text-text-muted focus:outline focus:outline-2 focus:outline-accent-primary focus:outline-offset-2 transition-all"
+            />
+          </div>
         </div>
       </div>
 
       {sessions.length === 0 ? (
-        <EmptyState />
+        <EmptyState daemonConnected={daemonStatus.connected} />
       ) : filteredSessions.length === 0 ? (
         <NoResults />
       ) : (
@@ -63,7 +70,17 @@ export function SessionListPage({ sessions }: SessionListPageProps) {
   );
 }
 
-function EmptyState() {
+interface EmptyStateProps {
+  daemonConnected: boolean;
+}
+
+function EmptyState({ daemonConnected }: EmptyStateProps) {
+  const { copy } = useClipboard();
+
+  const handleCopyCommand = useCallback(() => {
+    copy('openctl daemon start');
+  }, [copy]);
+
   return (
     <div className="flex flex-col items-center justify-center py-16 text-center">
       <div className="w-16 h-16 mb-4 rounded-md bg-bg-secondary flex items-center justify-center">
@@ -77,10 +94,31 @@ function EmptyState() {
         </svg>
       </div>
       <h2 className="text-lg font-medium text-text-secondary mb-2">No sessions yet</h2>
-      <p className="text-sm text-text-muted max-w-sm">
-        Sessions can be uploaded via the API at{' '}
-        <code className="bg-bg-tertiary px-1.5 py-0.5 rounded text-accent-primary">POST /api/sessions</code>
-      </p>
+
+      {daemonConnected ? (
+        <p className="text-sm text-text-muted max-w-sm">
+          Your daemon is connected. Click <span className="text-accent-primary font-medium">New Session</span> above to start a new session.
+        </p>
+      ) : (
+        <div className="text-sm text-text-muted max-w-md">
+          <p className="mb-4">
+            Start the daemon to stream and create sessions from here.
+          </p>
+          <div className="inline-flex items-center gap-2 px-4 py-2 bg-bg-secondary border border-bg-elevated rounded-md font-mono text-sm">
+            <span className="text-text-muted">$</span>
+            <code className="text-text-primary">openctl daemon start</code>
+            <button
+              onClick={handleCopyCommand}
+              className="text-text-muted hover:text-text-primary transition-colors"
+              title="Copy"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -116,7 +154,7 @@ function SessionCard({ session, isLive }: SessionCardProps) {
         </h3>
         <div className="flex items-center gap-1.5 shrink-0">
           {isLive && <LiveBadge />}
-          {session.interactive && <InteractiveBadge />}
+          {session.remote ? <RemoteBadge /> : session.interactive && <InteractiveBadge />}
           {session.pr_url && <PrBadge />}
         </div>
       </div>
@@ -154,6 +192,14 @@ function InteractiveBadge() {
         />
       </svg>
       Interactive
+    </span>
+  );
+}
+
+function RemoteBadge() {
+  return (
+    <span className="shrink-0 px-1.5 py-0.5 bg-purple-900/50 text-purple-300 text-xs font-medium rounded">
+      Remote
     </span>
   );
 }

@@ -19,6 +19,7 @@
     "test": "bun test"
   },
   "devDependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.2.12",
     "@types/bun": "latest",
     "@types/react": "^18.3.16",
     "@types/react-dom": "^18.3.5"
