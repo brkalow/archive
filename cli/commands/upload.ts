@@ -687,11 +687,11 @@ export async function upload(args: string[]): Promise<void> {
   if (options.list) {
     // Interactive list mode
     const sessions = await listRecentSessions(10);
-    const selected = await promptSessionSelection(sessions);
-    if (!selected) {
-      process.exit(0);
+    const result = await promptSessionSelection(sessions);
+    if (!result.session) {
+      process.exit(result.cancelled ? 0 : 1);
     }
-    sessionPath = selected.filePath;
+    sessionPath = result.session.filePath;
   } else if (!sessionPath) {
     console.log("Auto-detecting current session...");
     sessionPath = await findCurrentSession();

@@ -11,6 +11,7 @@ import {
   extractProjectPathFromSessionPath,
   listRecentSessions,
   promptSessionSelection,
+  readLine,
 } from "../lib/shared-sessions";
 
 export async function share(args: string[]): Promise<void> {
@@ -37,13 +38,13 @@ export async function share(args: string[]): Promise<void> {
   if (values.list) {
     // Interactive list mode
     const sessions = await listRecentSessions(10);
-    const selected = await promptSessionSelection(sessions);
-    if (!selected) {
-      process.exit(0);
+    const result = await promptSessionSelection(sessions);
+    if (!result.session) {
+      process.exit(result.cancelled ? 0 : 1);
     }
-    sessionUuid = selected.uuid;
-    sessionPath = selected.filePath;
-    projectPath = selected.projectPath;
+    sessionUuid = result.session.uuid;
+    sessionPath = result.session.filePath;
+    projectPath = result.session.projectPath;
   } else if (positionals[0]) {
     // Explicit session ID provided
     sessionUuid = positionals[0];
@@ -184,17 +185,6 @@ Examples:
   openctl share --list            # Pick from recent sessions
   openctl share abc-123-def       # Share a specific session
   `);
-}
-
-async function readLine(): Promise<string> {
-  const decoder = new TextDecoder();
-  const reader = Bun.stdin.stream().getReader();
-  const { value } = await reader.read();
-  reader.releaseLock();
-  if (!value) {
-    return "";
-  }
-  return decoder.decode(value).trim();
 }
 
 /**
