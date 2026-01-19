@@ -1285,6 +1285,16 @@ export function createApiRoutes(repo: SessionRepository) {
           remote: true,  // Mark as remote/spawned session
         });
 
+        // Record analytics for spawned session creation
+        analytics.recordSessionCreated(sessionId, {
+          clientId: getClientId(req) || undefined,
+          model: body.model,
+          harness,
+          interactive: true,
+          isLive: true,
+          remote: true,
+        });
+
         // Create ephemeral session record in registry (tracks daemon connection and permissions)
         spawnedSessionRegistry.createSession({
           id: sessionId,

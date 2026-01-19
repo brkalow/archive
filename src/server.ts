@@ -1,5 +1,6 @@
 import { initializeDatabase } from "./db/schema";
 import { SessionRepository } from "./db/repository";
+import { AnalyticsRecorder } from "./analytics/events";
 import { daemonConnections, type DaemonWebSocketData } from "./lib/daemon-connections";
 import { spawnedSessionRegistry, type ParsedDiff } from "./lib/spawned-session-registry";
 import { createApiRoutes, addSessionSubscriber, removeSessionSubscriber, closeAllConnections, broadcastToSession } from "./routes/api";
@@ -53,8 +54,20 @@ const PORT = getPort();
 // Initialize database and repository
 const db = initializeDatabase();
 const repo = new SessionRepository(db);
+const analytics = new AnalyticsRecorder(repo);
 const api = createApiRoutes(repo);
 const pages = createPageRoutes(repo);
+
+/**
+ * Extract text content from content blocks array.
+ * Used for message storage and analytics content length calculation.
+ */
+function extractTextContent(contentBlocks: Array<{ type: string; text?: string }>): string {
+  return contentBlocks
+    .filter((b): b is { type: "text"; text: string } => b.type === "text" && typeof b.text === "string")
+    .map((b) => b.text)
+    .join("\n");
+}
 
 // WebSocket data attached to each connection
 interface BrowserWebSocketData {
@@ -115,17 +128,11 @@ function handleDaemonMessage(
 
       // Store messages to DB for persistence (instead of in-memory cache)
       const messagesToStore = message.messages.map((msg) => {
-        // Extract text content for the legacy content field
         const contentBlocks = msg.message?.content || [];
-        const textContent = contentBlocks
-          .filter((b): b is { type: "text"; text: string } => b.type === "text" && typeof b.text === "string")
-          .map((b) => b.text)
-          .join("\n");
-
         return {
           session_id: message.session_id,
           role: msg.message?.role || msg.type,
-          content: textContent,
+          content: extractTextContent(contentBlocks),
           content_blocks: contentBlocks,
           timestamp: new Date().toISOString(),
         };
@@ -133,6 +140,29 @@ function handleDaemonMessage(
 
       if (messagesToStore.length > 0) {
         repo.addMessagesWithIndices(message.session_id, messagesToStore);
+      }
+
+      // Record analytics for relayed messages
+      for (const msg of message.messages) {
+        const role = msg.message?.role || msg.type;
+        const contentBlocks = msg.message?.content || [];
+
+        // Track user messages (prompts sent)
+        if (role === "user") {
+          analytics.recordMessageSent(message.session_id, {
+            clientId: ws.data.clientId,
+            contentLength: extractTextContent(contentBlocks).length,
+          });
+        }
+
+        // Track tool invocations from assistant messages
+        if (role === "assistant") {
+          analytics.recordToolsFromMessage(
+            message.session_id,
+            contentBlocks as Array<{ type: string; name?: string }>,
+            { clientId: ws.data.clientId }
+          );
+        }
       }
 
       // Update DB activity timestamp
@@ -180,6 +210,25 @@ function handleDaemonMessage(
     }
 
     case "session_ended": {
+      // Get session for analytics (duration calculation)
+      const spawnedSession = spawnedSessionRegistry.getSession(message.session_id);
+
+      // Calculate duration in seconds
+      let durationSeconds: number | undefined;
+      if (spawnedSession?.createdAt) {
+        durationSeconds = Math.floor((Date.now() - spawnedSession.createdAt.getTime()) / 1000);
+      }
+
+      // Get message count from DB for analytics
+      const messageCount = repo.getMessageCount(message.session_id);
+
+      // Record analytics for session completion
+      analytics.recordSessionCompleted(message.session_id, {
+        clientId: ws.data.clientId,
+        durationSeconds,
+        messageCount,
+      });
+
       spawnedSessionRegistry.updateSession(message.session_id, {
         status: "ended",
         endedAt: new Date(),

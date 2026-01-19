@@ -335,6 +335,7 @@ export type StatType =
   | "sessions_created"
   | "sessions_interactive"
   | "sessions_live"
+  | "sessions_remote"
   | "prompts_sent"
   | "lines_added"
   | "lines_removed"
@@ -369,6 +370,7 @@ export type SessionCreatedProperties = {
   harness?: string;
   interactive?: boolean;
   is_live?: boolean;
+  remote?: boolean;
 };
 
 export type SessionCompletedProperties = {

@@ -37,15 +37,17 @@ export class AnalyticsRecorder {
       harness?: string;
       interactive?: boolean;
       isLive?: boolean;
+      remote?: boolean;
     } = {}
   ): void {
-    const { clientId, model, harness, interactive, isLive } = options;
+    const { clientId, model, harness, interactive, isLive, remote } = options;
 
     const properties: SessionCreatedProperties = {
       model,
       harness,
       interactive,
       is_live: isLive,
+      remote,
     };
 
     // Record event
@@ -64,6 +66,10 @@ export class AnalyticsRecorder {
 
     if (isLive) {
       this.repo.incrementDailyStat("sessions_live", { clientId, model });
+    }
+
+    if (remote) {
+      this.repo.incrementDailyStat("sessions_remote", { clientId, model });
     }
   }
 

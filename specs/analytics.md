@@ -97,7 +97,7 @@ DO UPDATE SET value = value + excluded.value
 
 | Event Type | Trigger | Properties |
 |------------|---------|------------|
-| `session.created` | Session created (live or upload) | `model`, `harness`, `interactive`, `is_live` |
+| `session.created` | Session created (live or upload) | `model`, `harness`, `interactive`, `is_live`, `remote` |
 | `session.completed` | Live session ends | `duration_seconds`, `message_count` |
 | `message.sent` | User prompt pushed | `content_length` |
 | `diff.updated` | Code changes recorded | `files_changed`, `additions`, `deletions` |
@@ -112,6 +112,7 @@ Core stats tracked in daily rollups:
 | `sessions_created` | Total sessions created |
 | `sessions_interactive` | Interactive sessions (feedback enabled) |
 | `sessions_live` | Live-streamed sessions |
+| `sessions_remote` | Remote/spawned sessions (browser-initiated via daemon) |
 | `prompts_sent` | User messages sent |
 | `tools_invoked` | Total tool invocations across all tools |
 | `subagents_invoked` | Task tool invocations (subagent spawns) |
@@ -251,6 +252,11 @@ analytics.recordSessionCreated(session.id, {
 analytics.recordSessionCreated(id, {
   clientId, model, harness, interactive, isLive: true
 });
+
+// POST /api/sessions/spawn (remote/daemon-spawned session)
+analytics.recordSessionCreated(sessionId, {
+  clientId, model, harness, interactive: true, isLive: true, remote: true
+});
 ```
 
 ### Message Tracking
@@ -263,6 +269,17 @@ for (const msg of parsedMessages) {
   }
   if (msg.role === "assistant" && msg.content_blocks) {
     analytics.recordToolsFromMessage(sessionId, msg.content_blocks, { clientId });
+  }
+}
+
+// Daemon WebSocket: session_output (remote sessions)
+// In server.ts handleDaemonMessage()
+for (const msg of message.messages) {
+  if (role === "user") {
+    analytics.recordMessageSent(sessionId, { clientId, contentLength });
+  }
+  if (role === "assistant") {
+    analytics.recordToolsFromMessage(sessionId, contentBlocks, { clientId });
   }
 }
 ```
@@ -282,6 +299,12 @@ analytics.recordDiffUpdated(sessionId, {
 
 ```typescript
 // POST /api/sessions/:id/complete
+analytics.recordSessionCompleted(sessionId, {
+  clientId, durationSeconds, messageCount
+});
+
+// Daemon WebSocket: session_ended (remote sessions)
+// In server.ts handleDaemonMessage()
 analytics.recordSessionCompleted(sessionId, {
   clientId, durationSeconds, messageCount
 });
