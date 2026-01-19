@@ -16,6 +16,9 @@ import type { ServerToDaemonMessage } from "../../src/types/daemon-ws";
  * 3. Messages relay correctly between daemon ↔ server
  * 4. Session ends and cleanup happens properly
  */
+// Test client ID for browser requests
+const TEST_CLIENT_ID = "test-browser-client-123";
+
 describe("Browser-Initiated Sessions Integration", () => {
   let db: Database;
   let repo: SessionRepository;
@@ -62,7 +65,7 @@ describe("Browser-Initiated Sessions Integration", () => {
 
         // REST endpoints
         if (url.pathname === "/api/daemon/status" && req.method === "GET") {
-          return api.getDaemonStatus();
+          return api.getDaemonStatus(req);
         }
 
         if (url.pathname === "/api/sessions/spawn" && req.method === "POST") {
@@ -70,12 +73,12 @@ describe("Browser-Initiated Sessions Integration", () => {
         }
 
         if (url.pathname === "/api/sessions/spawned" && req.method === "GET") {
-          return api.getSpawnedSessions();
+          return api.getSpawnedSessions(req);
         }
 
         const infoMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/info$/);
         if (infoMatch && req.method === "GET") {
-          return api.getSessionInfo(infoMatch[1]!);
+          return api.getSessionInfo(infoMatch[1]!, req);
         }
 
         const resumeMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/resume$/);
@@ -120,7 +123,9 @@ describe("Browser-Initiated Sessions Integration", () => {
 
   describe("Daemon Connection", () => {
     test("daemon status is disconnected initially", async () => {
-      const res = await fetch(`http://localhost:${serverPort}/api/daemon/status`);
+      const res = await fetch(`http://localhost:${serverPort}/api/daemon/status`, {
+        headers: { "X-Openctl-Client-ID": TEST_CLIENT_ID },
+      });
       expect(res.ok).toBe(true);
 
       const data = await res.json();
@@ -130,7 +135,9 @@ describe("Browser-Initiated Sessions Integration", () => {
     test("daemon status reflects connection", async () => {
       const clientId = connectDaemon();
 
-      const res = await fetch(`http://localhost:${serverPort}/api/daemon/status`);
+      const res = await fetch(`http://localhost:${serverPort}/api/daemon/status`, {
+        headers: { "X-Openctl-Client-ID": TEST_CLIENT_ID },
+      });
       const data = await res.json();
 
       expect(data.connected).toBe(true);
@@ -142,7 +149,9 @@ describe("Browser-Initiated Sessions Integration", () => {
       const clientId = connectDaemon();
 
       // Verify connected
-      let res = await fetch(`http://localhost:${serverPort}/api/daemon/status`);
+      let res = await fetch(`http://localhost:${serverPort}/api/daemon/status`, {
+        headers: { "X-Openctl-Client-ID": TEST_CLIENT_ID },
+      });
       let data = await res.json();
       expect(data.connected).toBe(true);
 
@@ -150,7 +159,9 @@ describe("Browser-Initiated Sessions Integration", () => {
       daemonConnections.removeDaemon(clientId);
 
       // Verify disconnected
-      res = await fetch(`http://localhost:${serverPort}/api/daemon/status`);
+      res = await fetch(`http://localhost:${serverPort}/api/daemon/status`, {
+        headers: { "X-Openctl-Client-ID": TEST_CLIENT_ID },
+      });
       data = await res.json();
       expect(data.connected).toBe(false);
     });
@@ -160,7 +171,7 @@ describe("Browser-Initiated Sessions Integration", () => {
     test("spawn fails without connected daemon", async () => {
       const res = await fetch(`http://localhost:${serverPort}/api/sessions/spawn`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "X-Openctl-Client-ID": TEST_CLIENT_ID },
         body: JSON.stringify({
           prompt: "Help me with code",
           cwd: "/tmp/test",
@@ -177,7 +188,7 @@ describe("Browser-Initiated Sessions Integration", () => {
 
       const res = await fetch(`http://localhost:${serverPort}/api/sessions/spawn`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "X-Openctl-Client-ID": TEST_CLIENT_ID },
         body: JSON.stringify({
           prompt: "Help me with code",
           cwd: "/tmp/test",
@@ -198,7 +209,7 @@ describe("Browser-Initiated Sessions Integration", () => {
 
       await fetch(`http://localhost:${serverPort}/api/sessions/spawn`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "X-Openctl-Client-ID": TEST_CLIENT_ID },
         body: JSON.stringify({
           prompt: "Help me with code",
           cwd: "/tmp/test",
@@ -224,7 +235,7 @@ describe("Browser-Initiated Sessions Integration", () => {
       // Missing prompt
       let res = await fetch(`http://localhost:${serverPort}/api/sessions/spawn`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "X-Openctl-Client-ID": TEST_CLIENT_ID },
         body: JSON.stringify({
           cwd: "/tmp/test",
         }),
@@ -236,7 +247,7 @@ describe("Browser-Initiated Sessions Integration", () => {
       // Missing cwd
       res = await fetch(`http://localhost:${serverPort}/api/sessions/spawn`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "X-Openctl-Client-ID": TEST_CLIENT_ID },
         body: JSON.stringify({
           prompt: "Help me",
         }),
@@ -251,7 +262,7 @@ describe("Browser-Initiated Sessions Integration", () => {
 
       const res = await fetch(`http://localhost:${serverPort}/api/sessions/spawn`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "X-Openctl-Client-ID": TEST_CLIENT_ID },
         body: JSON.stringify({
           prompt: "Help me with code",
           cwd: "/tmp/test",
@@ -273,17 +284,19 @@ describe("Browser-Initiated Sessions Integration", () => {
       // Spawn two sessions
       await fetch(`http://localhost:${serverPort}/api/sessions/spawn`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "X-Openctl-Client-ID": TEST_CLIENT_ID },
         body: JSON.stringify({ prompt: "First", cwd: "/tmp/1" }),
       });
 
       await fetch(`http://localhost:${serverPort}/api/sessions/spawn`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "X-Openctl-Client-ID": TEST_CLIENT_ID },
         body: JSON.stringify({ prompt: "Second", cwd: "/tmp/2" }),
       });
 
-      const res = await fetch(`http://localhost:${serverPort}/api/sessions/spawned`);
+      const res = await fetch(`http://localhost:${serverPort}/api/sessions/spawned`, {
+        headers: { "X-Openctl-Client-ID": TEST_CLIENT_ID },
+      });
       const data = await res.json();
 
       expect(data.sessions.length).toBe(2);
@@ -296,13 +309,14 @@ describe("Browser-Initiated Sessions Integration", () => {
 
       const spawnRes = await fetch(`http://localhost:${serverPort}/api/sessions/spawn`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "X-Openctl-Client-ID": TEST_CLIENT_ID },
         body: JSON.stringify({ prompt: "Help me", cwd: "/tmp/test" }),
       });
       const { session_id } = await spawnRes.json();
 
       const infoRes = await fetch(
-        `http://localhost:${serverPort}/api/sessions/${session_id}/info`
+        `http://localhost:${serverPort}/api/sessions/${session_id}/info`,
+        { headers: { "X-Openctl-Client-ID": TEST_CLIENT_ID } }
       );
       expect(infoRes.ok).toBe(true);
 
@@ -315,7 +329,8 @@ describe("Browser-Initiated Sessions Integration", () => {
 
     test("returns 404 for non-existent session", async () => {
       const res = await fetch(
-        `http://localhost:${serverPort}/api/sessions/nonexistent/info`
+        `http://localhost:${serverPort}/api/sessions/nonexistent/info`,
+        { headers: { "X-Openctl-Client-ID": TEST_CLIENT_ID } }
       );
       expect(res.status).toBe(404);
     });
@@ -327,7 +342,7 @@ describe("Browser-Initiated Sessions Integration", () => {
 
       const spawnRes = await fetch(`http://localhost:${serverPort}/api/sessions/spawn`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "X-Openctl-Client-ID": TEST_CLIENT_ID },
         body: JSON.stringify({ prompt: "Help me", cwd: "/tmp/test" }),
       });
       const { session_id } = await spawnRes.json();
@@ -352,7 +367,7 @@ describe("Browser-Initiated Sessions Integration", () => {
 
       const spawnRes = await fetch(`http://localhost:${serverPort}/api/sessions/spawn`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "X-Openctl-Client-ID": TEST_CLIENT_ID },
         body: JSON.stringify({ prompt: "Help me", cwd: "/tmp/test" }),
       });
       const { session_id } = await spawnRes.json();
@@ -375,7 +390,7 @@ describe("Browser-Initiated Sessions Integration", () => {
 
       const spawnRes = await fetch(`http://localhost:${serverPort}/api/sessions/spawn`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "X-Openctl-Client-ID": TEST_CLIENT_ID },
         body: JSON.stringify({ prompt: "Help me", cwd: "/tmp/test" }),
       });
       const { session_id } = await spawnRes.json();
@@ -396,7 +411,7 @@ describe("Browser-Initiated Sessions Integration", () => {
 
       const spawnRes = await fetch(`http://localhost:${serverPort}/api/sessions/spawn`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "X-Openctl-Client-ID": TEST_CLIENT_ID },
         body: JSON.stringify({ prompt: "Help me", cwd: "/tmp/test" }),
       });
       const { session_id } = await spawnRes.json();
@@ -421,7 +436,7 @@ describe("Browser-Initiated Sessions Integration", () => {
 
       const spawnRes = await fetch(`http://localhost:${serverPort}/api/sessions/spawn`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "X-Openctl-Client-ID": TEST_CLIENT_ID },
         body: JSON.stringify({
           prompt: "Help me",
           cwd: "/tmp/test",
@@ -450,7 +465,7 @@ describe("Browser-Initiated Sessions Integration", () => {
 
       const spawnRes = await fetch(`http://localhost:${serverPort}/api/sessions/spawn`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "X-Openctl-Client-ID": TEST_CLIENT_ID },
         body: JSON.stringify({
           prompt: "Help me",
           cwd: "/tmp/test",
@@ -486,7 +501,7 @@ describe("Browser-Initiated Sessions Integration", () => {
 
       const spawnRes = await fetch(`http://localhost:${serverPort}/api/sessions/spawn`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "X-Openctl-Client-ID": TEST_CLIENT_ID },
         body: JSON.stringify({ prompt: "Help me", cwd: "/tmp/test" }),
       });
       const { session_id } = await spawnRes.json();
@@ -523,7 +538,7 @@ describe("Browser-Initiated Sessions Integration", () => {
 
       const spawnRes = await fetch(`http://localhost:${serverPort}/api/sessions/spawn`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "X-Openctl-Client-ID": TEST_CLIENT_ID },
         body: JSON.stringify({ prompt: "Help me", cwd: "/tmp/test" }),
       });
       const { session_id } = await spawnRes.json();
@@ -552,7 +567,7 @@ describe("Browser-Initiated Sessions Integration", () => {
 
       const spawnRes = await fetch(`http://localhost:${serverPort}/api/sessions/spawn`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "X-Openctl-Client-ID": TEST_CLIENT_ID },
         body: JSON.stringify({ prompt: "Help me", cwd: "/tmp/test" }),
       });
       const { session_id } = await spawnRes.json();
@@ -572,7 +587,7 @@ describe("Browser-Initiated Sessions Integration", () => {
       // Create session
       const spawnRes = await fetch(`http://localhost:${serverPort}/api/sessions/spawn`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "X-Openctl-Client-ID": TEST_CLIENT_ID },
         body: JSON.stringify({ prompt: "Help me", cwd: "/tmp/test" }),
       });
       const { session_id } = await spawnRes.json();
@@ -597,7 +612,7 @@ describe("Browser-Initiated Sessions Integration", () => {
       // Resume session
       const resumeRes = await fetch(`http://localhost:${serverPort}/api/sessions/${session_id}/resume`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "X-Openctl-Client-ID": TEST_CLIENT_ID },
       });
       expect(resumeRes.status).toBe(200);
 
@@ -616,7 +631,7 @@ describe("Browser-Initiated Sessions Integration", () => {
 
       const spawnRes = await fetch(`http://localhost:${serverPort}/api/sessions/spawn`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "X-Openctl-Client-ID": TEST_CLIENT_ID },
         body: JSON.stringify({ prompt: "Help me", cwd: "/tmp/test" }),
       });
       const { session_id } = await spawnRes.json();
@@ -624,7 +639,7 @@ describe("Browser-Initiated Sessions Integration", () => {
       // Try to resume while session is still starting (not disconnected)
       const resumeRes = await fetch(`http://localhost:${serverPort}/api/sessions/${session_id}/resume`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "X-Openctl-Client-ID": TEST_CLIENT_ID },
       });
 
       expect(resumeRes.status).toBe(400);
@@ -637,7 +652,7 @@ describe("Browser-Initiated Sessions Integration", () => {
 
       const spawnRes = await fetch(`http://localhost:${serverPort}/api/sessions/spawn`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "X-Openctl-Client-ID": TEST_CLIENT_ID },
         body: JSON.stringify({ prompt: "Help me", cwd: "/tmp/test" }),
       });
       const { session_id } = await spawnRes.json();
@@ -650,7 +665,7 @@ describe("Browser-Initiated Sessions Integration", () => {
       // Try to resume
       const resumeRes = await fetch(`http://localhost:${serverPort}/api/sessions/${session_id}/resume`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "X-Openctl-Client-ID": TEST_CLIENT_ID },
       });
 
       expect(resumeRes.status).toBe(400);
@@ -742,7 +757,7 @@ describe("Browser-Initiated Sessions Integration", () => {
       for (let i = 0; i < 3; i++) {
         const res = await fetch(`http://localhost:${serverPort}/api/sessions/spawn`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", "X-Openctl-Client-ID": TEST_CLIENT_ID },
           body: JSON.stringify({ prompt: `Session ${i}`, cwd: "/tmp/test" }),
         });
         expect(res.status).toBe(201);
@@ -751,7 +766,7 @@ describe("Browser-Initiated Sessions Integration", () => {
       // 4th should fail due to concurrent limit
       const res = await fetch(`http://localhost:${serverPort}/api/sessions/spawn`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "X-Openctl-Client-ID": TEST_CLIENT_ID },
         body: JSON.stringify({ prompt: "Fourth session", cwd: "/tmp/test" }),
       });
 
@@ -768,7 +783,7 @@ describe("Browser-Initiated Sessions Integration", () => {
       for (let i = 0; i < 3; i++) {
         const res = await fetch(`http://localhost:${serverPort}/api/sessions/spawn`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", "X-Openctl-Client-ID": TEST_CLIENT_ID },
           body: JSON.stringify({ prompt: `Session ${i}`, cwd: "/tmp/test" }),
         });
         const data = await res.json();
@@ -782,7 +797,7 @@ describe("Browser-Initiated Sessions Integration", () => {
       // Should now be able to spawn another
       const res = await fetch(`http://localhost:${serverPort}/api/sessions/spawn`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "X-Openctl-Client-ID": TEST_CLIENT_ID },
         body: JSON.stringify({ prompt: "New session", cwd: "/tmp/test" }),
       });
       expect(res.status).toBe(201);
@@ -795,7 +810,7 @@ describe("Browser-Initiated Sessions Integration", () => {
 
       const spawnRes = await fetch(`http://localhost:${serverPort}/api/sessions/spawn`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "X-Openctl-Client-ID": TEST_CLIENT_ID },
         body: JSON.stringify({
           prompt: "Help me",
           cwd: "/tmp/test",
@@ -855,7 +870,7 @@ describe("Browser-Initiated Sessions Integration", () => {
 
       await fetch(`http://localhost:${serverPort}/api/sessions/spawn`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "X-Openctl-Client-ID": TEST_CLIENT_ID },
         body: JSON.stringify({ prompt: "Test", cwd: "/tmp/test" }),
       });
 
@@ -872,7 +887,7 @@ describe("Browser-Initiated Sessions Integration", () => {
 
       const spawnRes = await fetch(`http://localhost:${serverPort}/api/sessions/spawn`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "X-Openctl-Client-ID": TEST_CLIENT_ID },
         body: JSON.stringify({
           prompt: "Help me build a feature",
           cwd: "/tmp/test-project",
@@ -899,7 +914,7 @@ describe("Browser-Initiated Sessions Integration", () => {
       const longPrompt = "A".repeat(150);
       const spawnRes = await fetch(`http://localhost:${serverPort}/api/sessions/spawn`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "X-Openctl-Client-ID": TEST_CLIENT_ID },
         body: JSON.stringify({
           prompt: longPrompt,
           cwd: "/tmp/test",
@@ -917,7 +932,7 @@ describe("Browser-Initiated Sessions Integration", () => {
 
       const spawnRes = await fetch(`http://localhost:${serverPort}/api/sessions/spawn`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "X-Openctl-Client-ID": TEST_CLIENT_ID },
         body: JSON.stringify({ prompt: "Test prompt", cwd: "/tmp/test" }),
       });
 
@@ -955,7 +970,7 @@ describe("Browser-Initiated Sessions Integration", () => {
 
       const spawnRes = await fetch(`http://localhost:${serverPort}/api/sessions/spawn`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "X-Openctl-Client-ID": TEST_CLIENT_ID },
         body: JSON.stringify({ prompt: "Add a feature", cwd: "/tmp/test" }),
       });
 
@@ -991,7 +1006,7 @@ describe("Browser-Initiated Sessions Integration", () => {
 
       const spawnRes = await fetch(`http://localhost:${serverPort}/api/sessions/spawn`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "X-Openctl-Client-ID": TEST_CLIENT_ID },
         body: JSON.stringify({ prompt: "Test", cwd: "/tmp/test" }),
       });
 
@@ -1014,7 +1029,7 @@ describe("Browser-Initiated Sessions Integration", () => {
 
       const spawnRes = await fetch(`http://localhost:${serverPort}/api/sessions/spawn`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "X-Openctl-Client-ID": TEST_CLIENT_ID },
         body: JSON.stringify({ prompt: "Test", cwd: "/tmp/test" }),
       });
 
@@ -1037,7 +1052,7 @@ describe("Browser-Initiated Sessions Integration", () => {
 
       const spawnRes = await fetch(`http://localhost:${serverPort}/api/sessions/spawn`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "X-Openctl-Client-ID": TEST_CLIENT_ID },
         body: JSON.stringify({ prompt: "Build a feature", cwd: "/tmp/test" }),
       });
 
@@ -1077,7 +1092,7 @@ describe("Browser-Initiated Sessions Integration", () => {
 
       const spawnRes = await fetch(`http://localhost:${serverPort}/api/sessions/spawn`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "X-Openctl-Client-ID": TEST_CLIENT_ID },
         body: JSON.stringify({ prompt: "Add feature", cwd: "/tmp/test" }),
       });
 
@@ -1119,7 +1134,7 @@ describe("Browser-Initiated Sessions Integration", () => {
 
       const spawnRes = await fetch(`http://localhost:${serverPort}/api/sessions/spawn`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "X-Openctl-Client-ID": TEST_CLIENT_ID },
         body: JSON.stringify({ prompt: "Add feature", cwd: "/tmp/test" }),
       });
 

@@ -1352,9 +1352,15 @@ export function createApiRoutes(repo: SessionRepository) {
 
     /**
      * GET /api/daemon/status
-     * Returns the status of connected daemons
+     * Returns the status of connected daemons.
+     * Requires client ID header.
      */
-    getDaemonStatus(): Response {
+    getDaemonStatus(req: Request): Response {
+      const clientId = getClientId(req);
+      if (!clientId) {
+        return jsonError("X-Openctl-Client-ID header required", 401);
+      }
+
       // Import dynamically to avoid circular dependencies
       const { daemonConnections } = require("../lib/daemon-connections");
       const status = daemonConnections.getStatus();
@@ -1364,10 +1370,16 @@ export function createApiRoutes(repo: SessionRepository) {
     /**
      * GET /api/daemon/repos
      * Returns list of allowed repositories for spawning sessions.
+     * Requires client ID header.
      * For v1, returns an empty list - the DirectoryPicker allows custom path entry.
      * Future: could be populated from daemon capabilities or user settings.
      */
-    getDaemonRepos(): Response {
+    getDaemonRepos(req: Request): Response {
+      const clientId = getClientId(req);
+      if (!clientId) {
+        return jsonError("X-Openctl-Client-ID header required", 401);
+      }
+
       // Placeholder implementation - could be enhanced based on:
       // 1. Hard-coded list from config
       // 2. Fetched from connected daemon
@@ -1379,9 +1391,15 @@ export function createApiRoutes(repo: SessionRepository) {
 
     /**
      * GET /api/daemon/list
-     * Returns all connected daemons (for multi-daemon scenarios)
+     * Returns all connected daemons (for multi-daemon scenarios).
+     * Requires client ID header.
      */
-    listConnectedDaemons(): Response {
+    listConnectedDaemons(req: Request): Response {
+      const clientId = getClientId(req);
+      if (!clientId) {
+        return jsonError("X-Openctl-Client-ID header required", 401);
+      }
+
       const daemons = daemonConnections.getAllConnected().map((d: { clientId: string; connectedAt: Date; capabilities: unknown; activeSpawnedSessions: Set<string> }) => ({
         client_id: d.clientId,
         connected_at: d.connectedAt.toISOString(),
@@ -1397,11 +1415,17 @@ export function createApiRoutes(repo: SessionRepository) {
     /**
      * POST /api/sessions/spawn
      * Spawn a new session on a connected daemon.
+     * Requires client ID header.
      */
     async spawnSession(req: Request): Promise<Response> {
       try {
-        // Rate limit by client IP or client ID
-        const clientId = getClientId(req) || getClientIP(req);
+        // Require client ID for session creation
+        const clientId = getClientId(req);
+        if (!clientId) {
+          return jsonError("X-Openctl-Client-ID header required", 401);
+        }
+
+        // Rate limit by client ID
         const rateCheck = spawnSessionLimiter.check(`spawn:${clientId}`);
 
         if (!rateCheck.allowed) {
@@ -1562,8 +1586,14 @@ export function createApiRoutes(repo: SessionRepository) {
     /**
      * GET /api/sessions/spawned
      * List active spawned sessions.
+     * Requires client ID header.
      */
-    getSpawnedSessions(): Response {
+    getSpawnedSessions(req: Request): Response {
+      const clientId = getClientId(req);
+      if (!clientId) {
+        return jsonError("X-Openctl-Client-ID header required", 401);
+      }
+
       const sessions = spawnedSessionRegistry.getActiveSessions();
 
       return json({
@@ -1600,11 +1630,17 @@ export function createApiRoutes(repo: SessionRepository) {
     /**
      * POST /api/sessions/:id/resume
      * Resume a disconnected session when daemon reconnects.
+     * Requires client ID header.
      */
     async resumeSession(sessionId: string, req: Request): Promise<Response> {
       try {
-        // Rate limit by client IP or client ID
-        const clientId = getClientId(req) || getClientIP(req) || "anonymous";
+        // Require client ID
+        const clientId = getClientId(req);
+        if (!clientId) {
+          return jsonError("X-Openctl-Client-ID header required", 401);
+        }
+
+        // Rate limit by client ID
         const rateCheck = spawnSessionLimiter.check(`resume:${clientId}`);
 
         if (!rateCheck.allowed) {
@@ -1692,11 +1728,21 @@ export function createApiRoutes(repo: SessionRepository) {
     /**
      * GET /api/sessions/:id/info
      * Get session info for both spawned and archived sessions.
+     * Requires client ID header. Returns 403 if not authorized.
      */
-    getSessionInfo(sessionId: string): Response {
+    async getSessionInfo(sessionId: string, req: Request): Promise<Response> {
+      const auth = await extractAuth(req);
+      const clientId = getClientId(req);
+
+      if (!clientId) {
+        return jsonError("X-Openctl-Client-ID header required", 401);
+      }
+
       // Check if it's a spawned session first
       const spawned = spawnedSessionRegistry.getSession(sessionId);
       if (spawned) {
+        // Spawned sessions are accessible with any client ID for now
+        // (they're browser-initiated and don't have traditional ownership)
         return json({
           id: spawned.id,
           type: "spawned",
@@ -1716,6 +1762,29 @@ export function createApiRoutes(repo: SessionRepository) {
       // Fall back to DB session
       const dbSession = repo.getSession(sessionId);
       if (dbSession) {
+        // Check if session is shared (has share_token) - allow public access
+        if (dbSession.share_token) {
+          return json({
+            id: dbSession.id,
+            type: "archived",
+            status: dbSession.status,
+            title: dbSession.title,
+            description: dbSession.description,
+            project_path: dbSession.project_path,
+            model: dbSession.model,
+            harness: dbSession.harness,
+            claude_session_id: dbSession.claude_session_id,
+            created_at: dbSession.created_at,
+            last_activity_at: dbSession.last_activity_at,
+          });
+        }
+
+        // Check ownership for non-shared sessions
+        const { allowed } = repo.verifyOwnership(sessionId, auth.userId, clientId);
+        if (!allowed) {
+          return jsonError("Not authorized to access this session", 403);
+        }
+
         return json({
           id: dbSession.id,
           type: "archived",

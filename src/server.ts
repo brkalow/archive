@@ -754,15 +754,15 @@ const server = Bun.serve({
 
     // Daemon status endpoints
     "/api/daemon/status": {
-      GET: () => api.getDaemonStatus(),
+      GET: (req) => api.getDaemonStatus(req),
     },
 
     "/api/daemon/repos": {
-      GET: () => api.getDaemonRepos(),
+      GET: (req) => api.getDaemonRepos(req),
     },
 
     "/api/daemon/list": {
-      GET: () => api.listConnectedDaemons(),
+      GET: (req) => api.listConnectedDaemons(req),
     },
 
     // Spawned session endpoints
@@ -771,7 +771,7 @@ const server = Bun.serve({
     },
 
     "/api/sessions/spawned": {
-      GET: () => api.getSpawnedSessions(),
+      GET: (req) => api.getSpawnedSessions(req),
     },
 
     "/api/sessions/:id/resume": {
@@ -779,7 +779,7 @@ const server = Bun.serve({
     },
 
     "/api/sessions/:id/info": {
-      GET: (req) => api.getSessionInfo(req.params.id),
+      GET: (req) => api.getSessionInfo(req.params.id, req),
     },
 
     // Health check endpoint
