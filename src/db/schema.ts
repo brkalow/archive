@@ -111,9 +111,13 @@ export function initializeDatabase(dbPath: string = process.env.DATABASE_PATH ||
   // Client-based session ownership
   safeAddColumn(db, "sessions", "client_id", "TEXT");
 
+  // User-based session ownership (for authenticated users)
+  safeAddColumn(db, "sessions", "user_id", "TEXT");
+
   // Index for live session queries
   db.run(`CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_sessions_client_id ON sessions(client_id)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id)`);
 
   // Interactive session support
   safeAddColumn(db, "sessions", "interactive", "INTEGER DEFAULT 0");
@@ -203,6 +207,7 @@ export type Session = {
   status: SessionStatus;
   last_activity_at: string | null;
   client_id: string | null;
+  user_id: string | null;
   interactive: boolean;
   created_at: string;
   updated_at: string;

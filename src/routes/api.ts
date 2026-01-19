@@ -5,6 +5,7 @@ import { AnalyticsRecorder } from "../analytics/events";
 import { getClientId } from "../utils/request";
 import { getAdapterById, getFileModifyingToolsForAdapter, extractFilePathFromTool } from "../../cli/adapters";
 import type { AdapterUIConfig } from "../../cli/adapters";
+import { extractAuth, requireAuth, type AuthContext } from "../middleware/auth";
 
 // Helper to calculate content length from content blocks
 function calculateContentLength(contentBlocks: Array<{ type: string; text?: string }>): number {
@@ -121,7 +122,7 @@ export function createApiRoutes(repo: SessionRepository) {
 
   return {
     // Get all sessions or a specific session by claude_session_id
-    getSessions(req: Request): Response {
+    async getSessions(req: Request): Promise<Response> {
       const url = new URL(req.url);
       const claudeSessionId = url.searchParams.get("claude_session_id");
 
@@ -138,13 +139,16 @@ export function createApiRoutes(repo: SessionRepository) {
       }
 
       const mine = url.searchParams.get("mine") === "true";
-      const clientId = getClientId(req);
 
-      // Use database-level filtering when filtering by client ID (more efficient)
-      const sessions = mine && clientId
-        ? repo.getSessionsByClientId(clientId)
-        : repo.getAllSessions();
+      // Use auth-aware filtering when mine=true
+      if (mine) {
+        const auth = await extractAuth(req);
+        // Use dual ownership model: filter by user_id OR client_id
+        const sessions = repo.getSessionsByOwner(auth.userId ?? undefined, auth.clientId ?? undefined);
+        return json({ sessions });
+      }
 
+      const sessions = repo.getAllSessions();
       return json({ sessions });
     },
 
@@ -310,6 +314,7 @@ export function createApiRoutes(repo: SessionRepository) {
             title,
             description: (formData.get("description") as string) || null,
             claude_session_id: claudeSessionId,
+            agent_session_id: claudeSessionId,
             pr_url: prUrl || null,
             share_token: null,
             project_path: (formData.get("project_path") as string) || null,
@@ -318,11 +323,13 @@ export function createApiRoutes(repo: SessionRepository) {
             repo_url: (formData.get("repo_url") as string) || null,
             status: "archived",
             last_activity_at: null,
+            interactive: false,
           },
           messages,
           diffs,
           reviewData,
           clientId || undefined,
+          undefined, // userId - not available during upload
           touchedFiles
         );
 
@@ -1156,7 +1163,161 @@ export function createApiRoutes(repo: SessionRepository) {
         },
       });
     },
+
+    // === Auth & Session Claiming Endpoints ===
+
+    /**
+     * GET /auth/cli/callback
+     * OAuth callback endpoint for CLI authentication.
+     * Validates state and redirects to localhost with the authorization code.
+     */
+    handleCliAuthCallback(req: Request): Response {
+      const url = new URL(req.url);
+      const code = url.searchParams.get("code");
+      const state = url.searchParams.get("state");
+      const error = url.searchParams.get("error");
+      const errorDescription = url.searchParams.get("error_description");
+
+      // Handle OAuth errors
+      if (error) {
+        const errorMsg = errorDescription || error;
+        return new Response(getAuthErrorPage(errorMsg), {
+          status: 400,
+          headers: { "Content-Type": "text/html" },
+        });
+      }
+
+      if (!code || !state) {
+        return new Response(getAuthErrorPage("Missing authorization code or state"), {
+          status: 400,
+          headers: { "Content-Type": "text/html" },
+        });
+      }
+
+      // Parse state to get localhost port
+      // State format: base64url(JSON).signature
+      try {
+        const [encodedPayload] = state.split(".");
+        if (!encodedPayload) {
+          throw new Error("Invalid state format");
+        }
+
+        const payload = JSON.parse(Buffer.from(encodedPayload, "base64url").toString());
+        const port = payload.port;
+
+        if (!port || typeof port !== "number") {
+          throw new Error("Invalid port in state");
+        }
+
+        // Redirect to localhost with the code
+        const redirectUrl = `http://localhost:${port}/callback?code=${encodeURIComponent(code)}&state=${encodeURIComponent(state)}`;
+
+        return new Response(getAuthRedirectPage(redirectUrl), {
+          headers: { "Content-Type": "text/html" },
+        });
+      } catch (error) {
+        console.error("Failed to parse auth callback state:", error);
+        return new Response(getAuthErrorPage("Invalid authentication state"), {
+          status: 400,
+          headers: { "Content-Type": "text/html" },
+        });
+      }
+    },
+
+    /**
+     * GET /api/sessions/unclaimed
+     * Get sessions that belong to the current client but haven't been claimed by a user.
+     * Requires both authentication (Bearer token) and client ID.
+     */
+    async getUnclaimedSessions(req: Request): Promise<Response> {
+      const auth = await extractAuth(req);
+
+      // Require both auth and client ID
+      if (!auth.isAuthenticated || !auth.clientId) {
+        return jsonError("Unauthorized - requires authentication and client ID", 401);
+      }
+
+      const sessions = repo.getUnclaimedSessions(auth.clientId);
+
+      return json({
+        count: sessions.length,
+        sessions: sessions.map(s => ({
+          id: s.id,
+          title: s.title,
+          created_at: s.created_at,
+        })),
+      });
+    },
+
+    /**
+     * POST /api/sessions/claim
+     * Claim all unclaimed sessions for the current client, assigning them to the authenticated user.
+     * Requires both authentication (Bearer token) and client ID.
+     */
+    async claimSessions(req: Request): Promise<Response> {
+      const auth = await extractAuth(req);
+
+      // Require both auth and client ID
+      if (!auth.isAuthenticated || !auth.clientId || !auth.userId) {
+        return jsonError("Unauthorized - requires authentication and client ID", 401);
+      }
+
+      const claimed = repo.claimSessions(auth.clientId, auth.userId);
+
+      return json({ claimed });
+    },
   };
+}
+
+// Auth page HTML helpers
+function getAuthRedirectPage(redirectUrl: string): string {
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <title>Redirecting...</title>
+  <style>
+    body { font-family: system-ui, -apple-system, sans-serif; text-align: center; padding: 50px; background: #f5f5f5; }
+    .container { background: white; border-radius: 12px; padding: 40px; max-width: 400px; margin: 0 auto; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+    p { color: #666; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <p>Redirecting to CLI...</p>
+  </div>
+  <script>location.href = ${JSON.stringify(redirectUrl)};</script>
+</body>
+</html>`;
+}
+
+function getAuthErrorPage(message: string): string {
+  const escaped = message.replace(/[&<>"']/g, (c) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  }[c] || c));
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <title>Authentication Failed</title>
+  <style>
+    body { font-family: system-ui, -apple-system, sans-serif; text-align: center; padding: 50px; background: #f5f5f5; }
+    .container { background: white; border-radius: 12px; padding: 40px; max-width: 400px; margin: 0 auto; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+    h1 { color: #ef4444; margin-bottom: 16px; }
+    p { color: #666; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Authentication Failed</h1>
+    <p>${escaped}</p>
+    <p>Please return to the terminal and try again.</p>
+  </div>
+</body>
+</html>`;
 }
 
 // WebSocket connection management

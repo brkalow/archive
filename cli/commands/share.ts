@@ -13,6 +13,7 @@ import {
   promptSessionSelection,
   readLine,
 } from "../lib/shared-sessions";
+import { getAccessTokenIfAuthenticated } from "../lib/oauth";
 
 export async function share(args: string[]): Promise<void> {
   const { values, positionals } = parseArgs({
@@ -121,7 +122,8 @@ export async function share(args: string[]): Promise<void> {
 
   // 5. Create session on server immediately
   console.log(`Creating session on ${serverUrl}...`);
-  const api = new ApiClient(serverUrl);
+  const authToken = await getAccessTokenIfAuthenticated(serverUrl);
+  const api = new ApiClient(serverUrl, undefined, authToken);
 
   let serverSession;
   try {

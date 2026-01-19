@@ -86,6 +86,7 @@ To allow a specific repository:
 
   // Create tracker and watcher
   tracker = new SessionTracker(options.server, options.idleTimeout);
+  await tracker.initializeAuth();
   watcher = new SessionWatcher(adapters, tracker);
 
   // Handle shutdown

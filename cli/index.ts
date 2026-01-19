@@ -4,6 +4,7 @@
  * openctl CLI - Main entry point
  *
  * Commands:
+ *   auth      Authenticate with the server (login/logout/status/whoami)
  *   daemon    Manage the background daemon (start/stop/status)
  *   upload    Upload a completed session to the server
  *   share     Share a live session for real-time viewing
@@ -14,6 +15,7 @@
  *   list      Alias for 'session list'
  */
 
+import { auth } from "./commands/auth";
 import { daemon } from "./commands/daemon";
 import { upload } from "./commands/upload";
 import { config } from "./commands/config";
@@ -23,6 +25,7 @@ import { setup } from "./commands/setup";
 import { share } from "./commands/share";
 
 const commands: Record<string, (args: string[]) => Promise<void>> = {
+  auth,
   daemon,
   upload,
   share,
@@ -45,6 +48,7 @@ Upload, stream, and manage Claude Code sessions.
 Usage: openctl <command> [options]
 
 Commands:
+  auth      Authenticate with the server (login/logout/status/whoami)
   upload    Upload a completed session to the server
   share     Share a live session for real-time viewing
   daemon    Manage the background daemon (start/stop/status)

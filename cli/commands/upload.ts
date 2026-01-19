@@ -9,6 +9,7 @@ import { Glob } from "bun";
 import { getClientId } from "../lib/client-id";
 import { DEFAULT_SERVER, getServerUrl } from "../lib/config";
 import { listRecentSessions, promptSessionSelection } from "../lib/shared-sessions";
+import { getAccessTokenIfAuthenticated } from "../lib/oauth";
 import * as readline from "readline";
 
 async function promptConfirmation(message: string): Promise<boolean> {
@@ -577,10 +578,11 @@ interface UploadOptions {
   serverUrl: string;
   review: ReviewOutput | null;
   projectPath: string;
+  authToken: string | null;
 }
 
 async function uploadSession(options: UploadOptions): Promise<void> {
-  const { sessionPath, title, model, harness, repoUrl, diffContent, serverUrl, review, projectPath } = options;
+  const { sessionPath, title, model, harness, repoUrl, diffContent, serverUrl, review, projectPath, authToken } = options;
   const sessionContent = await Bun.file(sessionPath).text();
   const sessionId = basename(sessionPath, ".jsonl");
 
@@ -619,13 +621,18 @@ async function uploadSession(options: UploadOptions): Promise<void> {
     formData.append("annotations", JSON.stringify(review.annotations));
   }
 
+  const headers: Record<string, string> = {
+    "X-Openctl-Client-ID": getClientId(),
+  };
+  if (authToken) {
+    headers["Authorization"] = `Bearer ${authToken}`;
+  }
+
   const response = await fetch(`${serverUrl}/api/sessions`, {
     method: "POST",
     body: formData,
     redirect: "manual",
-    headers: {
-      "X-Openctl-Client-ID": getClientId(),
-    },
+    headers,
   });
 
   if (response.status === 303) {
@@ -803,6 +810,9 @@ export async function upload(args: string[]): Promise<void> {
     review = await generateReview(diffContent);
   }
 
+  // Get auth token if authenticated
+  const authToken = await getAccessTokenIfAuthenticated(options.server);
+
   // Upload
   console.log(`Uploading to ${options.server}...`);
   await uploadSession({
@@ -815,5 +825,6 @@ export async function upload(args: string[]): Promise<void> {
     serverUrl: options.server,
     review,
     projectPath,
+    authToken,
   });
 }

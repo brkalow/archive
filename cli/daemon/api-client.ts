@@ -2,7 +2,9 @@
  * API client for communicating with the server's live streaming endpoints.
  * Includes retry logic with exponential backoff for resilience.
  *
- * Authentication is via X-Openctl-Client-ID header (sent automatically).
+ * Authentication:
+ * - X-Openctl-Client-ID header is always sent for device identification
+ * - Authorization: Bearer token is sent when authenticated (optional)
  */
 
 import { getClientId } from "../lib/client-id";
@@ -111,23 +113,39 @@ export class ApiClient {
   private baseUrl: string;
   private retryOptions: RetryOptions;
   private clientId: string;
+  private authToken: string | null;
 
-  constructor(baseUrl: string, retryOptions: RetryOptions = DEFAULT_RETRY) {
+  constructor(baseUrl: string, retryOptions: RetryOptions = DEFAULT_RETRY, authToken?: string | null) {
     // Remove trailing slash if present
     this.baseUrl = baseUrl.replace(/\/$/, "");
     this.retryOptions = retryOptions;
     this.clientId = getClientId();
+    this.authToken = authToken ?? null;
+  }
+
+  /**
+   * Set the auth token for subsequent requests.
+   */
+  setAuthToken(token: string | null): void {
+    this.authToken = token;
   }
 
   /**
    * Get common headers for all requests.
-   * Client ID is used for authentication.
+   * Client ID is used for device identification.
+   * Auth token (if present) is used for user authentication.
    */
   private getHeaders(additionalHeaders: Record<string, string> = {}): Record<string, string> {
-    return {
+    const headers: Record<string, string> = {
       "X-Openctl-Client-ID": this.clientId,
       ...additionalHeaders,
     };
+
+    if (this.authToken) {
+      headers["Authorization"] = `Bearer ${this.authToken}`;
+    }
+
+    return headers;
   }
 
   /**

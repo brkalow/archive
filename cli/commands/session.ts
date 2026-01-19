@@ -6,6 +6,7 @@ import {
   removeSharedSession,
   getSharedSessions,
 } from "../lib/shared-sessions";
+import { getAccessTokenIfAuthenticated } from "../lib/oauth";
 
 export async function session(args: string[]): Promise<void> {
   const subcommand = args[0];
@@ -81,6 +82,7 @@ async function sessionList(args: string[]): Promise<void> {
   });
 
   const serverUrl = getServerUrl(values.server);
+  const authToken = await getAccessTokenIfAuthenticated(serverUrl);
 
   // Build query string
   const params = new URLSearchParams();
@@ -89,11 +91,14 @@ async function sessionList(args: string[]): Promise<void> {
 
   const url = `${serverUrl}/api/sessions${params.toString() ? `?${params}` : ""}`;
 
-  const response = await fetch(url, {
-    headers: {
-      "X-Openctl-Client-ID": getClientId(),
-    },
-  });
+  const headers: Record<string, string> = {
+    "X-Openctl-Client-ID": getClientId(),
+  };
+  if (authToken) {
+    headers["Authorization"] = `Bearer ${authToken}`;
+  }
+
+  const response = await fetch(url, { headers });
 
   if (!response.ok) {
     console.error(`Failed to list sessions: ${response.status}`);
@@ -145,6 +150,7 @@ async function sessionDelete(args: string[]): Promise<void> {
   }
 
   const serverUrl = getServerUrl(values.server);
+  const authToken = await getAccessTokenIfAuthenticated(serverUrl);
 
   // Confirm unless --force
   if (!values.force) {
@@ -156,11 +162,16 @@ async function sessionDelete(args: string[]): Promise<void> {
     }
   }
 
+  const headers: Record<string, string> = {
+    "X-Openctl-Client-ID": getClientId(),
+  };
+  if (authToken) {
+    headers["Authorization"] = `Bearer ${authToken}`;
+  }
+
   const response = await fetch(`${serverUrl}/api/sessions/${sessionId}`, {
     method: "DELETE",
-    headers: {
-      "X-Openctl-Client-ID": getClientId(),
-    },
+    headers,
   });
 
   if (response.status === 403) {
@@ -226,7 +237,9 @@ async function sessionUnshare(args: string[]): Promise<void> {
     for (const server of serversToComplete) {
       const serverInfo = sharedSession.serverSessions[server];
       if (serverInfo?.sessionId) {
-        const api = new ApiClient(server);
+        // Get auth token for this server
+        const authToken = await getAccessTokenIfAuthenticated(server);
+        const api = new ApiClient(server, undefined, authToken);
 
         // Disable interactive mode first
         try {
@@ -292,10 +305,19 @@ async function sessionFeedback(args: string[]): Promise<void> {
   }
 
   const serverUrl = getServerUrl(values.server);
+  const authToken = await getAccessTokenIfAuthenticated(serverUrl);
+
+  // Build headers with optional auth
+  const headers: Record<string, string> = {
+    "X-Openctl-Client-ID": getClientId(),
+  };
+  if (authToken) {
+    headers["Authorization"] = `Bearer ${authToken}`;
+  }
 
   try {
     const url = `${serverUrl}/api/sessions/by-claude-session/${encodeURIComponent(sessionUuid)}/feedback/pending`;
-    const response = await fetch(url);
+    const response = await fetch(url, { headers });
 
     if (!response.ok) {
       // Session not found or error - allow stop
@@ -318,6 +340,7 @@ async function sessionFeedback(args: string[]): Promise<void> {
       data.messages.map((m) =>
         fetch(`${serverUrl}/api/sessions/${data.session_id}/feedback/${m.id}/delivered`, {
           method: "POST",
+          headers,
         }).catch((err) => {
           // Log to stderr but don't fail - the important part (formatting feedback) succeeded
           console.error(`[feedback] Failed to mark message ${m.id} as delivered: ${err instanceof Error ? err.message : String(err)}`);

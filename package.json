@@ -9,7 +9,7 @@
   },
   "scripts": {
     "start": "bun run index.ts",
-    "dev": "bun --watch run index.ts",
+    "dev": "bun --watch run index.ts --",
     "cli": "bun run ./cli/index.ts",
     "upload": "bun run ./cli/index.ts upload",
     "build:cli": "bun run scripts/build-cli.ts",
@@ -27,6 +27,8 @@
     "typescript": "^5"
   },
   "dependencies": {
+    "@clerk/backend": "^3.0.0-canary.v20260116220951",
+    "@clerk/react": "^6.0.0-canary.v20260116220951",
     "@pierre/diffs": "^1.0.4",
     "bun-plugin-tailwind": "^0.1.2",
     "react": "^18.3.1",

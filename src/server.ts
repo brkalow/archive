@@ -172,6 +172,20 @@ const server = Bun.serve({
       POST: (req) => handleMarkFeedbackDelivered(req.params.id, req.params.messageId, repo),
     },
 
+    // Auth callback for CLI OAuth flow
+    "/auth/cli/callback": {
+      GET: (req) => api.handleCliAuthCallback(req),
+    },
+
+    // Session claiming endpoints (for authenticated users)
+    "/api/sessions/unclaimed": {
+      GET: (req) => api.getUnclaimedSessions(req),
+    },
+
+    "/api/sessions/claim": {
+      POST: (req) => api.claimSessions(req),
+    },
+
     // Analytics Stats endpoints
     "/api/stats": {
       GET: (req) => api.getStats(req),

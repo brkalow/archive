@@ -312,6 +312,7 @@ describe("SessionRepository upsert", () => {
         ],
         undefined,
         "client-123",
+        undefined, // userId
         touchedFiles
       );
 
@@ -408,6 +409,7 @@ describe("SessionRepository upsert", () => {
         [], // No new diffs
         undefined,
         "client-123",
+        undefined, // userId
         touchedFiles
       );
 

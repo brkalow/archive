@@ -54,8 +54,8 @@ export class SessionRepository {
     // Initialize cached prepared statements
     this.stmts = {
       createSession: db.prepare(`
-        INSERT INTO sessions (id, title, description, claude_session_id, pr_url, share_token, project_path, model, harness, repo_url, status, last_activity_at, stream_token_hash, client_id, interactive)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO sessions (id, title, description, claude_session_id, pr_url, share_token, project_path, model, harness, repo_url, status, last_activity_at, stream_token_hash, client_id, user_id, interactive)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         RETURNING *
       `),
       getSession: db.prepare("SELECT * FROM sessions WHERE id = ?"),
@@ -190,8 +190,8 @@ export class SessionRepository {
     };
   }
 
-  // Note: client_id is passed separately to avoid duplication in session object
-  createSession(session: Omit<Session, "created_at" | "updated_at" | "client_id">, clientId?: string): Session {
+  // Note: client_id and user_id are passed separately to avoid duplication in session object
+  createSession(session: Omit<Session, "created_at" | "updated_at" | "client_id" | "user_id">, clientId?: string, userId?: string): Session {
     const result = this.stmts.createSession.get(
       session.id,
       session.title,
@@ -207,6 +207,7 @@ export class SessionRepository {
       session.last_activity_at,
       null, // stream_token_hash deprecated, using client_id for auth
       clientId || null,
+      userId || null,
       session.interactive ? 1 : 0
     ) as Record<string, unknown>;
 
@@ -218,12 +219,13 @@ export class SessionRepository {
   }
 
   // Create session with messages and diffs in a single transaction
-  // Note: client_id is passed separately to avoid duplication in session object
+  // Note: client_id and user_id are passed separately to avoid duplication in session object
   createSessionWithData(
-    session: Omit<Session, "created_at" | "updated_at" | "client_id">,
+    session: Omit<Session, "created_at" | "updated_at" | "client_id" | "user_id">,
     messages: Omit<Message, "id">[],
     diffs: Omit<Diff, "id">[],
-    clientId?: string
+    clientId?: string,
+    userId?: string
   ): Session {
     const transaction = this.db.transaction(() => {
       const created = this.stmts.createSession.get(
@@ -241,6 +243,7 @@ export class SessionRepository {
         session.last_activity_at,
         null, // stream_token_hash not used for batch uploads
         clientId || null,
+        userId || null,
         session.interactive ? 1 : 0
       ) as Record<string, unknown>;
 
@@ -397,6 +400,41 @@ export class SessionRepository {
   getSessionsByClientId(clientId: string): Session[] {
     const stmt = this.db.prepare("SELECT * FROM sessions WHERE client_id = ? ORDER BY created_at DESC");
     const results = stmt.all(clientId) as Record<string, unknown>[];
+    return results.map(r => this.normalizeSession(r));
+  }
+
+  /**
+   * Get sessions filtered by user ID (uses database index for efficiency).
+   */
+  getSessionsByUserId(userId: string): Session[] {
+    const stmt = this.db.prepare("SELECT * FROM sessions WHERE user_id = ? ORDER BY created_at DESC");
+    const results = stmt.all(userId) as Record<string, unknown>[];
+    return results.map(r => this.normalizeSession(r));
+  }
+
+  /**
+   * Get sessions owned by either user_id or client_id.
+   * Used for authenticated users who may have both user-owned and device-owned sessions.
+   */
+  getSessionsByOwner(userId?: string, clientId?: string): Session[] {
+    if (!userId && !clientId) return [];
+
+    let query: string;
+    let params: string[];
+
+    if (userId && clientId) {
+      query = "SELECT * FROM sessions WHERE user_id = ? OR client_id = ? ORDER BY created_at DESC";
+      params = [userId, clientId];
+    } else if (userId) {
+      query = "SELECT * FROM sessions WHERE user_id = ? ORDER BY created_at DESC";
+      params = [userId];
+    } else {
+      query = "SELECT * FROM sessions WHERE client_id = ? ORDER BY created_at DESC";
+      params = [clientId!];
+    }
+
+    const stmt = this.db.prepare(query);
+    const results = stmt.all(...params) as Record<string, unknown>[];
     return results.map(r => this.normalizeSession(r));
   }
 
@@ -575,6 +613,91 @@ export class SessionRepository {
   }
 
   /**
+   * Verify ownership of a session using either user_id or client_id.
+   * Returns { allowed: boolean, isOwner: boolean } for access control decisions.
+   *
+   * Ownership is granted if:
+   * - The user_id matches the session's user_id, OR
+   * - The client_id matches the session's client_id, OR
+   * - The session has no owner (legacy) and the requester has any identity
+   */
+  verifyOwnership(
+    sessionId: string,
+    userId: string | null,
+    clientId: string | null,
+    options: { requireLive?: boolean; requireOwner?: boolean } = {}
+  ): { allowed: boolean; isOwner: boolean } {
+    const { requireLive = false, requireOwner = false } = options;
+
+    if (!userId && !clientId) {
+      return { allowed: false, isOwner: false };
+    }
+
+    const query = requireLive
+      ? "SELECT user_id, client_id FROM sessions WHERE id = ? AND status = 'live'"
+      : "SELECT user_id, client_id FROM sessions WHERE id = ?";
+
+    const stmt = this.db.prepare(query);
+    const result = stmt.get(sessionId) as { user_id: string | null; client_id: string | null } | null;
+
+    if (!result) {
+      return { allowed: false, isOwner: false };
+    }
+
+    // Check ownership: user_id match OR client_id match
+    const isOwner =
+      (userId && result.user_id === userId) ||
+      (clientId && result.client_id === clientId) ||
+      false;
+
+    // Legacy sessions (no owner) allow any authenticated requester
+    const isLegacy = !result.user_id && !result.client_id;
+    const allowed = isOwner || (isLegacy && (!!userId || !!clientId));
+
+    if (requireOwner && !isOwner) {
+      return { allowed: false, isOwner: false };
+    }
+
+    return { allowed, isOwner };
+  }
+
+  /**
+   * Get unclaimed sessions for a client (sessions with client_id but no user_id).
+   * Used for session claiming flow after user authentication.
+   */
+  getUnclaimedSessions(clientId: string): Session[] {
+    const stmt = this.db.prepare(
+      "SELECT * FROM sessions WHERE client_id = ? AND user_id IS NULL ORDER BY created_at DESC"
+    );
+    const results = stmt.all(clientId) as Record<string, unknown>[];
+    return results.map(r => this.normalizeSession(r));
+  }
+
+  /**
+   * Claim all unclaimed sessions for a client, assigning them to a user.
+   * Returns the number of sessions claimed.
+   */
+  claimSessions(clientId: string, userId: string): number {
+    const stmt = this.db.prepare(
+      "UPDATE sessions SET user_id = ?, updated_at = datetime('now', 'utc') WHERE client_id = ? AND user_id IS NULL"
+    );
+    const result = stmt.run(userId, clientId);
+    return result.changes;
+  }
+
+  /**
+   * Update the user_id for a specific session.
+   * Used for individual session claiming.
+   */
+  setSessionUserId(sessionId: string, userId: string): boolean {
+    const stmt = this.db.prepare(
+      "UPDATE sessions SET user_id = ?, updated_at = datetime('now', 'utc') WHERE id = ?"
+    );
+    const result = stmt.run(userId, sessionId);
+    return result.changes > 0;
+  }
+
+  /**
    * Restore a session to live status.
    * Used to resume streaming to a completed/archived session.
    */
@@ -667,9 +790,9 @@ export class SessionRepository {
   }
 
   // Input type for annotations during upload (uses filename instead of diff_id)
-  // Note: client_id is passed separately to avoid duplication in session object
+  // Note: client_id and user_id are passed separately to avoid duplication in session object
   createSessionWithDataAndReview(
-    session: Omit<Session, "created_at" | "updated_at" | "client_id">,
+    session: Omit<Session, "created_at" | "updated_at" | "client_id" | "user_id">,
     messages: Omit<Message, "id">[],
     diffs: Omit<Diff, "id">[],
     reviewData?: {
@@ -683,7 +806,8 @@ export class SessionRepository {
         content: string;
       }>;
     },
-    clientId?: string
+    clientId?: string,
+    userId?: string
   ): Session {
     const transaction = this.db.transaction(() => {
       // Create session
@@ -702,6 +826,7 @@ export class SessionRepository {
         session.last_activity_at,
         null, // stream_token_hash not used for batch uploads
         clientId || null,
+        userId || null,
         session.interactive ? 1 : 0
       ) as Record<string, unknown>;
 
@@ -858,7 +983,7 @@ export class SessionRepository {
    * Returns the session and whether it was an update or create.
    */
   upsertSessionWithDataAndReview(
-    session: Omit<Session, "created_at" | "updated_at" | "client_id">,
+    session: Omit<Session, "created_at" | "updated_at" | "client_id" | "user_id">,
     messages: Omit<Message, "id">[],
     diffs: Omit<Diff, "id">[],
     reviewData?: {
@@ -873,6 +998,7 @@ export class SessionRepository {
       }>;
     },
     clientId?: string,
+    userId?: string,
     touchedFiles?: Set<string>
   ): { session: Session; isUpdate: boolean } {
     const transaction = this.db.transaction(() => {
@@ -996,6 +1122,7 @@ export class SessionRepository {
           session.last_activity_at,
           null, // stream_token_hash not used for batch uploads
           clientId || null,
+          userId || null,
           session.interactive ? 1 : 0
         ) as Session;
       }

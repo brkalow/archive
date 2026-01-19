@@ -3,6 +3,8 @@ import { BrowserRouter, Routes, Route, useParams } from 'react-router-dom';
 import { GettingStartedPage } from './components/GettingStartedPage';
 import { SessionListPage } from './components/SessionListPage';
 import { SessionDetailPage } from './components/SessionDetailPage';
+import { UserMenu } from './components/UserMenu';
+import { ProtectedRoute } from './components/ProtectedRoute';
 import { renderComponentsShowcase } from './views';
 import type { Session, Message, Diff, Review, Annotation } from '../db/schema';
 
@@ -233,18 +235,46 @@ function NotFound() {
   );
 }
 
+// Header component
+function Header() {
+  return (
+    <header className="sticky top-0 z-50 backdrop-blur-sm border-b border-transparent transition-colors">
+      <nav className="max-w-[1400px] mx-auto px-6 lg:px-10 flex items-center justify-between h-14 transition-[max-width]">
+        <a href="/" className="group text-2xl font-mono font-medium text-text-primary hover:text-accent-primary transition-colors">
+          <span className="text-[14px] inline-flex gap-[2px] group-hover:gap-[6px] transition-all -translate-y-[2px]"><span>[</span><span>]</span></span>penctl
+        </a>
+        <UserMenu />
+      </nav>
+    </header>
+  );
+}
+
+// Layout wrapper with header
+function Layout({ children }: { children: React.ReactNode }) {
+  return (
+    <>
+      <Header />
+      <main className="flex-1">
+        {children}
+      </main>
+    </>
+  );
+}
+
 // Main App component with router
 export function App() {
   return (
     <BrowserRouter>
-      <Routes>
-        <Route path="/" element={<GettingStartedPage />} />
-        <Route path="/sessions" element={<SessionListLoader />} />
-        <Route path="/sessions/:id" element={<SessionDetailLoader />} />
-        <Route path="/s/:shareToken" element={<SharedSessionLoader />} />
-        <Route path="/_components" element={<ComponentsShowcasePage />} />
-        <Route path="*" element={<NotFound />} />
-      </Routes>
+      <Layout>
+        <Routes>
+          <Route path="/" element={<GettingStartedPage />} />
+          <Route path="/sessions" element={<ProtectedRoute><SessionListLoader /></ProtectedRoute>} />
+          <Route path="/sessions/:id" element={<ProtectedRoute><SessionDetailLoader /></ProtectedRoute>} />
+          <Route path="/s/:shareToken" element={<ProtectedRoute><SharedSessionLoader /></ProtectedRoute>} />
+          <Route path="/_components" element={<ProtectedRoute><ComponentsShowcasePage /></ProtectedRoute>} />
+          <Route path="*" element={<NotFound />} />
+        </Routes>
+      </Layout>
     </BrowserRouter>
   );
 }

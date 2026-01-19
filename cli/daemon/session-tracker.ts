@@ -20,6 +20,7 @@ import { debug } from "../lib/debug";
 import { captureGitDiff, getRepoIdentifier, getRepoHttpsUrl } from "../lib/git";
 import { Tail } from "../lib/tail";
 import { ApiClient } from "./api-client";
+import { getAccessTokenIfAuthenticated } from "../lib/oauth";
 
 /** Debounce delay for diff capture (ms) */
 const DIFF_DEBOUNCE_MS = 2000;
@@ -74,11 +75,27 @@ export class SessionTracker {
   private serverUrl: string;
   private idleTimeoutMs: number;
   private idleCheckInterval: ReturnType<typeof setInterval> | null = null;
+  private authInitialized = false;
 
   constructor(serverUrl: string, idleTimeoutSeconds: number) {
     this.api = new ApiClient(serverUrl);
     this.serverUrl = serverUrl;
     this.idleTimeoutMs = idleTimeoutSeconds * 1000;
+  }
+
+  /**
+   * Initialize authentication for API requests.
+   * Call this once before starting session tracking.
+   */
+  async initializeAuth(): Promise<void> {
+    if (this.authInitialized) return;
+
+    const authToken = await getAccessTokenIfAuthenticated(this.serverUrl);
+    if (authToken) {
+      this.api.setAuthToken(authToken);
+      debug("Auth token set for session tracker");
+    }
+    this.authInitialized = true;
   }
 
   /**
