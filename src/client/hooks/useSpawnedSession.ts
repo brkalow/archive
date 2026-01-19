@@ -1,6 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import type { ContentBlock, StreamJsonMessage } from "../../types/daemon-ws";
 
+/** Interval in ms for polling daemon status when disconnected */
+const DAEMON_POLL_INTERVAL_MS = 3000;
+
 export type SessionState =
   | "connecting"
   | "starting"
@@ -74,6 +77,7 @@ export function useSpawnedSession({
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectAttemptsRef = useRef(0);
   const daemonPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const connectRef = useRef<() => void>(() => {});
 
   // Store callbacks in refs to avoid reconnecting when callbacks change
   const onMessageRef = useRef(onMessage);
@@ -195,10 +199,6 @@ export function useSpawnedSession({
           }
           break;
 
-        case "daemon_reconnected":
-          setDaemonConnected(true);
-          break;
-
         case "diff_update":
           // Update diffs when daemon sends them
           if (data.diffs && Array.isArray(data.diffs)) {
@@ -239,7 +239,7 @@ export function useSpawnedSession({
       } catch (err) {
         // Ignore poll errors
       }
-    }, 3000);
+    }, DAEMON_POLL_INTERVAL_MS);
   }, []);
 
   const stopDaemonPolling = useCallback(() => {
@@ -272,9 +272,9 @@ export function useSpawnedSession({
       }
 
       // Session is resuming - update state
+      // Note: polling is automatically stopped by useEffect when canResume becomes false
       updateState("starting");
       setCanResume(false);
-      stopDaemonPolling();
       setIsResuming(false);
 
       return { success: true };
@@ -284,7 +284,7 @@ export function useSpawnedSession({
       setIsResuming(false);
       return { success: false, error: errorMsg };
     }
-  }, [sessionId, canResume, daemonConnected, isResuming, updateState, stopDaemonPolling]);
+  }, [sessionId, canResume, daemonConnected, isResuming, updateState]);
 
   // Start polling when disconnected and can resume
   useEffect(() => {
@@ -314,7 +314,7 @@ export function useSpawnedSession({
 
     reconnectTimeoutRef.current = setTimeout(() => {
       console.log(`[ws] Attempting reconnect (attempt ${attempt + 1})...`);
-      connect();
+      connectRef.current();
     }, delay);
   }, []);
 
@@ -367,6 +367,11 @@ export function useSpawnedSession({
 
     wsRef.current = ws;
   }, [sessionId, updateState, handleMessage, scheduleReconnect]);
+
+  // Keep connectRef updated for use in scheduleReconnect
+  useEffect(() => {
+    connectRef.current = connect;
+  }, [connect]);
 
   // Send user message
   const sendMessage = useCallback(

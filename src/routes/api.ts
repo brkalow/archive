@@ -1344,7 +1344,7 @@ export function createApiRoutes(repo: SessionRepository) {
     async resumeSession(sessionId: string, req: Request): Promise<Response> {
       try {
         // Rate limit by client IP or client ID
-        const clientId = getClientId(req) || getClientIP(req);
+        const clientId = getClientId(req) || getClientIP(req) || "anonymous";
         const rateCheck = spawnSessionLimiter.check(`resume:${clientId}`);
 
         if (!rateCheck.allowed) {

@@ -87,7 +87,6 @@ export type ServerToBrowserMessage =
       can_resume?: boolean;
       claude_session_id?: string;
     }
-  | { type: "daemon_reconnected"; session_id: string }
   | { type: "heartbeat"; timestamp: string }
   | { type: "pong"; timestamp: string }
   // Errors
