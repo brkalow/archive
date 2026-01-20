@@ -76,15 +76,26 @@ code, pre {
   letter-spacing: 0;
 }
 
-/* Better focus states */
-:focus-visible {
+/* Focus ring utility - opt-in focus styling for interactive elements */
+.focus-ring:focus-visible {
   outline: 2px solid var(--color-accent-primary);
   outline-offset: 2px;
 }
 
-/* Disable inner focus for composite inputs (focus goes on container) */
-.focus-within\:outline textarea:focus-visible,
-.focus-within\:outline input:focus-visible {
+/* Buttons get focus ring by default */
+button:focus-visible {
+  outline: 2px solid var(--color-accent-primary);
+  outline-offset: 2px;
+}
+
+/* Links get focus ring by default */
+a:focus-visible {
+  outline: 2px solid var(--color-accent-primary);
+  outline-offset: 2px;
+}
+
+/* Disable focus ring for buttons/links that handle focus themselves */
+.focus-ring-none:focus-visible {
   outline: none;
 }
 

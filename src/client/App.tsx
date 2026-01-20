@@ -6,6 +6,7 @@ import { SessionDetailPage } from './components/SessionDetailPage';
 import { UserMenu } from './components/UserMenu';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { SpawnedSessionView } from './components/SpawnedSessionView';
+import { HomePage } from './components/HomePage';
 import { renderComponentsShowcase } from './views';
 import type { Session, Message, Diff, Review, Annotation } from '../db/schema';
 
@@ -83,7 +84,38 @@ function LoadingSpinner() {
   );
 }
 
-// Session list loader
+// Home page loader - shows GettingStartedPage for new users, HomePage for returning users
+function HomePageLoader() {
+  const [sessions, setSessions] = useState<Session[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetchSessions()
+      .then(setSessions)
+      .catch(() => setError('Failed to load sessions'));
+  }, []);
+
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 text-center">
+        <p className="text-diff-del">{error}</p>
+      </div>
+    );
+  }
+
+  if (sessions === null) {
+    return <LoadingSpinner />;
+  }
+
+  // Show getting started page for new users with no sessions
+  if (sessions.length === 0) {
+    return <GettingStartedPage />;
+  }
+
+  return <HomePage sessions={sessions} />;
+}
+
+// Session list loader (legacy card view)
 function SessionListLoader() {
   const [sessions, setSessions] = useState<Session[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -324,7 +356,7 @@ export function App() {
     <BrowserRouter>
       <Layout>
         <Routes>
-          <Route path="/" element={<GettingStartedPage />} />
+          <Route path="/" element={<HomePageLoader />} />
           <Route path="/sessions" element={<ProtectedRoute><SessionListLoader /></ProtectedRoute>} />
           <Route path="/sessions/:id" element={<ProtectedRoute><SessionDetailLoader /></ProtectedRoute>} />
           <Route path="/s/:shareToken" element={<ProtectedRoute><SharedSessionLoader /></ProtectedRoute>} />

@@ -16,9 +16,9 @@ const clerkClient = createClerkClient({
  */
 function getAuthorizedParties(): string[] {
   const parties = ['https://openctl.dev'];
-  // Include localhost unless explicitly in production
+  // Allow any in lower environments, might have multiple dev servers on different ports
   if (process.env.NODE_ENV !== 'production') {
-    parties.push('http://localhost:3000');
+    return [];
   }
   return parties;
 }
