@@ -241,6 +241,74 @@ async function getPrBaseBranch(projectDir: string, headBranch: string): Promise<
   }
 }
 
+/**
+ * Check if content is binary by looking for null bytes.
+ * This is the same heuristic git uses - binary files contain null bytes, text files don't.
+ * We only check the first 8KB for performance.
+ */
+function isBinaryContent(content: string): boolean {
+  return content.slice(0, 8000).includes("\0");
+}
+
+/**
+ * Generate diff content for untracked files that are in the touched files list.
+ * This handles net new files that git diff doesn't show by default.
+ */
+export async function getUntrackedFilesDiff(cwd: string, touchedFiles: string[]): Promise<string> {
+  try {
+    // Get list of untracked files
+    const untrackedOutput = await $`git -C ${cwd} ls-files --others --exclude-standard`.text();
+    if (!untrackedOutput.trim()) return "";
+
+    const untrackedFiles = untrackedOutput.trim().split("\n");
+    const touchedSet = new Set(touchedFiles.map(f => f.replace(/^\.\//, "").replace(/\/+/g, "/")));
+
+    let untrackedDiff = "";
+    for (const file of untrackedFiles) {
+      // Only include files that were touched by the session
+      const normalizedFile = file.replace(/^\.\//, "").replace(/\/+/g, "/");
+      if (!touchedSet.has(normalizedFile)) continue;
+
+      try {
+        const absolutePath = join(cwd, file);
+        const content = await Bun.file(absolutePath).text();
+
+        // Skip binary files - they produce garbled diff output
+        if (isBinaryContent(content)) continue;
+
+        // Split into lines, handling trailing newline properly
+        let lines = content.split("\n");
+        if (lines.length > 0 && lines[lines.length - 1] === "") {
+          lines = lines.slice(0, -1);
+        }
+
+        // Skip empty files
+        if (lines.length === 0) continue;
+
+        // Generate "new file" diff format
+        untrackedDiff += `diff --git a/${file} b/${file}\n`;
+        untrackedDiff += `new file mode 100644\n`;
+        untrackedDiff += `--- /dev/null\n`;
+        untrackedDiff += `+++ b/${file}\n`;
+        untrackedDiff += `@@ -0,0 +1,${lines.length} @@\n`;
+        for (const line of lines) {
+          untrackedDiff += `+${line}\n`;
+        }
+      } catch {
+        // Gracefully skip files that can't be read (e.g., permission errors, files
+        // deleted between listing and reading). This is intentional - we'd rather
+        // include partial diff output than fail the entire upload.
+      }
+    }
+
+    return untrackedDiff;
+  } catch {
+    // If git commands fail (not a git repo, git not installed, etc.), return empty
+    // string rather than failing. The diff is optional enhancement, not required.
+    return "";
+  }
+}
+
 async function getGitDiff(projectDir?: string, branch?: string, touchedFiles?: string[]): Promise<string | null> {
   const cwd = projectDir || process.cwd();
 
@@ -276,6 +344,17 @@ async function getGitDiff(projectDir?: string, branch?: string, touchedFiles?: s
     const fileArgs = touchedFiles && touchedFiles.length > 0 ? ["--", ...touchedFiles] : [];
     const hasFileFilter = fileArgs.length > 0;
 
+    // Helper to combine tracked diff with untracked files diff
+    const combineWithUntracked = async (trackedDiff: string): Promise<string | null> => {
+      let combined = trackedDiff;
+      // Add untracked files that were touched by the session
+      if (touchedFiles && touchedFiles.length > 0) {
+        const untrackedDiff = await getUntrackedFilesDiff(cwd, touchedFiles);
+        combined += untrackedDiff;
+      }
+      return combined.trim() ? combined : null;
+    };
+
     // If a specific branch was provided (from session metadata), use it
     if (branch) {
       // Check if the branch exists locally
@@ -285,7 +364,7 @@ async function getGitDiff(projectDir?: string, branch?: string, touchedFiles?: s
         const diff = hasFileFilter
           ? await $`git -C ${cwd} diff ${baseBranch}...${branch} ${fileArgs}`.text()
           : await $`git -C ${cwd} diff ${baseBranch}...${branch}`.text();
-        if (diff.trim()) return diff;
+        return await combineWithUntracked(diff);
       } else {
         // Try remote branch
         const remoteBranchExists = await $`git -C ${cwd} rev-parse --verify refs/remotes/origin/${branch} 2>/dev/null`.text().catch(() => "");
@@ -294,7 +373,7 @@ async function getGitDiff(projectDir?: string, branch?: string, touchedFiles?: s
           const diff = hasFileFilter
             ? await $`git -C ${cwd} diff ${baseBranch}...origin/${branch} ${fileArgs}`.text()
             : await $`git -C ${cwd} diff ${baseBranch}...origin/${branch}`.text();
-          if (diff.trim()) return diff;
+          return await combineWithUntracked(diff);
         } else {
           console.log(`Session branch '${branch}' no longer exists (may have been merged or deleted)`);
           return null;
@@ -306,15 +385,14 @@ async function getGitDiff(projectDir?: string, branch?: string, touchedFiles?: s
     const diff = hasFileFilter
       ? await $`git -C ${cwd} diff ${baseBranch}...HEAD ${fileArgs}`.text()
       : await $`git -C ${cwd} diff ${baseBranch}...HEAD`.text();
-    if (diff.trim()) return diff;
+    const combinedDiff = await combineWithUntracked(diff);
+    if (combinedDiff) return combinedDiff;
 
     // Fall back to uncommitted changes
     const uncommitted = hasFileFilter
       ? await $`git -C ${cwd} diff HEAD ${fileArgs}`.text()
       : await $`git -C ${cwd} diff HEAD`.text();
-    if (uncommitted.trim()) return uncommitted;
-
-    return null;
+    return await combineWithUntracked(uncommitted);
   } catch {
     return null;
   }
