@@ -10,9 +10,7 @@ setupGlobals();
 // Clerk publishable key from environment
 // This gets injected at build time by Bun's static server (see bunfig.toml)
 // Use typeof check to safely access in browser context when not replaced
-const CLERK_PUBLISHABLE_KEY = typeof process !== 'undefined'
-  ? process.env?.PUBLIC_CLERK_PUBLISHABLE_KEY
-  : undefined;
+const CLERK_PUBLISHABLE_KEY = process.env.PUBLIC_CLERK_PUBLISHABLE_KEY ?? undefined;
 
 const isClerkConfigured = Boolean(CLERK_PUBLISHABLE_KEY);
 
