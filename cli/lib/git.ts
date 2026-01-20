@@ -186,6 +186,31 @@ export async function getGitRootPath(projectPath: string): Promise<string | null
 }
 
 /**
+ * Get the current git branch name.
+ * Returns null if not a git repo or in detached HEAD state.
+ */
+export async function getCurrentBranch(projectPath: string): Promise<string | null> {
+  if (!isValidProjectPath(projectPath)) {
+    return null;
+  }
+
+  try {
+    const result = await $`git -C ${projectPath} rev-parse --abbrev-ref HEAD`.quiet();
+    if (result.exitCode === 0) {
+      const branch = result.text().trim();
+      // Return null for detached HEAD state
+      if (branch === "HEAD") {
+        return null;
+      }
+      return branch;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Get the HTTPS URL for a repository (for display/linking purposes).
  * Converts SSH URLs to HTTPS format.
  *

@@ -353,6 +353,30 @@ function handleDaemonMessage(
       break;
     }
 
+    case "session_metadata": {
+      // Update session with metadata from daemon (agent_session_id, repo_url, branch)
+      const updates: Record<string, string | undefined> = {};
+
+      if (message.agent_session_id) {
+        updates.agent_session_id = message.agent_session_id;
+      }
+      if (message.repo_url) {
+        updates.repo_url = message.repo_url;
+      }
+      if (message.branch) {
+        updates.branch = message.branch;
+      }
+
+      if (Object.keys(updates).length > 0) {
+        repo.updateSession(message.session_id, updates);
+        console.log(
+          `[relay] Updated metadata for session ${message.session_id}:`,
+          updates
+        );
+      }
+      break;
+    }
+
     default:
       console.warn("[daemon-msg] Unknown message type:", (message as { type: string }).type);
   }

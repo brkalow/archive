@@ -134,6 +134,9 @@ export function initializeDatabase(dbPath: string = process.env.DATABASE_PATH ||
   db.run(`UPDATE sessions SET agent_session_id = claude_session_id WHERE agent_session_id IS NULL AND claude_session_id IS NOT NULL`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_sessions_agent_session_id ON sessions(agent_session_id)`)
 
+  // Git branch name for the session's working directory
+  safeAddColumn(db, "sessions", "branch", "TEXT");
+
   // Feedback messages table (for interactive sessions)
   db.run(`
     CREATE TABLE IF NOT EXISTS feedback_messages (
@@ -207,6 +210,7 @@ export type Session = {
   model: string | null;
   harness: string | null;
   repo_url: string | null;
+  branch: string | null;  // Git branch name for the working directory
   status: SessionStatus;
   last_activity_at: string | null;
   client_id: string | null;

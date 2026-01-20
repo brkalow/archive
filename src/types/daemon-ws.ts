@@ -110,6 +110,23 @@ export interface SessionDiffMessage {
   modified_files: string[];
 }
 
+/**
+ * Session metadata message sent by daemon after session initialization.
+ * Contains metadata extracted from the working directory and Claude's init response.
+ *
+ * NOTE: This type is duplicated in cli/types/daemon-ws.ts - keep them in sync.
+ */
+export interface SessionMetadataMessage {
+  type: "session_metadata";
+  session_id: string;
+  /** Claude's internal session ID (from init message) */
+  agent_session_id?: string;
+  /** Git repository HTTPS URL */
+  repo_url?: string;
+  /** Current git branch name */
+  branch?: string;
+}
+
 export type DaemonToServerMessage =
   | DaemonConnectedMessage
   | SessionOutputMessage
@@ -117,6 +134,7 @@ export type DaemonToServerMessage =
   | PermissionPromptMessage
   | QuestionPromptMessage
   | SessionDiffMessage
+  | SessionMetadataMessage
   | ControlRequestMessage;
 
 // ============================================

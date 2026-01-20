@@ -316,6 +316,14 @@ export class SessionRepository {
       fields.push("repo_url = ?");
       values.push(updates.repo_url);
     }
+    if (updates.branch !== undefined) {
+      fields.push("branch = ?");
+      values.push(updates.branch);
+    }
+    if (updates.agent_session_id !== undefined) {
+      fields.push("agent_session_id = ?");
+      values.push(updates.agent_session_id);
+    }
     if (updates.status !== undefined) {
       fields.push("status = ?");
       values.push(updates.status);
