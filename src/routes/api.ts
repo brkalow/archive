@@ -121,6 +121,26 @@ function deriveTextContent(blocks: ContentBlock[]): string {
     .join("\n");
 }
 
+/**
+ * Normalize session status for remote sessions.
+ * Remote sessions that are not active in the spawned registry are marked as complete.
+ */
+function normalizeRemoteSessionStatus<T extends { id: string; remote?: boolean; status?: string; interactive?: boolean }>(
+  session: T
+): T {
+  if (session.remote) {
+    const isActiveSpawned = spawnedSessionRegistry.getSession(session.id) !== undefined;
+    if (!isActiveSpawned) {
+      return {
+        ...session,
+        status: "complete",
+        interactive: false,
+      };
+    }
+  }
+  return session;
+}
+
 export function createApiRoutes(repo: SessionRepository) {
   const analytics = new AnalyticsRecorder(repo);
 
@@ -159,7 +179,7 @@ export function createApiRoutes(repo: SessionRepository) {
 
       // Always filter by owner (no more "all sessions" mode)
       const sessions = repo.getSessionsByOwner(auth.userId ?? undefined, auth.clientId ?? undefined);
-      return json({ sessions });
+      return json({ sessions: sessions.map(normalizeRemoteSessionStatus) });
     },
 
     // Get session detail with messages and diffs
@@ -200,21 +220,14 @@ export function createApiRoutes(repo: SessionRepository) {
         }
       }
 
-      // For remote sessions not currently active in the spawned registry,
-      // mark as complete and not interactive (until remote session resuming is implemented)
-      let sessionData = session;
-      if (session.remote) {
-        const isActiveSpawned = spawnedSessionRegistry.getSession(sessionId) !== undefined;
-        if (!isActiveSpawned) {
-          sessionData = {
-            ...session,
-            status: "complete",
-            interactive: false,
-          };
-        }
-      }
-
-      return json({ session: sessionData, messages, diffs, shareUrl, review, adapterUIConfig });
+      return json({
+        session: normalizeRemoteSessionStatus(session),
+        messages,
+        diffs,
+        shareUrl,
+        review,
+        adapterUIConfig,
+      });
     },
 
     // Get diffs for a session
@@ -631,7 +644,12 @@ export function createApiRoutes(repo: SessionRepository) {
 
     // Get all live sessions (uses single query with JOIN to avoid N+1)
     getLiveSessions(): Response {
-      const sessions = repo.getLiveSessionsWithCounts();
+      // Filter out remote sessions whose daemon is no longer connected
+      // (normalizeRemoteSessionStatus marks these as "complete")
+      const sessions = repo.getLiveSessionsWithCounts()
+        .map(normalizeRemoteSessionStatus)
+        .filter(s => s.status === "live");
+
       return json({
         sessions: sessions.map(s => ({
           id: s.id,
