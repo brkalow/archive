@@ -4,7 +4,7 @@ import type {
   DaemonToServerMessage,
   StartSessionMessage,
 } from "../../cli/types/daemon-ws";
-import { mkdtempSync, rmdirSync } from "fs";
+import { mkdtempSync, rmSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 
@@ -386,6 +386,105 @@ describe("SpawnedSessionManager", () => {
       expect(session.outputHistory.length).toBe(3);
       expect((session.outputHistory[0] as any).index).toBe(2);
       expect((session.outputHistory[2] as any).index).toBe(4);
+    });
+  });
+
+  describe("sendSessionMetadata", () => {
+    test("sends session_metadata message after init", () => {
+      // Clear any previous messages
+      sentMessages.length = 0;
+
+      // Create a mock session with cwd
+      const session = {
+        id: "test-session-metadata",
+        cwd: tempDir,
+        claudeSessionId: undefined,
+        state: "starting" as const,
+        outputHistory: [] as any[],
+        maxHistorySize: 1000,
+      };
+
+      // Process an init message which triggers sendSessionMetadata
+      (manager as any).processStreamMessage(session, {
+        type: "system",
+        subtype: "init",
+        session_id: "claude-session-abc123",
+      });
+
+      // Wait a bit for the async metadata fetch
+      return new Promise<void>((resolve) => {
+        setTimeout(() => {
+          // Should have sent a session_metadata message
+          const metadataMsg = sentMessages.find(
+            (m) => m.type === "session_metadata"
+          ) as {
+            type: "session_metadata";
+            session_id: string;
+            agent_session_id?: string;
+            repo_url?: string;
+            branch?: string;
+          } | undefined;
+
+          expect(metadataMsg).toBeDefined();
+          expect(metadataMsg!.session_id).toBe("test-session-metadata");
+          expect(metadataMsg!.agent_session_id).toBe("claude-session-abc123");
+          // repo_url and branch may be undefined since tempDir isn't a git repo
+          resolve();
+        }, 100);
+      });
+    });
+
+    test("sendSessionMetadata extracts git info from git repo", async () => {
+      // Create a git repo in temp dir
+      const gitDir = mkdtempSync(join(tmpdir(), "git-test-"));
+      try {
+        // Initialize git repo
+        const initResult = Bun.spawnSync(["git", "init"], { cwd: gitDir });
+        expect(initResult.exitCode).toBe(0);
+
+        // Configure git user for the test
+        Bun.spawnSync(["git", "config", "user.email", "test@test.com"], { cwd: gitDir });
+        Bun.spawnSync(["git", "config", "user.name", "Test User"], { cwd: gitDir });
+
+        // Create initial commit to establish a branch
+        Bun.spawnSync(["touch", "README.md"], { cwd: gitDir });
+        Bun.spawnSync(["git", "add", "."], { cwd: gitDir });
+        Bun.spawnSync(["git", "commit", "-m", "Initial commit"], { cwd: gitDir });
+
+        // Create a test branch
+        Bun.spawnSync(["git", "checkout", "-b", "test-branch"], { cwd: gitDir });
+
+        sentMessages.length = 0;
+
+        const session = {
+          id: "git-test-session",
+          cwd: gitDir,
+        };
+
+        // Call sendSessionMetadata directly
+        await (manager as any).sendSessionMetadata(session, "claude-xyz");
+
+        // Check that session_metadata was sent with branch info
+        const metadataMsg = sentMessages.find(
+          (m) => m.type === "session_metadata"
+        ) as {
+          type: "session_metadata";
+          session_id: string;
+          agent_session_id?: string;
+          repo_url?: string;
+          branch?: string;
+        };
+
+        expect(metadataMsg).toBeDefined();
+        expect(metadataMsg.session_id).toBe("git-test-session");
+        expect(metadataMsg.agent_session_id).toBe("claude-xyz");
+        expect(metadataMsg.branch).toBe("test-branch");
+        // repo_url will be undefined since there's no remote
+        expect(metadataMsg.repo_url).toBeUndefined();
+      } finally {
+        // Cleanup
+        rmSync(gitDir, { recursive: true });
+      }
     });
   });
 

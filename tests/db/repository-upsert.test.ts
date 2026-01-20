@@ -421,3 +421,105 @@ describe("SessionRepository upsert", () => {
     });
   });
 });
+
+describe("SessionRepository updateSession - metadata fields", () => {
+  let db: Database;
+  let repo: SessionRepository;
+
+  beforeEach(() => {
+    if (existsSync(TEST_DB_PATH)) {
+      unlinkSync(TEST_DB_PATH);
+    }
+    db = initializeDatabase(TEST_DB_PATH);
+    repo = new SessionRepository(db);
+  });
+
+  afterEach(() => {
+    db.close();
+    if (existsSync(TEST_DB_PATH)) {
+      unlinkSync(TEST_DB_PATH);
+    }
+  });
+
+  test("updates branch field", () => {
+    // Create a session
+    repo.createSession({
+      id: "sess_branch_test",
+      title: "Branch Test Session",
+      description: null,
+      claude_session_id: null,
+      pr_url: null,
+      share_token: null,
+      project_path: "/test/path",
+      model: null,
+      harness: "claude-code",
+      repo_url: null,
+      status: "live",
+      last_activity_at: null,
+    });
+
+    // Update with branch
+    const updated = repo.updateSession("sess_branch_test", {
+      branch: "feature/new-feature",
+    });
+
+    expect(updated).not.toBeNull();
+    expect(updated!.branch).toBe("feature/new-feature");
+
+    // Verify it persists
+    const fetched = repo.getSession("sess_branch_test");
+    expect(fetched!.branch).toBe("feature/new-feature");
+  });
+
+  test("updates agent_session_id field", () => {
+    repo.createSession({
+      id: "sess_agent_test",
+      title: "Agent Session Test",
+      description: null,
+      claude_session_id: null,
+      pr_url: null,
+      share_token: null,
+      project_path: "/test/path",
+      model: null,
+      harness: "claude-code",
+      repo_url: null,
+      status: "live",
+      last_activity_at: null,
+    });
+
+    const updated = repo.updateSession("sess_agent_test", {
+      agent_session_id: "claude-xyz-123",
+    });
+
+    expect(updated).not.toBeNull();
+    expect(updated!.agent_session_id).toBe("claude-xyz-123");
+  });
+
+  test("updates multiple metadata fields at once", () => {
+    repo.createSession({
+      id: "sess_multi_update",
+      title: "Multi Update Test",
+      description: null,
+      claude_session_id: null,
+      pr_url: null,
+      share_token: null,
+      project_path: "/test/path",
+      model: null,
+      harness: "claude-code",
+      repo_url: null,
+      status: "live",
+      last_activity_at: null,
+    });
+
+    const updated = repo.updateSession("sess_multi_update", {
+      agent_session_id: "agent-abc",
+      repo_url: "https://github.com/test/repo",
+      branch: "main",
+    });
+
+    expect(updated).not.toBeNull();
+    expect(updated!.agent_session_id).toBe("agent-abc");
+    expect(updated!.repo_url).toBe("https://github.com/test/repo");
+    expect(updated!.branch).toBe("main");
+  });
+});

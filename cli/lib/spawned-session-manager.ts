@@ -20,7 +20,7 @@ import type {
   PermissionResult,
 } from "../types/daemon-ws";
 import { notifySessionStarted } from "./notifications";
-import { captureGitDiff } from "./git";
+import { captureGitDiff, getRepoHttpsUrl, getCurrentBranch } from "./git";
 
 /** Debounce delay for diff capture (ms) */
 const DIFF_DEBOUNCE_MS = 2000;
@@ -453,6 +453,9 @@ export class SpawnedSessionManager {
       console.log(
         `[spawner] Session ${session.id} initialized, Claude session: ${msg.session_id}`
       );
+
+      // Send session metadata to server (async, fire-and-forget)
+      this.sendSessionMetadata(session, msg.session_id);
     }
 
     // Detect SDK control_request messages (from --permission-prompt-tool stdio)
@@ -938,6 +941,37 @@ export class SpawnedSessionManager {
     if (!session) return [];
 
     return session.outputHistory.slice(fromIndex);
+  }
+
+  /**
+   * Send session metadata to the server after initialization.
+   * Extracts git info from the working directory and sends agent_session_id.
+   */
+  private async sendSessionMetadata(
+    session: SpawnedSession,
+    agentSessionId: string
+  ): Promise<void> {
+    try {
+      // Gather git metadata from the working directory
+      const [repoUrl, branch] = await Promise.all([
+        getRepoHttpsUrl(session.cwd),
+        getCurrentBranch(session.cwd),
+      ]);
+
+      console.log(
+        `[spawner] Sending metadata for session ${session.id}: agent_session_id=${agentSessionId}, repo_url=${repoUrl}, branch=${branch}`
+      );
+
+      this.sendToServer({
+        type: "session_metadata",
+        session_id: session.id,
+        agent_session_id: agentSessionId,
+        repo_url: repoUrl || undefined,
+        branch: branch || undefined,
+      });
+    } catch (error) {
+      console.error(`[spawner] Failed to send session metadata:`, error);
+    }
   }
 
   /**
