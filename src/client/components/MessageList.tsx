@@ -1,5 +1,6 @@
 import { useRef, useEffect, useCallback, useMemo, useState } from 'react';
-import { MessageBlock } from './MessageBlock';
+import { UserBubble } from './UserBubble';
+import { AgentTurn } from './AgentTurn';
 import { useLiveSession } from '../hooks/useLiveSession';
 import { buildToolResultMap } from '../blocks';
 import { isNearBottom, scrollToBottom } from '../liveSession';
@@ -24,6 +25,50 @@ interface MessageListProps {
 export interface MessageListHandle {
   sendFeedback: (content: string) => void;
   getMessageCount: () => number;
+}
+
+// Group messages into turns: each user message starts a new turn,
+// followed by consecutive assistant messages
+interface Turn {
+  type: 'user' | 'agent';
+  messages: Message[];
+}
+
+function groupMessagesIntoTurns(messages: Message[]): Turn[] {
+  const turns: Turn[] = [];
+  let currentAgentMessages: Message[] = [];
+
+  for (const message of messages) {
+    // Skip user messages that only contain tool_result blocks
+    if (message.role === 'user') {
+      const hasNonToolResult = message.content_blocks?.some(
+        (block) => block.type !== 'tool_result'
+      );
+      if (!hasNonToolResult) {
+        continue;
+      }
+
+      // Flush any pending agent messages
+      if (currentAgentMessages.length > 0) {
+        turns.push({ type: 'agent', messages: currentAgentMessages });
+        currentAgentMessages = [];
+      }
+
+      // Add user turn
+      turns.push({ type: 'user', messages: [message] });
+    } else if (message.role === 'assistant') {
+      // Accumulate assistant messages
+      currentAgentMessages.push(message);
+    }
+    // Skip system messages
+  }
+
+  // Flush remaining agent messages
+  if (currentAgentMessages.length > 0) {
+    turns.push({ type: 'agent', messages: currentAgentMessages });
+  }
+
+  return turns;
 }
 
 export function MessageList(props: MessageListProps) {
@@ -69,6 +114,9 @@ export function MessageList(props: MessageListProps) {
     return buildToolResultMap(allBlocks);
   }, [messages]);
 
+  // Group messages into turns
+  const turns = useMemo(() => groupMessagesIntoTurns(messages), [messages]);
+
   // Expose handle to parent via callback
   useEffect(() => {
     if (onHandle) {
@@ -111,17 +159,6 @@ export function MessageList(props: MessageListProps) {
 
   const showTypingIndicator = pendingToolCalls.size > 0;
 
-  // Filter out user messages that only contain tool_result blocks
-  // (these are rendered inline with their corresponding tool_use blocks)
-  const visibleMessages = useMemo(() => {
-    return messages.filter(message => {
-      if (message.role === 'user' && message.content_blocks?.length) {
-        return message.content_blocks.some(block => block.type !== 'tool_result');
-      }
-      return true;
-    });
-  }, [messages]);
-
   return (
     <div className="message-list-container relative h-full">
       <div
@@ -129,32 +166,34 @@ export function MessageList(props: MessageListProps) {
         className="conversation-panel flex-1 overflow-y-auto flex flex-col h-full"
         onScroll={handleScroll}
       >
-        {visibleMessages.map((message, i) => {
-          const prevRole = i > 0 ? visibleMessages[i - 1]?.role : null;
-          const roleChanged = prevRole !== null && prevRole !== message.role;
-          return (
-            <div key={message.id || i} className={roleChanged ? 'mt-2' : ''}>
-              <MessageBlock
-                message={message}
-                toolResults={toolResults}
-                showRoleBadge={i === 0 || message.role !== visibleMessages[i - 1]?.role}
-                messageIndex={i}
-              />
-            </div>
-          );
-        })}
+        {/* Chat bubble layout */}
+        <div className="flex flex-col gap-4 px-2 py-4">
+          {turns.map((turn, i) => {
+            if (turn.type === 'user') {
+              return <UserBubble key={`user-${i}`} message={turn.messages[0]!} />;
+            } else {
+              return (
+                <AgentTurn
+                  key={`agent-${i}`}
+                  messages={turn.messages}
+                  toolResults={toolResults}
+                />
+              );
+            }
+          })}
 
-        {/* Typing indicator */}
-        {showTypingIndicator && <TypingIndicator />}
+          {/* Typing indicator */}
+          {showTypingIndicator && <TypingIndicator />}
+        </div>
       </div>
 
       {/* New messages button */}
       {showNewMessagesButton && (
         <button
-          className="absolute bottom-4 left-1/2 -translate-x-1/2 px-4 py-2 bg-accent-primary text-white rounded-full shadow-lg hover:bg-accent-primary/90 transition-all"
+          className="absolute bottom-4 left-1/2 -translate-x-1/2 px-4 py-2 bg-accent-primary text-bg-primary font-medium rounded-full shadow-lg hover:bg-accent-primary/90 transition-all text-sm"
           onClick={handleScrollToBottom}
         >
-          New messages
+          ↓ New messages
         </button>
       )}
     </div>
@@ -163,13 +202,23 @@ export function MessageList(props: MessageListProps) {
 
 function TypingIndicator() {
   return (
-    <div className="flex items-center gap-2 py-3 px-4 text-text-muted border-l-2 border-role-assistant">
-      <div className="flex gap-1">
-        <span className="w-1.5 h-1.5 bg-text-muted rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-        <span className="w-1.5 h-1.5 bg-text-muted rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-        <span className="w-1.5 h-1.5 bg-text-muted rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+    <div className="agent-turn">
+      {/* Turn header style */}
+      <div className="turn-header flex items-center gap-3 text-text-muted text-xs py-1">
+        <div className="flex-1 h-px bg-bg-elevated" />
+        <span>working</span>
+        <div className="flex-1 h-px bg-bg-elevated" />
       </div>
-      <span className="text-sm">Claude is working...</span>
+
+      {/* Typing dots */}
+      <div className="flex items-center gap-2 py-2 text-text-muted">
+        <div className="flex gap-1">
+          <span className="w-1.5 h-1.5 bg-text-muted rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+          <span className="w-1.5 h-1.5 bg-text-muted rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+          <span className="w-1.5 h-1.5 bg-text-muted rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+        </div>
+        <span className="text-sm">Claude is working...</span>
+      </div>
     </div>
   );
 }
