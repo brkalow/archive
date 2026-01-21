@@ -2,15 +2,25 @@
 
 A web application for storing and viewing Claude Code sessions.
 
-## Contributing Learnings
+## Learned Patterns
 
-When you discover something critical for effective development in this project, add it to the appropriate section below. This helps future agents work more effectively.
-
-**What to capture:**
-- Gotchas or non-obvious behaviors
+**After completing a task, add any gotchas or non-obvious discoveries here.** This helps future agents work more effectively. Capture things like:
+- Gotchas or non-obvious behaviors you encountered
 - Patterns that work well (or don't)
 - Architectural decisions and their rationale
 - Commands or workflows that are frequently needed
+
+### Session JSONL Format
+- Session files are JSONL with one message per line
+- Each line has a `message` object with `role` ("human", "user", or "assistant") and `content`
+- Metadata like `gitBranch` and `model` may appear at the message level
+- Files touched can be extracted from `tool_use` blocks with names `Write`, `Edit`, or `NotebookEdit`
+
+### Git Diff Extraction
+- The upload command extracts touched files from the session and filters the diff to only those files
+- If a branch from session metadata no longer exists (merged/deleted), diff extraction gracefully returns null
+
+---
 
 ## Quick Start
 
@@ -22,11 +32,32 @@ The dev server defaults to port 3000 and automatically selects the next availabl
 
 ## Architecture Notes
 
-- **Server**: Uses `Bun.serve()` with WebSocket support for live streaming
-- **Database**: SQLite via `bun:sqlite` (file: `sessions.db`)
-- **Frontend**: Server-rendered HTML with client-side hydration, Tailwind CSS v4
+- **Server**: Uses `Bun.serve()` with WebSocket support for live streaming (`src/server.ts`)
+- **Database**: SQLite via `bun:sqlite` (file: `data/sessions.db`)
+- **Frontend**: React SPA with client-side routing (`src/client/`), Tailwind CSS v4
 - **CLI**: Located in `cli/`, entry point is `cli/index.ts`
 - **Component Library**: Visit `/_components` to browse all design tokens, typography, and UI primitives
+
+### Directory Structure (key directories)
+```
+src/
+├── server.ts       # Main server entry point
+├── routes/         # API and page route handlers
+├── client/         # React frontend (App.tsx, components/, hooks/)
+├── db/             # Database schema and repository
+├── middleware/     # Auth middleware
+├── lib/            # Shared utilities (daemon connections, rate limiting, etc.)
+└── views/          # Server-rendered HTML templates
+
+cli/
+├── index.ts        # CLI entry point
+├── commands/       # CLI command implementations (upload, auth, serve, etc.)
+├── adapters/       # AI harness adapters (claude-code, etc.)
+├── daemon/         # Background daemon for live streaming
+└── lib/            # CLI utilities
+
+tests/              # Organized by domain (db/, cli/, client/, integration/)
+```
 
 ## Planning and Documentation
 
@@ -58,22 +89,26 @@ The app uses Clerk for authentication with Google sign-in. See `specs/auth.md` f
 
 ### Testing
 ```sh
-bun test
+bun test                    # Run all tests
+bun test tests/db/          # Run tests in a specific directory
+bun test --watch            # Watch mode
+```
+
+Database tests use `:memory:` SQLite for isolation—see `tests/db/` for examples.
+
+### Useful Scripts
+```sh
+bun run dev                 # Start dev server with hot reload
+bun run seed                # Seed database with sample data
+bun run build:cli           # Build CLI binary
+bun run build:cli:release   # Build CLI with archive for distribution
+```
+
+### Verifying UI Changes
+Always verify UI changes in the browser. Seed the database first for realistic test data:
+```sh
+bun run seed && bun run dev
 ```
 
 ### Creating commits
 Prefer smaller implementation chunks broken into commits. When asked to implement a plan, create a new branch.
-
-## Learned Patterns
-
-<!-- Add learnings here as you discover them -->
-
-### Session JSONL Format
-- Session files are JSONL with one message per line
-- Each line has a `message` object with `role` ("human", "user", or "assistant") and `content`
-- Metadata like `gitBranch` and `model` may appear at the message level
-- Files touched can be extracted from `tool_use` blocks with names `Write`, `Edit`, or `NotebookEdit`
-
-### Git Diff Extraction
-- The upload command extracts touched files from the session and filters the diff to only those files
-- If a branch from session metadata no longer exists (merged/deleted), diff extraction gracefully returns null
