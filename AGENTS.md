@@ -38,7 +38,7 @@ The dev server defaults to port 3000 and automatically selects the next availabl
 - **CLI**: Located in `cli/`, entry point is `cli/index.ts`
 - **Component Library**: Visit `/_components` to browse all design tokens, typography, and UI primitives
 
-### Directory Structure
+### Directory Structure (key directories)
 ```
 src/
 ├── server.ts       # Main server entry point
@@ -51,6 +51,7 @@ src/
 
 cli/
 ├── index.ts        # CLI entry point
+├── commands/       # CLI command implementations (upload, auth, serve, etc.)
 ├── adapters/       # AI harness adapters (claude-code, etc.)
 ├── daemon/         # Background daemon for live streaming
 └── lib/            # CLI utilities
