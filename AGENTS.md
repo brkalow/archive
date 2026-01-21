@@ -37,6 +37,7 @@ The dev server defaults to port 3000 and automatically selects the next availabl
 - **Frontend**: React SPA with client-side routing (`src/client/`), Tailwind CSS v4
 - **CLI**: Located in `cli/`, entry point is `cli/index.ts`
 - **Component Library**: Visit `/_components` to browse all design tokens, typography, and UI primitives
+- **UI Guidelines**: See `specs/ui_overview.md` for comprehensive design system documentation
 
 ### Directory Structure (key directories)
 ```
@@ -109,6 +110,17 @@ Always verify UI changes in the browser. Seed the database first for realistic t
 ```sh
 bun run seed && bun run dev
 ```
+
+### UI Development
+- **Design system**: See `specs/ui_overview.md` for colors, typography, and component patterns
+- **Component showcase**: Visit `/_components` in the browser to see all design tokens and primitives
+- **Key React components** (`src/client/components/`):
+  - `UserBubble` - Right-aligned chat bubble for user messages
+  - `AgentTurn` - Groups agent messages with turn header and activity lines
+  - `MessageList` - Main conversation view with turn-based grouping
+  - `ToolLine`, `ThinkingLine` - Compact activity line displays
+  - `HomePage` - Activity feed with project-grouped sessions
+  - `SessionRow`, `ProjectGroup` - Session list item and collapsible grouping
 
 ### Creating commits
 Prefer smaller implementation chunks broken into commits. When asked to implement a plan, create a new branch.

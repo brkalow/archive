@@ -430,6 +430,9 @@ export function renderComponentsShowcase(): string {
       <div class="mb-10">
         <h1 class="text-2xl font-semibold text-text-primary mb-2">Component Library</h1>
         <p class="text-text-secondary">Design tokens and UI primitives for the Claude Session Archive.</p>
+        <p class="text-text-muted text-sm mt-2">
+          For comprehensive UI guidelines, see <code class="px-1.5 py-0.5 bg-bg-elevated rounded text-accent-primary text-xs">specs/ui_overview.md</code>
+        </p>
       </div>
 
       <!-- Table of Contents -->
@@ -439,6 +442,9 @@ export function renderComponentsShowcase(): string {
           <a href="#colors" class="text-accent-primary hover:underline">Colors</a>
           <a href="#typography" class="text-accent-primary hover:underline">Typography</a>
           <a href="#primitives" class="text-accent-primary hover:underline">Primitives</a>
+          <a href="#chat-layout" class="text-accent-primary hover:underline">Chat Layout</a>
+          <a href="#activity-lines" class="text-accent-primary hover:underline">Activity Lines</a>
+          <a href="#activity-feed" class="text-accent-primary hover:underline">Activity Feed</a>
           <a href="#components" class="text-accent-primary hover:underline">Components</a>
           <a href="#icons" class="text-accent-primary hover:underline">Icons</a>
           <a href="#session-header" class="text-accent-primary hover:underline">Session Header</a>
@@ -448,6 +454,9 @@ export function renderComponentsShowcase(): string {
       ${renderColorsSection()}
       ${renderTypographySection()}
       ${renderPrimitivesSection()}
+      ${renderChatLayoutSection()}
+      ${renderActivityLinesSection()}
+      ${renderActivityFeedSection()}
       ${renderComponentsSection()}
       ${renderIconsSection()}
     </div>
@@ -736,6 +745,522 @@ function renderPrimitivesSection(): string {
   `;
 }
 
+function renderChatLayoutSection(): string {
+  return `
+    <section id="chat-layout" class="mb-16">
+      <h2 class="text-xl font-semibold text-text-primary mb-6 pb-2 border-b border-bg-elevated">Chat Layout</h2>
+      <p class="text-text-secondary text-sm mb-6">
+        Conversation messages are grouped into turns. User messages appear as right-aligned bubbles.
+        Agent turns are separated by a header showing activity summary.
+        <br/><span class="text-text-muted">Components: <code class="text-xs">UserBubble</code>, <code class="text-xs">AgentTurn</code>, <code class="text-xs">MessageList</code></span>
+      </p>
+
+      <div class="space-y-8">
+        <!-- User Bubble -->
+        <div>
+          <h3 class="text-sm font-semibold text-text-secondary uppercase tracking-wide mb-4">User Bubble</h3>
+          <div class="p-4 bg-bg-secondary border border-bg-elevated rounded-md">
+            <div class="flex justify-end w-full">
+              <div class="group relative max-w-[70%] bg-bg-tertiary rounded-2xl rounded-br-sm px-4 py-3">
+                <div class="text-sm text-text-primary leading-relaxed">
+                  Can you help me fix the build error?
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="mt-2 text-xs text-text-muted font-mono">
+            Classes: max-w-[70%] bg-bg-tertiary rounded-2xl rounded-br-sm px-4 py-3
+          </div>
+        </div>
+
+        <!-- Turn Header -->
+        <div>
+          <h3 class="text-sm font-semibold text-text-secondary uppercase tracking-wide mb-4">Turn Header</h3>
+          <div class="p-4 bg-bg-secondary border border-bg-elevated rounded-md">
+            <div class="flex items-center gap-3 text-text-muted text-xs py-1">
+              <div class="flex-1 h-px bg-bg-elevated"></div>
+              <span>3 tool calls, 1 message</span>
+              <div class="flex-1 h-px bg-bg-elevated"></div>
+            </div>
+          </div>
+          <div class="mt-2 text-xs text-text-muted font-mono">
+            Pattern: flex-1 h-px bg-bg-elevated dividers with centered text
+          </div>
+        </div>
+
+        <!-- Full Conversation Example -->
+        <div>
+          <h3 class="text-sm font-semibold text-text-secondary uppercase tracking-wide mb-4">Conversation Flow</h3>
+          <div class="p-4 bg-bg-secondary border border-bg-elevated rounded-md">
+            <div class="flex flex-col gap-4">
+              <!-- User message -->
+              <div class="flex justify-end w-full">
+                <div class="max-w-[70%] bg-bg-tertiary rounded-2xl rounded-br-sm px-4 py-3">
+                  <div class="text-sm text-text-primary leading-relaxed">
+                    Can you help me fix the build error?
+                  </div>
+                </div>
+              </div>
+
+              <!-- Agent turn -->
+              <div class="agent-turn">
+                <div class="flex items-center gap-3 text-text-muted text-xs py-1">
+                  <div class="flex-1 h-px bg-bg-elevated"></div>
+                  <span>2 tool calls, 1 message</span>
+                  <div class="flex-1 h-px bg-bg-elevated"></div>
+                </div>
+                <div class="flex flex-col gap-0.5 py-1">
+                  <div class="flex items-center gap-1.5 text-text-muted text-[13px] py-0.5">
+                    <svg class="w-3.5 h-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+                      <path d="M4 2h5l4 4v8a1 1 0 01-1 1H4a1 1 0 01-1-1V3a1 1 0 011-1z" />
+                      <path d="M9 2v4h4" />
+                    </svg>
+                    <span class="font-medium">Read</span>
+                    <span class="font-mono truncate">src/server.ts</span>
+                    <span class="text-diff-add">✓</span>
+                  </div>
+                  <div class="flex items-center gap-1.5 text-text-muted text-[13px] py-0.5">
+                    <svg class="w-3.5 h-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+                      <path d="M11.5 2.5l2 2-8 8H3.5v-2l8-8z" />
+                      <path d="M10 4l2 2" />
+                    </svg>
+                    <span class="font-medium">Edit</span>
+                    <span class="font-mono truncate">src/server.ts</span>
+                    <span class="text-diff-add">✓</span>
+                  </div>
+                  <div class="text-sm text-text-primary leading-relaxed py-0.5">
+                    I found and fixed the type error. The issue was a missing return type annotation.
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Typing Indicator -->
+        <div>
+          <h3 class="text-sm font-semibold text-text-secondary uppercase tracking-wide mb-4">Typing Indicator</h3>
+          <div class="p-4 bg-bg-secondary border border-bg-elevated rounded-md">
+            <div class="agent-turn">
+              <div class="flex items-center gap-3 text-text-muted text-xs py-1">
+                <div class="flex-1 h-px bg-bg-elevated"></div>
+                <span>working</span>
+                <div class="flex-1 h-px bg-bg-elevated"></div>
+              </div>
+              <div class="flex items-center gap-2 py-2 text-text-muted">
+                <div class="flex gap-1">
+                  <span class="w-1.5 h-1.5 bg-text-muted rounded-full animate-bounce" style="animation-delay: 0ms"></span>
+                  <span class="w-1.5 h-1.5 bg-text-muted rounded-full animate-bounce" style="animation-delay: 150ms"></span>
+                  <span class="w-1.5 h-1.5 bg-text-muted rounded-full animate-bounce" style="animation-delay: 300ms"></span>
+                </div>
+                <span class="text-sm">Claude is working...</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  `;
+}
+
+function renderActivityLinesSection(): string {
+  // Icon definitions for activity lines
+  const activityIcons = {
+    document: `<svg class="w-3.5 h-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 2h5l4 4v8a1 1 0 01-1 1H4a1 1 0 01-1-1V3a1 1 0 011-1z" /><path d="M9 2v4h4" /></svg>`,
+    pencil: `<svg class="w-3.5 h-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M11.5 2.5l2 2-8 8H3.5v-2l8-8z" /><path d="M10 4l2 2" /></svg>`,
+    terminal: `<svg class="w-3.5 h-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 5l3 3-3 3" /><path d="M9 11h4" /></svg>`,
+    search: `<svg class="w-3.5 h-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="7" cy="7" r="4" /><path d="M10 10l3 3" /></svg>`,
+    thinking: `<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 4.5c-2 0-3.5.8-4.5 2-.8 0-2 .5-2.5 1.5s-.5 2 0 3c-.5.5-1 1.5-1 2.5 0 2 1.5 3.5 3.5 3.5.5.8 1.5 1.5 3 1.5h3c1.5 0 2.5-.7 3-1.5 2 0 3.5-1.5 3.5-3.5 0-1-.5-2-1-2.5.5-1 .5-2 0-3s-1.7-1.5-2.5-1.5c-1-1.2-2.5-2-4.5-2z" /><path d="M12 4.5v14" /></svg>`,
+    list: `<svg class="w-3.5 h-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M5 4h8M5 8h8M5 12h8" /><circle cx="2" cy="4" r="1" fill="currentColor" stroke="none" /><circle cx="2" cy="8" r="1" fill="currentColor" stroke="none" /><circle cx="2" cy="12" r="1" fill="currentColor" stroke="none" /></svg>`,
+    question: `<svg class="w-3.5 h-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6" /><path d="M6 6a2 2 0 012-2 2 2 0 012 2c0 1-1 1.5-1.5 2-.25.25-.5.5-.5 1" /><circle cx="8" cy="11.5" r="0.75" fill="currentColor" stroke="none" /></svg>`,
+    robot: `<svg class="w-3.5 h-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="5" width="10" height="8" rx="1" /><circle cx="6" cy="9" r="1" fill="currentColor" stroke="none" /><circle cx="10" cy="9" r="1" fill="currentColor" stroke="none" /><path d="M8 2v3M6 2h4" /><path d="M1 8h2M13 8h2" /></svg>`,
+    globe: `<svg class="w-3.5 h-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6" /><path d="M2 8h12" /><path d="M8 2c2 2 2 10 0 12" /><path d="M8 2c-2 2-2 10 0 12" /></svg>`,
+    gear: `<svg class="w-3.5 h-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="2" /><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3 3l1.5 1.5M11.5 11.5L13 13M3 13l1.5-1.5M11.5 4.5L13 3" /></svg>`,
+  };
+
+  return `
+    <section id="activity-lines" class="mb-16">
+      <h2 class="text-xl font-semibold text-text-primary mb-6 pb-2 border-b border-bg-elevated">Activity Lines</h2>
+      <p class="text-text-secondary text-sm mb-6">
+        Compact displays for agent activities. Each line shows an icon, tool name, summary, and status indicator.
+        Lines are expandable to show full content.
+        <br/><span class="text-text-muted">Components: <code class="text-xs">ToolLine</code>, <code class="text-xs">ThinkingLine</code>, <code class="text-xs">TaskLine</code>, <code class="text-xs">QuestionLine</code>, <code class="text-xs">TodoWriteLine</code></span>
+      </p>
+
+      <div class="space-y-8">
+        <!-- Tool Lines -->
+        <div>
+          <h3 class="text-sm font-semibold text-text-secondary uppercase tracking-wide mb-4">Tool Lines</h3>
+          <div class="p-4 bg-bg-secondary border border-bg-elevated rounded-md space-y-1">
+            <div class="flex items-center gap-1.5 text-text-muted text-[13px] py-0.5">
+              ${activityIcons.document}
+              <span class="font-medium">Read</span>
+              <span class="font-mono truncate">src/client/App.tsx</span>
+              <span class="text-diff-add">✓</span>
+            </div>
+            <div class="flex items-center gap-1.5 text-text-muted text-[13px] py-0.5">
+              ${activityIcons.pencil}
+              <span class="font-medium">Edit</span>
+              <span class="font-mono truncate">src/server.ts</span>
+              <span class="text-diff-add">✓</span>
+            </div>
+            <div class="flex items-center gap-1.5 text-text-muted text-[13px] py-0.5">
+              ${activityIcons.terminal}
+              <span class="font-medium">Bash</span>
+              <span class="font-mono truncate">bun test</span>
+              <span class="text-diff-del">✗</span>
+            </div>
+            <div class="flex items-center gap-1.5 text-text-muted text-[13px] py-0.5">
+              ${activityIcons.search}
+              <span class="font-medium">Grep</span>
+              <span class="font-mono truncate">"handleSubmit"</span>
+              <span class="text-diff-add">✓</span>
+            </div>
+            <div class="flex items-center gap-1.5 text-text-muted text-[13px] py-0.5">
+              ${activityIcons.globe}
+              <span class="font-medium">WebFetch</span>
+              <span class="font-mono truncate">docs.example.com/api</span>
+              <span class="text-text-muted">...</span>
+            </div>
+          </div>
+          <div class="mt-2 text-xs text-text-muted">
+            Status indicators: <span class="text-diff-add">✓</span> success, <span class="text-diff-del">✗</span> error, <span class="text-text-muted">...</span> pending
+          </div>
+        </div>
+
+        <!-- Thinking Line -->
+        <div>
+          <h3 class="text-sm font-semibold text-text-secondary uppercase tracking-wide mb-4">Thinking Line</h3>
+          <div class="p-4 bg-bg-secondary border border-bg-elevated rounded-md">
+            <div class="flex items-center gap-1.5 text-text-muted text-[13px] py-0.5">
+              ${activityIcons.thinking}
+              <span class="font-medium">Thinking</span>
+              <span class="truncate max-w-[400px] opacity-70">Let me analyze this error message...</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Task Line (subagent) -->
+        <div>
+          <h3 class="text-sm font-semibold text-text-secondary uppercase tracking-wide mb-4">Task Line (Subagent)</h3>
+          <div class="p-4 bg-bg-secondary border border-bg-elevated rounded-md space-y-1">
+            <div class="flex items-center gap-1.5 text-text-muted text-[13px] py-0.5">
+              ${activityIcons.robot}
+              <span class="font-medium">Explorer</span>
+              <span class="truncate max-w-[300px]">Find authentication handlers</span>
+              <span class="text-diff-add">✓</span>
+            </div>
+            <div class="flex items-center gap-1.5 text-text-muted text-[13px] py-0.5">
+              ${activityIcons.robot}
+              <span class="font-medium">Bash</span>
+              <span class="truncate max-w-[300px]">Run test suite</span>
+              <span class="text-text-muted">...</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Todo Line -->
+        <div>
+          <h3 class="text-sm font-semibold text-text-secondary uppercase tracking-wide mb-4">Todo Line</h3>
+          <div class="p-4 bg-bg-secondary border border-bg-elevated rounded-md">
+            <div class="py-1">
+              <div class="flex items-center gap-1.5 text-text-muted text-[13px]">
+                ${activityIcons.list}
+                <span class="font-medium">Tasks</span>
+              </div>
+              <div class="ml-5 mt-1 space-y-0.5">
+                <div class="flex items-center gap-1.5 text-[13px]">
+                  <span class="text-diff-add">✓</span>
+                  <span class="text-text-muted line-through">Read the error logs</span>
+                </div>
+                <div class="flex items-center gap-1.5 text-[13px]">
+                  <span class="text-accent-primary">●</span>
+                  <span class="text-text-primary">Fix type mismatch</span>
+                </div>
+                <div class="flex items-center gap-1.5 text-[13px]">
+                  <span class="text-text-muted">○</span>
+                  <span class="text-text-primary">Run tests</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="mt-2 text-xs text-text-muted">
+            Status icons: <span class="text-diff-add">✓</span> completed, <span class="text-accent-primary">●</span> in_progress, <span class="text-text-muted">○</span> pending
+          </div>
+        </div>
+
+        <!-- Question Line -->
+        <div>
+          <h3 class="text-sm font-semibold text-text-secondary uppercase tracking-wide mb-4">Question Line</h3>
+          <div class="p-4 bg-bg-secondary border border-bg-elevated rounded-md">
+            <div class="py-1">
+              <div class="flex items-center gap-1.5 text-text-muted text-[13px]">
+                ${activityIcons.question}
+                <span class="font-medium">Question</span>
+              </div>
+              <div class="ml-5 mt-1 space-y-1">
+                <div>
+                  <div class="text-[13px] text-text-primary">Which testing framework do you prefer?</div>
+                  <div class="flex items-center gap-1 mt-0.5">
+                    <span class="text-accent-primary text-xs">&rarr;</span>
+                    <span class="text-[13px] font-medium text-text-primary">Jest</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tool Icons Reference -->
+        <div>
+          <h3 class="text-sm font-semibold text-text-secondary uppercase tracking-wide mb-4">Activity Icons</h3>
+          <div class="flex flex-wrap gap-6 p-4 bg-bg-secondary border border-bg-elevated rounded-md">
+            <div class="flex flex-col items-center gap-2">
+              <div class="w-10 h-10 flex items-center justify-center bg-bg-tertiary rounded-md text-text-muted">${activityIcons.document}</div>
+              <span class="text-xs text-text-muted">Read</span>
+            </div>
+            <div class="flex flex-col items-center gap-2">
+              <div class="w-10 h-10 flex items-center justify-center bg-bg-tertiary rounded-md text-text-muted">${activityIcons.pencil}</div>
+              <span class="text-xs text-text-muted">Edit/Write</span>
+            </div>
+            <div class="flex flex-col items-center gap-2">
+              <div class="w-10 h-10 flex items-center justify-center bg-bg-tertiary rounded-md text-text-muted">${activityIcons.terminal}</div>
+              <span class="text-xs text-text-muted">Bash</span>
+            </div>
+            <div class="flex flex-col items-center gap-2">
+              <div class="w-10 h-10 flex items-center justify-center bg-bg-tertiary rounded-md text-text-muted">${activityIcons.search}</div>
+              <span class="text-xs text-text-muted">Glob/Grep</span>
+            </div>
+            <div class="flex flex-col items-center gap-2">
+              <div class="w-10 h-10 flex items-center justify-center bg-bg-tertiary rounded-md text-text-muted">${activityIcons.globe}</div>
+              <span class="text-xs text-text-muted">WebFetch</span>
+            </div>
+            <div class="flex flex-col items-center gap-2">
+              <div class="w-10 h-10 flex items-center justify-center bg-bg-tertiary rounded-md text-text-muted">${activityIcons.thinking}</div>
+              <span class="text-xs text-text-muted">Thinking</span>
+            </div>
+            <div class="flex flex-col items-center gap-2">
+              <div class="w-10 h-10 flex items-center justify-center bg-bg-tertiary rounded-md text-text-muted">${activityIcons.robot}</div>
+              <span class="text-xs text-text-muted">Task</span>
+            </div>
+            <div class="flex flex-col items-center gap-2">
+              <div class="w-10 h-10 flex items-center justify-center bg-bg-tertiary rounded-md text-text-muted">${activityIcons.list}</div>
+              <span class="text-xs text-text-muted">TodoWrite</span>
+            </div>
+            <div class="flex flex-col items-center gap-2">
+              <div class="w-10 h-10 flex items-center justify-center bg-bg-tertiary rounded-md text-text-muted">${activityIcons.question}</div>
+              <span class="text-xs text-text-muted">Question</span>
+            </div>
+            <div class="flex flex-col items-center gap-2">
+              <div class="w-10 h-10 flex items-center justify-center bg-bg-tertiary rounded-md text-text-muted">${activityIcons.gear}</div>
+              <span class="text-xs text-text-muted">Other</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  `;
+}
+
+function renderActivityFeedSection(): string {
+  return `
+    <section id="activity-feed" class="mb-16">
+      <h2 class="text-xl font-semibold text-text-primary mb-6 pb-2 border-b border-bg-elevated">Activity Feed</h2>
+      <p class="text-text-secondary text-sm mb-6">
+        Components for the activity feed homepage. Sessions are grouped by project/repository with collapsible sections.
+        <br/><span class="text-text-muted">Components: <code class="text-xs">HomePage</code>, <code class="text-xs">ProjectGroup</code>, <code class="text-xs">SessionRow</code>, <code class="text-xs">ViewModeToggle</code>, <code class="text-xs">NewSessionPrompt</code></span>
+      </p>
+
+      <div class="space-y-8">
+        <!-- View Mode Toggle -->
+        <div>
+          <h3 class="text-sm font-semibold text-text-secondary uppercase tracking-wide mb-4">View Mode Toggle</h3>
+          <div class="p-4 bg-bg-secondary border border-bg-elevated rounded-md">
+            <div class="flex items-center bg-bg-secondary rounded-lg p-0.5 border border-bg-elevated w-fit">
+              <button class="px-3 py-1 text-xs font-medium rounded-md transition-colors bg-bg-tertiary text-text-primary">
+                Project
+              </button>
+              <button class="px-3 py-1 text-xs font-medium rounded-md transition-colors text-text-muted hover:text-text-secondary">
+                Timeline
+              </button>
+            </div>
+          </div>
+          <div class="mt-2 text-xs text-text-muted font-mono">
+            Pattern: Segmented control with bg-bg-tertiary for active state
+          </div>
+        </div>
+
+        <!-- Session Row -->
+        <div>
+          <h3 class="text-sm font-semibold text-text-secondary uppercase tracking-wide mb-4">Session Row</h3>
+          <div class="bg-bg-secondary border border-bg-elevated rounded-md overflow-hidden">
+            <div class="border-l border-bg-elevated ml-2.5">
+              <!-- Live session -->
+              <div class="flex items-center gap-3 py-2.5 px-4 hover:bg-bg-tertiary transition-colors border-b border-bg-elevated/50">
+                <span class="w-2 h-2 rounded-full shrink-0 bg-status-live animate-pulse"></span>
+                <span class="flex-1 min-w-0 text-sm text-text-primary truncate">Implement user authentication flow</span>
+                <span class="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium shrink-0 bg-diff-add/15 text-diff-add">
+                  <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 16 16">
+                    <path d="M1.5 3.25a2.25 2.25 0 1 1 3 2.122v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.25 2.25 0 0 1 1.5 3.25Zm5.677-.177L9.573.677A.25.25 0 0 1 10 .854V2.5h1A2.5 2.5 0 0 1 13.5 5v5.628a2.251 2.251 0 1 1-1.5 0V5a1 1 0 0 0-1-1h-1v1.646a.25.25 0 0 1-.427.177L7.177 3.427a.25.25 0 0 1 0-.354ZM3.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm0 9.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm8.25.75a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0Z" />
+                  </svg>
+                  #42
+                </span>
+                <span class="text-xs text-text-muted shrink-0">5m ago</span>
+              </div>
+              <!-- Completed session with interactive badge -->
+              <div class="flex items-center gap-3 py-2.5 px-4 hover:bg-bg-tertiary transition-colors border-b border-bg-elevated/50">
+                <span class="w-2 h-2 rounded-full shrink-0 bg-diff-add"></span>
+                <span class="flex-1 min-w-0 text-sm text-text-primary truncate">Refactor database schema</span>
+                <span class="shrink-0 px-1.5 py-0.5 bg-accent-secondary/20 text-accent-secondary text-[10px] font-medium rounded">Interactive</span>
+                <span class="text-xs text-text-muted shrink-0">2h ago</span>
+              </div>
+              <!-- Archived session -->
+              <div class="flex items-center gap-3 py-2.5 px-4 hover:bg-bg-tertiary transition-colors">
+                <span class="w-2 h-2 rounded-full shrink-0 bg-text-muted"></span>
+                <span class="flex-1 min-w-0 text-sm text-text-primary truncate">Debug performance issues</span>
+                <span class="text-xs text-text-muted shrink-0">3d ago</span>
+              </div>
+            </div>
+          </div>
+          <div class="mt-2 text-xs text-text-muted">
+            Status dots: <span class="inline-block w-2 h-2 rounded-full bg-status-live animate-pulse align-middle"></span> live,
+            <span class="inline-block w-2 h-2 rounded-full bg-diff-add align-middle ml-2"></span> complete,
+            <span class="inline-block w-2 h-2 rounded-full bg-text-muted align-middle ml-2"></span> archived
+          </div>
+        </div>
+
+        <!-- Project Group Header -->
+        <div>
+          <h3 class="text-sm font-semibold text-text-secondary uppercase tracking-wide mb-4">Project Group Header</h3>
+          <div class="p-4 bg-bg-secondary border border-bg-elevated rounded-md space-y-3">
+            <!-- Repository group (expanded) -->
+            <button class="w-full flex items-center gap-2 py-2 text-left group">
+              <svg class="w-3 h-3 text-text-muted rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+              </svg>
+              <span class="flex items-center gap-1.5 text-xs text-text-secondary group-hover:text-text-primary transition-colors">
+                <svg class="w-3.5 h-3.5 text-text-muted" fill="currentColor" viewBox="0 0 16 16">
+                  <path d="M2 2.5A2.5 2.5 0 0 1 4.5 0h8.75a.75.75 0 0 1 .75.75v12.5a.75.75 0 0 1-.75.75h-2.5a.75.75 0 0 1 0-1.5h1.75v-2h-8a1 1 0 0 0-.714 1.7.75.75 0 1 1-1.072 1.05A2.495 2.495 0 0 1 2 11.5Zm10.5-1h-8a1 1 0 0 0-1 1v6.708A2.486 2.486 0 0 1 4.5 9h8ZM5 12.25a.25.25 0 0 1 .25-.25h3.5a.25.25 0 0 1 .25.25v3.25a.25.25 0 0 1-.4.2l-1.45-1.087a.249.249 0 0 0-.3 0L5.4 15.7a.25.25 0 0 1-.4-.2Z" />
+                </svg>
+                <span class="font-medium">anthropic/claude-code</span>
+              </span>
+              <span class="text-xs text-text-muted">5 sessions</span>
+              <span class="flex items-center gap-1 text-xs text-status-live">
+                <span class="w-1.5 h-1.5 rounded-full bg-status-live animate-pulse"></span>
+                1 live
+              </span>
+            </button>
+            <!-- Path-based group (collapsed) -->
+            <button class="w-full flex items-center gap-2 py-2 text-left group">
+              <svg class="w-3 h-3 text-text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+              </svg>
+              <span class="font-mono text-xs text-text-secondary group-hover:text-text-primary transition-colors">~/projects/api</span>
+              <span class="text-xs text-text-muted">3 sessions</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Keyboard Hints -->
+        <div>
+          <h3 class="text-sm font-semibold text-text-secondary uppercase tracking-wide mb-4">Keyboard Hints</h3>
+          <div class="p-4 bg-bg-secondary border border-bg-elevated rounded-md">
+            <div class="flex items-center justify-center gap-6 text-xs text-text-muted">
+              <span class="flex items-center gap-1.5">
+                <kbd class="px-1.5 py-0.5 bg-bg-tertiary border border-bg-elevated rounded text-[10px]">N</kbd>
+                <span>New session</span>
+              </span>
+              <span class="flex items-center gap-1.5">
+                <kbd class="px-1.5 py-0.5 bg-bg-tertiary border border-bg-elevated rounded text-[10px]">Enter</kbd>
+                <span>Submit</span>
+              </span>
+              <span class="flex items-center gap-1.5">
+                <kbd class="px-1.5 py-0.5 bg-bg-tertiary border border-bg-elevated rounded text-[10px]">Esc</kbd>
+                <span>Cancel</span>
+              </span>
+            </div>
+          </div>
+          <div class="mt-2 text-xs text-text-muted font-mono">
+            &lt;kbd&gt; styling: px-1.5 py-0.5 bg-bg-tertiary border border-bg-elevated rounded text-[10px]
+          </div>
+        </div>
+
+        <!-- New Session Prompt -->
+        <div>
+          <h3 class="text-sm font-semibold text-text-secondary uppercase tracking-wide mb-4">New Session Prompt</h3>
+          <div class="space-y-4">
+            <!-- Unfocused state -->
+            <div class="rounded-lg border bg-bg-secondary/50 border-bg-elevated hover:border-bg-hover hover:bg-bg-secondary transition-all">
+              <div class="flex items-center gap-3 px-4 py-3">
+                <div class="w-6 h-6 rounded-md flex items-center justify-center bg-bg-tertiary text-text-muted shrink-0">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                  </svg>
+                </div>
+                <span class="flex-1 text-sm text-text-muted">Start a new session...</span>
+                <kbd class="px-1.5 py-0.5 text-[10px] text-text-muted bg-bg-tertiary border border-bg-elevated rounded">N</kbd>
+              </div>
+            </div>
+            <!-- Focused state -->
+            <div class="rounded-lg border bg-bg-secondary border-accent-primary/50 shadow-lg shadow-accent-primary/5 transition-all">
+              <div class="flex items-center gap-3 px-4 py-3">
+                <div class="w-6 h-6 rounded-md flex items-center justify-center bg-accent-primary/20 text-accent-primary shrink-0">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                  </svg>
+                </div>
+                <span class="flex-1 text-sm text-text-primary">Implement user authentication...</span>
+                <button class="flex items-center gap-1.5 px-2 py-1 rounded-md text-xs border border-bg-elevated bg-bg-tertiary text-text-primary">
+                  <svg class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                  </svg>
+                  <span>my-project</span>
+                </button>
+                <button class="px-3 py-1 bg-accent-primary text-bg-primary text-xs font-medium rounded-md hover:bg-accent-primary/90">
+                  Start
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Empty State -->
+        <div>
+          <h3 class="text-sm font-semibold text-text-secondary uppercase tracking-wide mb-4">Empty State</h3>
+          <div class="p-4 bg-bg-secondary border border-bg-elevated rounded-md">
+            <div class="py-12 text-center">
+              <div class="w-12 h-12 mx-auto mb-4 rounded-md bg-bg-tertiary flex items-center justify-center">
+                <svg class="w-6 h-6 text-text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+              </div>
+              <h2 class="text-base font-medium text-text-secondary mb-2">No sessions yet</h2>
+              <p class="text-sm text-text-muted max-w-xs mx-auto">
+                Start a new session above to begin tracking your conversations.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <!-- PR Indicator Badge -->
+        <div>
+          <h3 class="text-sm font-semibold text-text-secondary uppercase tracking-wide mb-4">PR Indicator Badge</h3>
+          <div class="flex flex-wrap gap-4 p-4 bg-bg-secondary border border-bg-elevated rounded-md">
+            <span class="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-diff-add/15 text-diff-add">
+              <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 16 16">
+                <path d="M1.5 3.25a2.25 2.25 0 1 1 3 2.122v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.25 2.25 0 0 1 1.5 3.25Zm5.677-.177L9.573.677A.25.25 0 0 1 10 .854V2.5h1A2.5 2.5 0 0 1 13.5 5v5.628a2.251 2.251 0 1 1-1.5 0V5a1 1 0 0 0-1-1h-1v1.646a.25.25 0 0 1-.427.177L7.177 3.427a.25.25 0 0 1 0-.354ZM3.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm0 9.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm8.25.75a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0Z" />
+              </svg>
+              #42
+            </span>
+            <span class="shrink-0 px-1.5 py-0.5 bg-diff-hunk/20 text-diff-hunk text-[10px] font-medium rounded">Remote</span>
+            <span class="shrink-0 px-1.5 py-0.5 bg-accent-secondary/20 text-accent-secondary text-[10px] font-medium rounded">Interactive</span>
+          </div>
+        </div>
+      </div>
+    </section>
+  `;
+}
+
 // Mock data for component library - reuses actual render functions
 function getMockSessions(): Session[] {
   const now = new Date().toISOString();
@@ -797,38 +1322,6 @@ function getMockSessions(): Session[] {
   ];
 }
 
-function getMockMessages(): Message[] {
-  return [
-    {
-      id: 1,
-      session_id: "mock-1",
-      role: "user",
-      content: "Can you help me fix the build error?",
-      content_blocks: [],
-      timestamp: new Date().toISOString(),
-      message_index: 0,
-    },
-    {
-      id: 2,
-      session_id: "mock-1",
-      role: "assistant",
-      content: "Of course! Let me take a look at the error message. It looks like there's a type mismatch in the `handleSubmit` function.",
-      content_blocks: [],
-      timestamp: new Date().toISOString(),
-      message_index: 1,
-    },
-    {
-      id: 3,
-      session_id: "mock-1",
-      role: "system",
-      content: "Session resumed from previous conversation.",
-      content_blocks: [],
-      timestamp: new Date().toISOString(),
-      message_index: 2,
-    },
-  ];
-}
-
 function getMockHeaderSession(): Session {
   const now = new Date().toISOString();
   return {
@@ -853,7 +1346,6 @@ function getMockHeaderSession(): Session {
 
 function renderComponentsSection(): string {
   const mockSessions = getMockSessions();
-  const mockMessages = getMockMessages();
 
   return `
     <section id="components" class="mb-16">
@@ -868,18 +1360,6 @@ function renderComponentsSection(): string {
           </div>
         </div>
 
-        <!-- Messages -->
-        <div>
-          <h3 class="text-sm font-semibold text-text-secondary uppercase tracking-wide mb-4">Messages</h3>
-          <div class="bg-bg-secondary border border-bg-elevated rounded-md overflow-hidden">
-            <div class="p-4">
-              ${mockMessages.map((msg, idx) =>
-                renderMessageBlock(msg, mockMessages, idx, idx > 0 ? mockMessages[idx - 1]?.role ?? null : null)
-              ).join("")}
-            </div>
-          </div>
-        </div>
-
         <!-- Status Indicators -->
         <div>
           <h3 class="text-sm font-semibold text-text-secondary uppercase tracking-wide mb-4">Status Indicators</h3>
@@ -890,15 +1370,6 @@ function renderComponentsSection(): string {
             ${renderConnectionStatusHtml(true)}
             <!-- Reconnecting -->
             ${renderConnectionStatusHtml(false)}
-            <!-- Typing indicator (visible for demo) -->
-            <div class="flex items-center gap-2 py-3 px-4 text-text-muted border-l-2 border-role-assistant">
-              <div class="flex gap-1">
-                <span class="w-1.5 h-1.5 bg-text-muted rounded-full animate-bounce" style="animation-delay: 0ms"></span>
-                <span class="w-1.5 h-1.5 bg-text-muted rounded-full animate-bounce" style="animation-delay: 150ms"></span>
-                <span class="w-1.5 h-1.5 bg-text-muted rounded-full animate-bounce" style="animation-delay: 300ms"></span>
-              </div>
-              <span class="text-sm">Claude is working...</span>
-            </div>
           </div>
         </div>
 
