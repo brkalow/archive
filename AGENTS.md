@@ -32,11 +32,31 @@ The dev server defaults to port 3000 and automatically selects the next availabl
 
 ## Architecture Notes
 
-- **Server**: Uses `Bun.serve()` with WebSocket support for live streaming
-- **Database**: SQLite via `bun:sqlite` (file: `sessions.db`)
-- **Frontend**: Server-rendered HTML with client-side hydration, Tailwind CSS v4
+- **Server**: Uses `Bun.serve()` with WebSocket support for live streaming (`src/server.ts`)
+- **Database**: SQLite via `bun:sqlite` (file: `data/sessions.db`)
+- **Frontend**: React SPA with client-side routing (`src/client/`), Tailwind CSS v4
 - **CLI**: Located in `cli/`, entry point is `cli/index.ts`
 - **Component Library**: Visit `/_components` to browse all design tokens, typography, and UI primitives
+
+### Directory Structure
+```
+src/
+├── server.ts       # Main server entry point
+├── routes/         # API and page route handlers
+├── client/         # React frontend (App.tsx, components/, hooks/)
+├── db/             # Database schema and repository
+├── middleware/     # Auth middleware
+├── lib/            # Shared utilities (daemon connections, rate limiting, etc.)
+└── views/          # Server-rendered HTML templates
+
+cli/
+├── index.ts        # CLI entry point
+├── adapters/       # AI harness adapters (claude-code, etc.)
+├── daemon/         # Background daemon for live streaming
+└── lib/            # CLI utilities
+
+tests/              # Organized by domain (db/, cli/, client/, integration/)
+```
 
 ## Planning and Documentation
 
@@ -68,7 +88,19 @@ The app uses Clerk for authentication with Google sign-in. See `specs/auth.md` f
 
 ### Testing
 ```sh
-bun test
+bun test                    # Run all tests
+bun test tests/db/          # Run tests in a specific directory
+bun test --watch            # Watch mode
+```
+
+Database tests use `:memory:` SQLite for isolation—see `tests/db/` for examples.
+
+### Useful Scripts
+```sh
+bun run dev                 # Start dev server with hot reload
+bun run seed                # Seed database with sample data
+bun run build:cli           # Build CLI binary
+bun run build:cli:release   # Build CLI with archive for distribution
 ```
 
 ### Creating commits
