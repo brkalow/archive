@@ -2,15 +2,25 @@
 
 A web application for storing and viewing Claude Code sessions.
 
-## Contributing Learnings
+## Learned Patterns
 
-When you discover something critical for effective development in this project, add it to the appropriate section below. This helps future agents work more effectively.
-
-**What to capture:**
-- Gotchas or non-obvious behaviors
+**After completing a task, add any gotchas or non-obvious discoveries here.** This helps future agents work more effectively. Capture things like:
+- Gotchas or non-obvious behaviors you encountered
 - Patterns that work well (or don't)
 - Architectural decisions and their rationale
 - Commands or workflows that are frequently needed
+
+### Session JSONL Format
+- Session files are JSONL with one message per line
+- Each line has a `message` object with `role` ("human", "user", or "assistant") and `content`
+- Metadata like `gitBranch` and `model` may appear at the message level
+- Files touched can be extracted from `tool_use` blocks with names `Write`, `Edit`, or `NotebookEdit`
+
+### Git Diff Extraction
+- The upload command extracts touched files from the session and filters the diff to only those files
+- If a branch from session metadata no longer exists (merged/deleted), diff extraction gracefully returns null
+
+---
 
 ## Quick Start
 
@@ -63,17 +73,3 @@ bun test
 
 ### Creating commits
 Prefer smaller implementation chunks broken into commits. When asked to implement a plan, create a new branch.
-
-## Learned Patterns
-
-<!-- Add learnings here as you discover them -->
-
-### Session JSONL Format
-- Session files are JSONL with one message per line
-- Each line has a `message` object with `role` ("human", "user", or "assistant") and `content`
-- Metadata like `gitBranch` and `model` may appear at the message level
-- Files touched can be extracted from `tool_use` blocks with names `Write`, `Edit`, or `NotebookEdit`
-
-### Git Diff Extraction
-- The upload command extracts touched files from the session and filters the diff to only those files
-- If a branch from session metadata no longer exists (merged/deleted), diff extraction gracefully returns null
