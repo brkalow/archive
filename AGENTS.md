@@ -103,5 +103,11 @@ bun run build:cli           # Build CLI binary
 bun run build:cli:release   # Build CLI with archive for distribution
 ```
 
+### Verifying UI Changes
+Always verify UI changes in the browser. Seed the database first for realistic test data:
+```sh
+bun run seed && bun run dev
+```
+
 ### Creating commits
 Prefer smaller implementation chunks broken into commits. When asked to implement a plan, create a new branch.
