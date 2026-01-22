@@ -280,5 +280,6 @@ function getToolStatus(result?: ToolResultBlock): JSX.Element | null {
   if (result.is_error) {
     return <span className="text-diff-del">✗</span>;
   }
-  return <span className="text-diff-add">✓</span>;
+  // Only show indicator for errors, not for success
+  return null;
 }

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { TextBlock } from './TextBlock';
 import { ToolLine, ThinkingLine } from './ActivityLine';
 import type { Message, ContentBlock, ToolResultBlock, ToolUseBlock, ThinkingBlock } from '../../db/schema';
@@ -37,10 +37,16 @@ function IconRobot({ className = 'w-3.5 h-3.5' }: { className?: string }) {
   );
 }
 
-function IconChevron({ className = 'w-3.5 h-3.5' }: { className?: string }) {
+function IconChevron({ className = 'w-3.5 h-3.5', expanded = false }: { className?: string; expanded?: boolean }) {
   return (
-    <svg className={className} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
-      <path d="M5 6l3 3 3-3" />
+    <svg
+      className={`${className} transition-transform ${expanded ? 'rotate-90' : ''}`}
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
+      <path d="M6 4l4 4-4 4" />
     </svg>
   );
 }
@@ -50,76 +56,131 @@ interface AgentTurnProps {
   toolResults: Map<string, ToolResultBlock>;
 }
 
+function pluralize(count: number, singular: string): string {
+  return `${count} ${singular}${count !== 1 ? 's' : ''}`;
+}
+
+function formatDuration(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  const seconds = ms / 1000;
+  if (seconds < 60) return `${seconds.toFixed(1)}s`;
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = Math.floor(seconds % 60);
+  return `${minutes}m ${remainingSeconds}s`;
+}
+
+interface BlockItem {
+  block: ContentBlock;
+  key: string;
+  messageId: number;
+  isActivity: boolean;
+}
+
 export function AgentTurn({ messages, toolResults }: AgentTurnProps) {
-  // Count tool calls and text messages for the turn header
-  const { toolCount, messageCount } = useMemo(() => {
+  // Collect all blocks in order, tracking which are activity (tools/thinking) vs text
+  const { allBlocks, toolCount, totalDurationMs } = useMemo(() => {
+    const blocks: BlockItem[] = [];
     let tools = 0;
-    let msgs = 0;
+    let durationMs = 0;
 
     for (const message of messages) {
-      for (const block of message.content_blocks || []) {
-        if (block.type === 'tool_use') {
-          tools++;
-        } else if (block.type === 'text' && block.text.trim()) {
-          msgs++;
+      for (let i = 0; i < (message.content_blocks ?? []).length; i++) {
+        const block = message.content_blocks![i]!;
+        const key = `${message.id}-${i}`;
+
+        if (block.type === 'text' && block.text.trim()) {
+          blocks.push({ block, key, messageId: message.id, isActivity: false });
+        } else if (block.type === 'tool_use' || block.type === 'thinking') {
+          blocks.push({ block, key, messageId: message.id, isActivity: true });
+          if (block.type === 'tool_use') tools++;
+          if (block.type === 'thinking' && (block as { duration_ms?: number }).duration_ms) {
+            durationMs += (block as { duration_ms: number }).duration_ms;
+          }
         }
       }
     }
 
-    return { toolCount: tools, messageCount: msgs };
+    return { allBlocks: blocks, toolCount: tools, totalDurationMs: durationMs };
   }, [messages]);
 
-  // Build the turn header text
-  const headerParts: string[] = [];
-  if (toolCount > 0) {
-    headerParts.push(`${toolCount} tool call${toolCount !== 1 ? 's' : ''}`);
-  }
-  if (messageCount > 0) {
-    headerParts.push(`${messageCount} message${messageCount !== 1 ? 's' : ''}`);
-  }
-  const headerText = headerParts.join(', ') || 'response';
+  // Split blocks: activity section (up to last tool/thinking) and trailing text (response)
+  const lastActivityIndex = allBlocks.findLastIndex(b => b.isActivity);
+  const activitySection = lastActivityIndex >= 0 ? allBlocks.slice(0, lastActivityIndex + 1) : [];
+  const trailingTextBlocks = lastActivityIndex >= 0 ? allBlocks.slice(lastActivityIndex + 1) : allBlocks;
+
+  // Auto-collapse when response first arrives during streaming
+  const [expanded, setExpanded] = useState(trailingTextBlocks.length === 0);
+  const hadTextRef = useRef(trailingTextBlocks.length > 0);
+
+  useEffect(() => {
+    const hasText = trailingTextBlocks.length > 0;
+    // Collapse when response first arrives (transition from no text to has text)
+    if (hasText && !hadTextRef.current) {
+      setExpanded(false);
+    }
+    hadTextRef.current = hasText;
+  }, [trailingTextBlocks.length]);
+
+  // Build summary text
+  const showSummary = toolCount > 0;
+  const summaryText = [
+    toolCount > 0 && pluralize(toolCount, 'tool call'),
+    trailingTextBlocks.length > 0 && pluralize(trailingTextBlocks.length, 'message'),
+  ].filter(Boolean).join(', ');
+  const durationText = totalDurationMs > 0 ? formatDuration(totalDurationMs) : null;
 
   return (
     <div className="agent-turn">
-      {/* Turn header */}
-      <div className="turn-header flex items-center gap-3 text-text-muted text-xs py-1">
-        <div className="flex-1 h-px bg-bg-elevated" />
-        <span>{headerText}</span>
-        <div className="flex-1 h-px bg-bg-elevated" />
-      </div>
+      {/* Collapsible activity summary (only if there are tool calls) */}
+      {showSummary && (
+        <>
+          <button
+            className="flex items-center gap-1.5 text-text-muted text-[13px] hover:text-text-secondary transition-colors px-2 py-1 rounded border border-bg-elevated"
+            onClick={() => setExpanded(!expanded)}
+          >
+            <IconChevron expanded={expanded} />
+            <span>{summaryText}</span>
+            {durationText && <span className="opacity-70">({durationText})</span>}
+          </button>
 
-      {/* Activity list */}
-      <div className="activity-list flex flex-col gap-0.5 py-1">
-        {messages.map((message) =>
-          (message.content_blocks ?? []).map((block, i) =>
-            renderBlock(block, i, message.id, toolResults)
-          )
-        )}
-      </div>
+          {expanded && (
+            <div className="activity-list flex flex-col gap-0.5 py-2">
+              {activitySection.map(({ block, key, messageId, isActivity }) => {
+                if (isActivity) {
+                  return renderActivityBlock(block, key, messageId, toolResults);
+                }
+                return (
+                  <div key={key} className="text-sm text-text-secondary leading-relaxed py-0.5 italic">
+                    <TextBlock text={(block as { text: string }).text} />
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Trailing text responses (always visible) */}
+      {trailingTextBlocks.length > 0 && showSummary && (
+        <div className="text-xs uppercase tracking-[0.1em] text-text-muted font-mono mt-3 mb-1">Response</div>
+      )}
+      {trailingTextBlocks.map(({ block, key }) => (
+        <div key={key} className="agent-text text-sm text-text-primary leading-relaxed py-1">
+          <TextBlock text={(block as { text: string }).text} />
+        </div>
+      ))}
     </div>
   );
 }
 
-function renderBlock(
+function renderActivityBlock(
   block: ContentBlock,
-  index: number,
+  key: string,
   messageId: number,
   toolResults: Map<string, ToolResultBlock>
 ): JSX.Element | null {
-  const key = `${messageId}-${index}`;
-
   switch (block.type) {
-    case 'text':
-      // Agent text renders as full-width prose
-      if (!block.text.trim()) return null;
-      return (
-        <div key={key} className="agent-text text-sm text-text-primary leading-relaxed py-0.5">
-          <TextBlock text={block.text} />
-        </div>
-      );
-
     case 'tool_use':
-      // Special handling for certain tools
       if (block.name === 'TodoWrite') {
         return <TodoWriteLine key={key} block={block as ToolUseBlock} />;
       }
@@ -129,7 +190,6 @@ function renderBlock(
       if (block.name === 'Task') {
         return <TaskLine key={key} block={block as ToolUseBlock} result={toolResults.get(block.id)} />;
       }
-      // Generic tool line
       return (
         <ToolLine
           key={key}
@@ -140,24 +200,6 @@ function renderBlock(
 
     case 'thinking':
       return <ThinkingLine key={key} block={block as ThinkingBlock} />;
-
-    case 'tool_result':
-      // Skip - rendered inline with tool_use
-      return null;
-
-    case 'image':
-      return (
-        <div key={key} className="text-text-muted text-sm py-0.5">
-          [Image: {(block as ContentBlock & { type: 'image' }).filename || 'attachment'}]
-        </div>
-      );
-
-    case 'file':
-      return (
-        <div key={key} className="text-text-muted text-sm py-0.5">
-          [File: {(block as ContentBlock & { type: 'file' }).filename}]
-        </div>
-      );
 
     default:
       return null;
@@ -183,14 +225,17 @@ function TodoWriteLine({ block }: TodoWriteLineProps) {
         <span className="font-medium">Tasks</span>
       </div>
       <div className="ml-5 mt-1 space-y-0.5">
-        {todos.map((todo, i) => (
-          <div key={i} className="flex items-center gap-1.5 text-[13px]">
-            {getStatusIcon(todo.status)}
-            <span className={todo.status === 'completed' ? 'text-text-muted line-through' : 'text-text-primary'}>
-              {todo.content}
-            </span>
-          </div>
-        ))}
+        {todos.map((todo, i) => {
+          const icon = getStatusIcon(todo.status);
+          return (
+            <div key={i} className="flex items-center gap-1.5 text-[13px]">
+              {icon}
+              <span className={todo.status === 'completed' ? 'text-text-muted line-through' : 'text-text-primary'}>
+                {todo.content}
+              </span>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -255,6 +300,17 @@ const SUBAGENT_CONFIG: Record<string, string> = {
   'feature-dev:code-architect': 'Architect',
 };
 
+function getTaskStatus(result?: ToolResultBlock): { status: string | null; statusColor: string } {
+  if (!result) {
+    return { status: '...', statusColor: 'text-text-muted' };
+  }
+  if (result.is_error) {
+    return { status: '✗', statusColor: 'text-diff-del' };
+  }
+  // Only show indicator for errors or pending, not for success
+  return { status: null, statusColor: '' };
+}
+
 function TaskLine({ block, result }: TaskLineProps) {
   const [expanded, setExpanded] = useState(false);
 
@@ -266,39 +322,25 @@ function TaskLine({ block, result }: TaskLineProps) {
   const description = input.description || input.prompt || 'Sub-task';
   const agentType = input.subagent_type || 'general-purpose';
   const agentName = SUBAGENT_CONFIG[agentType] || agentType;
-
-  const status = result ? (result.is_error ? '✗' : '✓') : '...';
-  const statusColor = result ? (result.is_error ? 'text-diff-del' : 'text-diff-add') : 'text-text-muted';
-
+  const { status, statusColor } = getTaskStatus(result);
   const hasContent = result?.content && result.content.length > 0;
 
-  const sharedClassName = "flex items-center gap-1.5 text-text-muted text-[13px]";
-  const interactiveClassName = `${sharedClassName} hover:text-text-secondary transition-colors`;
+  const baseClassName = "flex items-center gap-1.5 text-text-muted text-[13px]";
+  const Element = hasContent ? 'button' : 'div';
+  const elementProps = hasContent
+    ? { className: `${baseClassName} hover:text-text-secondary transition-colors`, onClick: () => setExpanded(!expanded) }
+    : { className: baseClassName };
 
   return (
     <div className="task-line py-0.5">
-      {hasContent ? (
-        <button
-          className={interactiveClassName}
-          onClick={() => setExpanded(!expanded)}
-        >
-          <span className={`flex-shrink-0 ${expanded ? 'text-text-secondary' : ''}`}>
-            {expanded ? <IconChevron /> : <IconRobot />}
-          </span>
-          <span className="font-medium">{agentName}</span>
-          <span className="truncate max-w-[300px]">{description.slice(0, 50)}</span>
-          <span className={statusColor}>{status}</span>
-        </button>
-      ) : (
-        <div className={sharedClassName}>
-          <span className="flex-shrink-0">
-            <IconRobot />
-          </span>
-          <span className="font-medium">{agentName}</span>
-          <span className="truncate max-w-[300px]">{description.slice(0, 50)}</span>
-          <span className={statusColor}>{status}</span>
-        </div>
-      )}
+      <Element {...elementProps}>
+        <span className={`flex-shrink-0 ${expanded ? 'text-text-secondary' : ''}`}>
+          {expanded ? <IconChevron expanded /> : <IconRobot />}
+        </span>
+        <span className="font-medium">{agentName}</span>
+        <span className="truncate max-w-[300px]">{description.slice(0, 50)}</span>
+        {status && <span className={statusColor}>{status}</span>}
+      </Element>
 
       {expanded && result?.content && (
         <div className="ml-5 mt-1">
@@ -314,10 +356,10 @@ function TaskLine({ block, result }: TaskLineProps) {
   );
 }
 
-function getStatusIcon(status: string): JSX.Element {
+function getStatusIcon(status: string): JSX.Element | null {
   switch (status) {
     case 'completed':
-      return <span className="text-diff-add">✓</span>;
+      return null; // No indicator for success
     case 'in_progress':
       return <span className="text-accent-primary">●</span>;
     default:

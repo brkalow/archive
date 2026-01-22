@@ -400,6 +400,181 @@ function generateSession(
   return { session, messages, diffs, review };
 }
 
+// Generate a session with many tool calls to test the collapsible summary UI
+function generateRichSession(): {
+  session: Omit<Session, "created_at" | "updated_at" | "client_id">;
+  messages: Omit<Message, "id">[];
+  diffs: Omit<Diff, "id">[];
+} {
+  const sessionId = `seed_rich_${generateId()}`;
+
+  const session: Omit<Session, "created_at" | "updated_at" | "client_id"> = {
+    id: sessionId,
+    title: "Implement user authentication with OAuth",
+    description: "Full implementation of OAuth flow with multiple file changes",
+    claude_session_id: crypto.randomUUID(),
+    agent_session_id: null,
+    pr_url: null,
+    share_token: null,
+    project_path: "/Users/dev/projects/webapp",
+    model: "claude-sonnet-4-20250514",
+    harness: "Claude Code",
+    repo_url: "https://github.com/example/webapp",
+    branch: "feature/oauth",
+    status: "complete",
+    last_activity_at: null,
+    user_id: "user_38VcUjUfacf8bOePoGuK5oc4I9D",
+    interactive: false,
+    remote: false,
+    visibility: "public",
+  };
+
+  const messages: Omit<Message, "id">[] = [];
+  let messageIndex = 0;
+
+  // User message
+  messages.push({
+    session_id: sessionId,
+    role: "user",
+    content: "Implement OAuth authentication with Google and GitHub providers",
+    content_blocks: [textBlock("Implement OAuth authentication with Google and GitHub providers")],
+    timestamp: sqliteDatetime(1),
+    message_index: messageIndex++,
+  });
+
+  // First agent turn: exploration with multiple reads
+  const readTools = [
+    toolUseBlock("Read", { file_path: "/Users/dev/projects/webapp/src/auth/index.ts" }),
+    toolUseBlock("Read", { file_path: "/Users/dev/projects/webapp/src/config.ts" }),
+    toolUseBlock("Read", { file_path: "/Users/dev/projects/webapp/package.json" }),
+    toolUseBlock("Glob", { pattern: "src/auth/**/*.ts" }),
+    toolUseBlock("Grep", { pattern: "authentication", path: "src/" }),
+  ];
+
+  messages.push({
+    session_id: sessionId,
+    role: "assistant",
+    content: "I'll implement OAuth authentication. Let me first explore the codebase.",
+    content_blocks: [
+      thinkingBlock("Need to understand the current auth setup and dependencies before implementing OAuth."),
+      textBlock("I'll implement OAuth authentication with Google and GitHub providers. Let me first explore the current authentication setup."),
+      ...readTools,
+    ],
+    timestamp: sqliteDatetime(1),
+    message_index: messageIndex++,
+  });
+
+  // Tool results
+  messages.push({
+    session_id: sessionId,
+    role: "user",
+    content: "[Tool results]",
+    content_blocks: readTools.map((t) => toolResultBlock(t.id, `// Contents of ${(t.input as { file_path?: string }).file_path || "search"}\nexport const auth = {};`)),
+    timestamp: sqliteDatetime(1),
+    message_index: messageIndex++,
+  });
+
+  // Second agent turn: implementation with many writes
+  const writeTools = [
+    toolUseBlock("Write", { file_path: "/Users/dev/projects/webapp/src/auth/oauth.ts", content: "// OAuth implementation" }),
+    toolUseBlock("Write", { file_path: "/Users/dev/projects/webapp/src/auth/providers/google.ts", content: "// Google provider" }),
+    toolUseBlock("Write", { file_path: "/Users/dev/projects/webapp/src/auth/providers/github.ts", content: "// GitHub provider" }),
+    toolUseBlock("Edit", { file_path: "/Users/dev/projects/webapp/src/auth/index.ts", old_string: "export const auth", new_string: "export const auth with OAuth" }),
+    toolUseBlock("Edit", { file_path: "/Users/dev/projects/webapp/src/config.ts", old_string: "// config", new_string: "// config with OAuth" }),
+    toolUseBlock("Bash", { command: "bun add passport passport-google-oauth20 passport-github2" }),
+  ];
+
+  messages.push({
+    session_id: sessionId,
+    role: "assistant",
+    content: "Now I'll implement the OAuth providers and update the configuration.",
+    content_blocks: [
+      thinkingBlock("I'll create the OAuth module with support for both Google and GitHub."),
+      textBlock("Now I'll implement the OAuth providers and update the configuration."),
+      ...writeTools,
+      textBlock("I've created the OAuth implementation with both providers."),
+    ],
+    timestamp: sqliteDatetime(1),
+    message_index: messageIndex++,
+  });
+
+  // Tool results
+  messages.push({
+    session_id: sessionId,
+    role: "user",
+    content: "[Tool results]",
+    content_blocks: writeTools.map((t) => toolResultBlock(t.id, "Success")),
+    timestamp: sqliteDatetime(1),
+    message_index: messageIndex++,
+  });
+
+  // Third agent turn: testing with Task subagent
+  const testTools = [
+    toolUseBlock("Task", { description: "Run OAuth tests", prompt: "Run the authentication test suite", subagent_type: "Bash" }),
+    toolUseBlock("Bash", { command: "bun test src/auth/" }),
+  ];
+
+  messages.push({
+    session_id: sessionId,
+    role: "assistant",
+    content: "Let me run the tests to verify the implementation.",
+    content_blocks: [
+      textBlock("Let me run the tests to verify the implementation."),
+      ...testTools,
+      textBlock("All tests pass. The OAuth implementation is complete."),
+    ],
+    timestamp: sqliteDatetime(1),
+    message_index: messageIndex++,
+  });
+
+  // Tool results
+  messages.push({
+    session_id: sessionId,
+    role: "user",
+    content: "[Tool results]",
+    content_blocks: testTools.map((t) => toolResultBlock(t.id, "✓ 12 tests passed")),
+    timestamp: sqliteDatetime(1),
+    message_index: messageIndex++,
+  });
+
+  // Final message
+  messages.push({
+    session_id: sessionId,
+    role: "assistant",
+    content: "OAuth authentication is now implemented with Google and GitHub providers.",
+    content_blocks: [
+      textBlock("OAuth authentication is now fully implemented with both Google and GitHub providers. The implementation includes:\n\n- OAuth module with passport integration\n- Google OAuth provider\n- GitHub OAuth provider\n- Updated configuration\n- All tests passing"),
+    ],
+    timestamp: sqliteDatetime(1),
+    message_index: messageIndex++,
+  });
+
+  const diffs: Omit<Diff, "id">[] = [
+    {
+      session_id: sessionId,
+      filename: "src/auth/oauth.ts",
+      diff_content: sampleDiffs[0]!.content,
+      diff_index: 0,
+      additions: 45,
+      deletions: 0,
+      is_session_relevant: true,
+      status: "added",
+    },
+    {
+      session_id: sessionId,
+      filename: "src/auth/providers/google.ts",
+      diff_content: sampleDiffs[1]!.content,
+      diff_index: 1,
+      additions: 32,
+      deletions: 0,
+      is_session_relevant: true,
+      status: "added",
+    },
+  ];
+
+  return { session, messages, diffs };
+}
+
 // Main seed function
 async function seed() {
   console.log(`Seeding database at ${dbPath}...`);
@@ -413,6 +588,15 @@ async function seed() {
     db.run("DELETE FROM messages");
     db.run("DELETE FROM sessions");
     console.log("Cleaned.");
+  }
+
+  // Add the rich session for testing collapsible summaries
+  const richData = generateRichSession();
+  try {
+    repo.createSessionWithDataAndReview(richData.session, richData.messages, richData.diffs, undefined);
+    console.log(`  Created session: ${richData.session.id} (rich) - "${richData.session.title}"`);
+  } catch (error) {
+    console.error(`  Failed to create rich session:`, error);
   }
 
   // Generate sessions with varied statuses
@@ -430,7 +614,7 @@ async function seed() {
     }
   }
 
-  console.log(`\nSeeded ${sessionCount} sessions successfully.`);
+  console.log(`\nSeeded ${sessionCount + 1} sessions successfully.`);
   console.log(`\nView at: http://localhost:${process.env.PORT || 3000}/`);
 }
 
