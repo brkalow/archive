@@ -471,6 +471,53 @@ export class SessionRepository {
   }
 
   /**
+   * Get distinct project paths from user's sessions, ordered by most recent usage.
+   * Used to populate the directory picker with recently-used directories.
+   */
+  getRecentProjectPaths(userId?: string, clientId?: string, limit = 10): string[] {
+    if (!userId && !clientId) return [];
+
+    let query: string;
+    let params: (string | number)[];
+
+    if (userId && clientId) {
+      query = `
+        SELECT project_path, MAX(created_at) as last_used
+        FROM sessions
+        WHERE (user_id = ? OR client_id = ?) AND project_path IS NOT NULL
+        GROUP BY project_path
+        ORDER BY last_used DESC
+        LIMIT ?
+      `;
+      params = [userId, clientId, limit];
+    } else if (userId) {
+      query = `
+        SELECT project_path, MAX(created_at) as last_used
+        FROM sessions
+        WHERE user_id = ? AND project_path IS NOT NULL
+        GROUP BY project_path
+        ORDER BY last_used DESC
+        LIMIT ?
+      `;
+      params = [userId, limit];
+    } else {
+      query = `
+        SELECT project_path, MAX(created_at) as last_used
+        FROM sessions
+        WHERE client_id = ? AND project_path IS NOT NULL
+        GROUP BY project_path
+        ORDER BY last_used DESC
+        LIMIT ?
+      `;
+      params = [clientId!, limit];
+    }
+
+    const stmt = this.db.prepare(query);
+    const results = stmt.all(...params) as { project_path: string }[];
+    return results.map(r => r.project_path);
+  }
+
+  /**
    * Convert SQLite integer fields to proper booleans for Session objects.
    */
   private normalizeSession(result: Record<string, unknown>): Session {

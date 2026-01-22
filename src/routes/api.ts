@@ -1460,11 +1460,14 @@ export function createApiRoutes(repo: SessionRepository) {
       const authError = requireAuth(auth);
       if (authError) return authError;
 
-      // Placeholder implementation - could be enhanced based on:
-      // 1. Hard-coded list from config
-      // 2. Fetched from connected daemon
-      // 3. User's configured repo allowlist
-      const repos: Array<{ path: string; name: string; recent?: boolean }> = [];
+      // Get recent project paths from user's session history
+      const recentPaths = repo.getRecentProjectPaths(auth.userId, auth.clientId, 10);
+
+      const repos = recentPaths.map(path => ({
+        path,
+        name: path.split('/').pop() || path,
+        recent: true,
+      }));
 
       return json({ repos });
     },

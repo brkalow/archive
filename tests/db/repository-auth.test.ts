@@ -229,4 +229,165 @@ describe("SessionRepository - Client Ownership", () => {
       expect(result).toBe(false);
     });
   });
+
+  describe("getRecentProjectPaths", () => {
+    test("returns empty array when no userId or clientId provided", () => {
+      expect(repo.getRecentProjectPaths()).toEqual([]);
+      expect(repo.getRecentProjectPaths(undefined, undefined)).toEqual([]);
+    });
+
+    test("returns distinct project paths", () => {
+      // Create sessions with different project paths
+      repo.createSession({
+        id: "session_1",
+        title: "First",
+        description: null,
+        claude_session_id: null,
+        pr_url: null,
+        share_token: null,
+        project_path: "/path/a",
+        model: null,
+        harness: null,
+        repo_url: null,
+        status: "complete",
+        last_activity_at: null,
+        interactive: false,
+      }, "client-123");
+
+      repo.createSession({
+        id: "session_2",
+        title: "Second",
+        description: null,
+        claude_session_id: null,
+        pr_url: null,
+        share_token: null,
+        project_path: "/path/b",
+        model: null,
+        harness: null,
+        repo_url: null,
+        status: "complete",
+        last_activity_at: null,
+        interactive: false,
+      }, "client-123");
+
+      repo.createSession({
+        id: "session_3",
+        title: "Third",
+        description: null,
+        claude_session_id: null,
+        pr_url: null,
+        share_token: null,
+        project_path: "/path/a", // Same path as first session
+        model: null,
+        harness: null,
+        repo_url: null,
+        status: "complete",
+        last_activity_at: null,
+        interactive: false,
+      }, "client-123");
+
+      const paths = repo.getRecentProjectPaths(undefined, "client-123");
+      // Should have 2 distinct paths
+      expect(paths).toHaveLength(2);
+      expect(paths).toContain("/path/a");
+      expect(paths).toContain("/path/b");
+    });
+
+    test("excludes sessions with null project_path", () => {
+      repo.createSession({
+        id: "session_1",
+        title: "With path",
+        description: null,
+        claude_session_id: null,
+        pr_url: null,
+        share_token: null,
+        project_path: "/valid/path",
+        model: null,
+        harness: null,
+        repo_url: null,
+        status: "complete",
+        last_activity_at: null,
+        interactive: false,
+      }, "client-123");
+
+      repo.createSession({
+        id: "session_2",
+        title: "Without path",
+        description: null,
+        claude_session_id: null,
+        pr_url: null,
+        share_token: null,
+        project_path: null,
+        model: null,
+        harness: null,
+        repo_url: null,
+        status: "complete",
+        last_activity_at: null,
+        interactive: false,
+      }, "client-123");
+
+      const paths = repo.getRecentProjectPaths(undefined, "client-123");
+      expect(paths).toEqual(["/valid/path"]);
+    });
+
+    test("respects limit parameter", () => {
+      for (let i = 0; i < 5; i++) {
+        repo.createSession({
+          id: `session_${i}`,
+          title: `Session ${i}`,
+          description: null,
+          claude_session_id: null,
+          pr_url: null,
+          share_token: null,
+          project_path: `/path/${i}`,
+          model: null,
+          harness: null,
+          repo_url: null,
+          status: "complete",
+          last_activity_at: null,
+          interactive: false,
+        }, "client-123");
+      }
+
+      const paths = repo.getRecentProjectPaths(undefined, "client-123", 3);
+      expect(paths).toHaveLength(3);
+    });
+
+    test("filters by userId when provided", () => {
+      repo.createSession({
+        id: "user_session",
+        title: "User session",
+        description: null,
+        claude_session_id: null,
+        pr_url: null,
+        share_token: null,
+        project_path: "/user/path",
+        model: null,
+        harness: null,
+        repo_url: null,
+        status: "complete",
+        last_activity_at: null,
+        interactive: false,
+      }, undefined, "user-123");
+
+      repo.createSession({
+        id: "other_session",
+        title: "Other session",
+        description: null,
+        claude_session_id: null,
+        pr_url: null,
+        share_token: null,
+        project_path: "/other/path",
+        model: null,
+        harness: null,
+        repo_url: null,
+        status: "complete",
+        last_activity_at: null,
+        interactive: false,
+      }, "client-456");
+
+      const paths = repo.getRecentProjectPaths("user-123");
+      expect(paths).toEqual(["/user/path"]);
+    });
+  });
 });
