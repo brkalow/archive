@@ -2339,23 +2339,10 @@ export function createApiRoutes(repo: SessionRepository) {
 
       // Enrich with invite status
       const enrichedSessions = sessions.map(s => {
-        // Check collaborator status
-        let inviteStatus: 'pending' | 'accepted' = 'accepted';
-        let role: string | null = null;
-
-        // First check by user_id
-        const byUserId = repo.getCollaboratorByUserId(s.id, auth.userId!);
-        if (byUserId) {
-          inviteStatus = byUserId.accepted_at ? 'accepted' : 'pending';
-          role = byUserId.role;
-        } else if (userInfo?.email) {
-          // Fall back to email lookup
-          const byEmail = repo.getCollaboratorByEmail(s.id, userInfo.email);
-          if (byEmail) {
-            inviteStatus = byEmail.accepted_at ? 'accepted' : 'pending';
-            role = byEmail.role;
-          }
-        }
+        // Check by user_id first, fall back to email
+        const collaborator =
+          repo.getCollaboratorByUserId(s.id, auth.userId!) ||
+          (userInfo?.email ? repo.getCollaboratorByEmail(s.id, userInfo.email) : null);
 
         return {
           id: s.id,
@@ -2365,8 +2352,8 @@ export function createApiRoutes(repo: SessionRepository) {
           updated_at: s.updated_at,
           model: s.model,
           harness: s.harness,
-          inviteStatus,
-          role,
+          inviteStatus: collaborator?.accepted_at ? 'accepted' : 'pending',
+          role: collaborator?.role ?? null,
         };
       });
 

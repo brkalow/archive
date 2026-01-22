@@ -60,12 +60,7 @@ export function useCollaborators(sessionId: string): UseCollaboratorsResult {
         const data = await res.json();
         setCollaborators(data.collaborators || []);
         setVisibilityState(data.visibility || 'private');
-        // The API may return an error message even with 200 status (for non-owners)
-        if (data.error) {
-          setError(data.error);
-        } else {
-          setError(null);
-        }
+        setError(data.error || null);
       } else if (res.status === 403) {
         setError('You do not have permission to view collaborators');
       } else {
