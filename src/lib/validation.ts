@@ -188,6 +188,40 @@ export const UpdateSessionFormSchema = z.object({
 });
 
 // ============================================================================
+// Session Sharing Schemas
+// ============================================================================
+
+// Collaborator role enum
+const CollaboratorRoleSchema = z.enum(["viewer", "contributor"]);
+
+// Session visibility enum
+const SessionVisibilitySchema = z.enum(["private", "public"]);
+
+// POST /api/sessions/:id/collaborators
+export const AddCollaboratorSchema = z.object({
+  email: z.string().email("Invalid email format"),
+  role: CollaboratorRoleSchema.default("viewer"),
+});
+
+// PATCH /api/sessions/:id/collaborators/:collaboratorId
+export const UpdateCollaboratorSchema = z.object({
+  role: CollaboratorRoleSchema,
+});
+
+// PUT /api/sessions/:id/visibility
+export const UpdateVisibilitySchema = z.object({
+  visibility: SessionVisibilitySchema,
+});
+
+// GET /api/sessions/:id/audit query params
+export const AuditLogQuerySchema = z.object({
+  limit: z
+    .string()
+    .optional()
+    .transform((val) => (val ? Math.min(parseInt(val, 10), 100) : 50)),
+});
+
+// ============================================================================
 // Validation Helpers
 // ============================================================================
 
@@ -326,3 +360,7 @@ export type CompleteSession = z.infer<typeof CompleteSessionSchema>;
 export type TimeseriesQuery = z.infer<typeof TimeseriesQuerySchema>;
 export type CreateSessionForm = z.infer<typeof CreateSessionFormSchema>;
 export type UpdateSessionForm = z.infer<typeof UpdateSessionFormSchema>;
+export type AddCollaborator = z.infer<typeof AddCollaboratorSchema>;
+export type UpdateCollaborator = z.infer<typeof UpdateCollaboratorSchema>;
+export type UpdateVisibility = z.infer<typeof UpdateVisibilitySchema>;
+export type AuditLogQuery = z.infer<typeof AuditLogQuerySchema>;

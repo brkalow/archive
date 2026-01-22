@@ -22,6 +22,15 @@ export type BrowserToServerMessage =
   | { type: "suggested_edit"; file: string; old_content: string; new_content: string };
 
 /**
+ * Collaboration event types for session sharing.
+ */
+export type CollaboratorEvent =
+  | { type: "collaborator_added"; id: number; email: string; role: string }
+  | { type: "collaborator_removed"; id: number; email: string }
+  | { type: "collaborator_role_changed"; id: number; email: string; oldRole: string; newRole: string }
+  | { type: "visibility_changed"; visibility: "public" | "private" };
+
+/**
  * Messages sent from the server to the browser.
  */
 export type ServerToBrowserMessage =
@@ -52,5 +61,7 @@ export type ServerToBrowserMessage =
   | { type: "feedback_queued"; message_id: string; position: number }
   | { type: "feedback_status"; message_id: string; status: "approved" | "rejected" | "expired" }
   | { type: "state"; state: "running" | "waiting" }
-  | { type: "output"; data: string };
+  | { type: "output"; data: string }
+  // Collaboration events
+  | CollaboratorEvent;
 

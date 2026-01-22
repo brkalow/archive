@@ -2,6 +2,7 @@ import { useState, useCallback, useRef, useEffect } from "react";
 import { stripSystemTags } from "../blocks";
 import { MessageList, type MessageListHandle } from "./MessageList";
 import { DiffPanel } from "./DiffPanel";
+import { ShareModal } from "./ShareModal";
 import { useToast, useClipboard } from "../hooks";
 import type { Session, Message, Diff, Review, Annotation } from "../../db/schema";
 
@@ -12,6 +13,8 @@ interface SessionDetailPageProps {
   shareUrl: string | null;
   review?: Review | null;
   annotationsByDiff: Record<number, Annotation[]>;
+  isOwner?: boolean;
+  pendingInvite?: boolean;
 }
 
 interface InteractiveState {
@@ -22,9 +25,13 @@ interface InteractiveState {
 }
 
 export function SessionDetailPage(props: SessionDetailPageProps) {
-  const { session, messages, diffs, shareUrl, review, annotationsByDiff } = props;
+  const { session, messages, diffs, shareUrl, review, annotationsByDiff, isOwner = true, pendingInvite = false } = props;
 
   // State
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [hasPendingInvite, setHasPendingInvite] = useState(pendingInvite);
+  const [isAcceptingInvite, setIsAcceptingInvite] = useState(false);
+  const [currentShareUrl, setCurrentShareUrl] = useState(shareUrl);
   const [connectionStatus, setConnectionStatus] = useState<"connected" | "disconnected" | "reconnecting">("disconnected");
   const [sessionStatus, setSessionStatus] = useState<"live" | "complete">(
     session.status === "live" ? "live" : "complete"
@@ -141,19 +148,51 @@ export function SessionDetailPage(props: SessionDetailPageProps) {
     [showToast]
   );
 
-  // Share handler
-  const shareSession = useCallback(async () => {
+  // Share handler - creates share token link
+  const createShareLink = useCallback(async () => {
     try {
       const res = await fetch(`/api/sessions/${encodeURIComponent(session.id)}/share`, {
         method: "POST",
+        credentials: "include",
       });
       if (res.ok) {
-        window.location.reload();
+        const data = await res.json();
+        const baseUrl = `${window.location.protocol}//${window.location.host}`;
+        const newShareUrl = `${baseUrl}/s/${data.share_token}`;
+        setCurrentShareUrl(newShareUrl);
+        showToast("Share link created", "success");
       } else {
         showToast("Failed to create share link", "error");
       }
     } catch {
       showToast("Failed to create share link", "error");
+    }
+  }, [session.id, showToast]);
+
+  // Open share modal
+  const openShareModal = useCallback(() => {
+    setShowShareModal(true);
+  }, []);
+
+  // Accept invite
+  const acceptInvite = useCallback(async () => {
+    setIsAcceptingInvite(true);
+    try {
+      const res = await fetch(`/api/sessions/${encodeURIComponent(session.id)}/collaborators/accept`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (res.ok) {
+        setHasPendingInvite(false);
+        showToast("Invite accepted", "success");
+      } else {
+        const data = await res.json();
+        showToast(data.message || "Failed to accept invite", "error");
+      }
+    } catch {
+      showToast("Failed to accept invite", "error");
+    } finally {
+      setIsAcceptingInvite(false);
     }
   }, [session.id, showToast]);
 
@@ -176,13 +215,50 @@ export function SessionDetailPage(props: SessionDetailPageProps) {
     >
       <Header
         session={session}
-        shareUrl={shareUrl}
+        shareUrl={currentShareUrl}
         sessionStatus={sessionStatus}
         connectionStatus={connectionStatus}
         isLive={isLive}
         onCopy={copy}
-        onShare={shareSession}
+        onShare={openShareModal}
       />
+
+      {/* Pending invite banner */}
+      {hasPendingInvite && (
+        <div className="bg-accent-primary/10 border-b border-accent-primary/20 px-6 py-3">
+          <div className="max-w-[1400px] mx-auto flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <svg className="w-5 h-5 text-accent-primary shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
+              </svg>
+              <span className="text-sm text-text-primary">
+                You've been invited to collaborate on this session.
+              </span>
+            </div>
+            <button
+              onClick={acceptInvite}
+              disabled={isAcceptingInvite}
+              className="px-4 py-1.5 bg-accent-primary hover:bg-accent-primary/90 text-bg-primary text-sm rounded-md font-medium transition-colors disabled:opacity-50"
+            >
+              {isAcceptingInvite ? "Accepting..." : "Accept Invite"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {showShareModal && (
+        <ShareModal
+          sessionId={session.id}
+          shareUrl={currentShareUrl}
+          isOwner={isOwner}
+          onClose={() => setShowShareModal(false)}
+          onCopy={(text) => {
+            copy(text);
+            showToast("Copied to clipboard", "success");
+          }}
+          onCreateShareLink={createShareLink}
+        />
+      )}
 
       <div className="max-w-[1400px] mx-auto px-6 lg:px-10 py-6">
         <div className={gridClass} data-content-grid>

@@ -806,6 +806,34 @@ const server = Bun.serve({
       GET: (req) => api.getSessionInfo(req.params.id, req),
     },
 
+    // Session sharing endpoints
+    "/api/sessions/:id/collaborators": {
+      GET: (req) => api.getCollaborators(req, req.params.id),
+      POST: (req) => api.addCollaborator(req, req.params.id),
+    },
+
+    // Note: /accept must come before /:collaboratorId to avoid "accept" being matched as a collaboratorId
+    "/api/sessions/:id/collaborators/accept": {
+      POST: (req) => api.acceptInvite(req, req.params.id),
+    },
+
+    "/api/sessions/:id/collaborators/:collaboratorId": {
+      PATCH: (req) => api.updateCollaborator(req, req.params.id, parseInt(req.params.collaboratorId, 10)),
+      DELETE: (req) => api.removeCollaborator(req, req.params.id, parseInt(req.params.collaboratorId, 10)),
+    },
+
+    "/api/sessions/:id/visibility": {
+      PUT: (req) => api.updateVisibility(req, req.params.id),
+    },
+
+    "/api/sessions/:id/audit": {
+      GET: (req) => api.getAuditLog(req, req.params.id),
+    },
+
+    "/api/sessions/shared-with-me": {
+      GET: (req) => api.getSessionsSharedWithMe(req),
+    },
+
     // Health check endpoint
     "/api/health": {
       GET: () => api.getHealth(),

@@ -8,8 +8,10 @@ interface SessionHeaderProps {
   model?: string;
   cwd: string;
   duration: string;
+  isOwner?: boolean;
   onInterrupt: () => void;
   onEndSession: () => void;
+  onShare?: () => void;
 }
 
 export function SessionHeader({
@@ -19,8 +21,10 @@ export function SessionHeader({
   model,
   cwd,
   duration,
+  isOwner = true,
   onInterrupt,
   onEndSession,
+  onShare,
 }: SessionHeaderProps) {
   const [showEndConfirm, setShowEndConfirm] = useState(false);
 
@@ -89,24 +93,34 @@ export function SessionHeader({
           </div>
 
           {/* Action buttons */}
-          {isActive && (
-            <div className="flex items-center gap-2">
-              {canInterrupt && (
-                <button
-                  onClick={onInterrupt}
-                  className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white text-sm rounded-md font-medium transition-colors"
-                >
-                  Interrupt
-                </button>
-              )}
+          <div className="flex items-center gap-2">
+            {onShare && (
               <button
-                onClick={handleEndClick}
-                className="px-3 py-1.5 bg-diff-del hover:bg-red-500 text-white text-sm rounded-md font-medium transition-colors"
+                onClick={onShare}
+                className="px-3 py-1.5 bg-bg-tertiary hover:bg-bg-elevated text-text-primary text-sm rounded-md font-medium transition-colors border border-bg-elevated"
               >
-                End
+                Share
               </button>
-            </div>
-          )}
+            )}
+            {isActive && isOwner && (
+              <>
+                {canInterrupt && (
+                  <button
+                    onClick={onInterrupt}
+                    className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white text-sm rounded-md font-medium transition-colors"
+                  >
+                    Interrupt
+                  </button>
+                )}
+                <button
+                  onClick={handleEndClick}
+                  className="px-3 py-1.5 bg-diff-del hover:bg-red-500 text-white text-sm rounded-md font-medium transition-colors"
+                >
+                  End
+                </button>
+              </>
+            )}
+          </div>
         </div>
 
         {/* Bottom row: Metadata - wraps on mobile */}
