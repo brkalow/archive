@@ -4,11 +4,10 @@ import {
   type QuestionPrompt,
   type PermissionPrompt,
   type ControlRequestPrompt as ControlRequestPromptType,
-  type StreamMessage,
   type ParsedDiff,
 } from "../hooks/useSpawnedSession";
 import { ControlRequestPrompt } from "./ControlRequestPrompt";
-import { SessionHeader } from "./SessionHeader";
+import { SessionView } from "./SessionView";
 import { SessionInput } from "./SessionInput";
 import { UserBubble } from "./UserBubble";
 import { AgentTurn } from "./AgentTurn";
@@ -18,7 +17,8 @@ import { DiffBlock } from "./DiffBlock";
 import { ShareModal } from "./ShareModal";
 import { buildToolResultMap } from "../blocks";
 import { isNearBottom, scrollToBottom } from "../liveSession";
-import type { Message, ContentBlock as SchemaContentBlock } from "../../db/schema";
+import { useToast, useClipboard } from "../hooks";
+import type { Message, ContentBlock as SchemaContentBlock, Session } from "../../db/schema";
 
 // Group messages into turns: each user message starts a new turn,
 // followed by consecutive assistant messages
@@ -92,14 +92,18 @@ export function SpawnedSessionView({
     useState<ControlRequestPromptType | null>(null);
   const [showShareModal, setShowShareModal] = useState(false);
   const [currentShareUrl, setCurrentShareUrl] = useState<string | null>(null);
-  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [hasPendingInvite, setHasPendingInvite] = useState(false);
   const [isAcceptingInvite, setIsAcceptingInvite] = useState(false);
   const [isOwner, setIsOwner] = useState(true); // Default to true until we know otherwise
+  const [showEndConfirm, setShowEndConfirm] = useState(false);
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const prevMessageCountRef = useRef(0);
   const [showNewMessagesButton, setShowNewMessagesButton] = useState(false);
+
+  // Hooks
+  const { showToast } = useToast();
+  const { copy } = useClipboard();
 
   const {
     state,
@@ -219,6 +223,35 @@ export function SpawnedSessionView({
   // Group messages into turns
   const turns = useMemo(() => groupMessagesIntoTurns(convertedMessages), [convertedMessages]);
 
+  // Create a session object for SessionView
+  // Note: Remote sessions are newly spawned and don't have pre-existing database records,
+  // so we use sensible defaults. Visibility defaults to "private" as a safe default for
+  // new sessions - users can share via the share modal if desired.
+  const session: Session = useMemo(() => ({
+    id: sessionId,
+    title: title,
+    status: state === "ended" || state === "failed" ? "complete" : "live",
+    created_at: startTime.toISOString(),
+    updated_at: new Date().toISOString(),
+    harness: harness,
+    model: model || null,
+    project_path: cwd,
+    client_id: null,
+    user_id: null,
+    claude_session_id: null,
+    agent_session_id: null,
+    pr_url: null,
+    pr_number: null,
+    interactive: true,
+    share_token: null,
+    description: null,
+    repo_url: null,
+    branch: null,
+    visibility: "private",
+    last_activity_at: null,
+    remote: true,
+  }), [sessionId, title, state, startTime, harness, model, cwd]);
+
   // Derive title from first user message
   useEffect(() => {
     if (title !== "New Session") return;
@@ -316,20 +349,11 @@ export function SpawnedSessionView({
     [controlRequest, sendControlResponse]
   );
 
-  // Toast helper
-  const showToast = useCallback((message: string, type: 'success' | 'error') => {
-    setToast({ message, type });
-    setTimeout(() => setToast(null), 3000);
-  }, []);
-
-  // Copy to clipboard
+  // Copy to clipboard with toast
   const copyToClipboard = useCallback((text: string) => {
-    navigator.clipboard.writeText(text).then(() => {
-      showToast("Copied to clipboard", "success");
-    }).catch(() => {
-      showToast("Failed to copy", "error");
-    });
-  }, [showToast]);
+    copy(text);
+    showToast("Copied to clipboard", "success");
+  }, [copy, showToast]);
 
   // Create share link
   const createShareLink = useCallback(async () => {
@@ -379,47 +403,25 @@ export function SpawnedSessionView({
     }
   }, [sessionId, showToast]);
 
+  // Handle end session with confirmation
+  const handleEndSession = useCallback(() => {
+    if (state === "running") {
+      setShowEndConfirm(true);
+    } else {
+      endSession();
+    }
+  }, [state, endSession]);
+
+  const confirmEndSession = useCallback(() => {
+    setShowEndConfirm(false);
+    endSession();
+  }, [endSession]);
+
   const showTypingIndicator = state === "running" || state === "starting";
 
-  return (
-    <div className="flex flex-col h-screen">
-      {/* Header */}
-      <SessionHeader
-        title={title}
-        state={state}
-        harness={harness}
-        model={model}
-        cwd={cwd}
-        duration={duration}
-        isOwner={isOwner}
-        onInterrupt={interrupt}
-        onEndSession={endSession}
-        onShare={openShareModal}
-      />
-
-      {/* Pending invite banner */}
-      {hasPendingInvite && (
-        <div className="bg-accent-primary/10 border-b border-accent-primary/20 px-6 py-3">
-          <div className="flex items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <svg className="w-5 h-5 text-accent-primary shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
-              </svg>
-              <span className="text-sm text-text-primary">
-                You've been invited to collaborate on this session.
-              </span>
-            </div>
-            <button
-              onClick={acceptInvite}
-              disabled={isAcceptingInvite}
-              className="px-4 py-1.5 bg-accent-primary hover:bg-accent-primary/90 text-bg-primary text-sm rounded-md font-medium transition-colors disabled:opacity-50"
-            >
-              {isAcceptingInvite ? "Accepting..." : "Accept Invite"}
-            </button>
-          </div>
-        </div>
-      )}
-
+  // Conversation content
+  const conversationContent = (
+    <div className="flex flex-col h-full relative">
       {/* Connection lost banner */}
       {state === "disconnected" && (
         <ConnectionLostBanner
@@ -432,76 +434,89 @@ export function SpawnedSessionView({
         />
       )}
 
-      {/* Main content area */}
-      <div className="flex-1 overflow-hidden flex">
-        {/* Message list */}
-        <div className={`${diffs.length > 0 ? "w-1/2" : "flex-1"} overflow-hidden flex flex-col relative`}>
-          <div className="flex items-center justify-between mb-4 px-6 pt-4">
-            <h2 className="text-sm font-semibold text-text-primary">
-              Conversation
-            </h2>
-            <span className="text-xs text-text-muted tabular-nums">
-              {convertedMessages.length} messages
-            </span>
-          </div>
-          <div
-            ref={scrollContainerRef}
-            className="flex-1 overflow-y-auto px-6"
-            onScroll={handleScroll}
-          >
-            {/* Chat bubble layout */}
-            <div className="flex flex-col gap-4 py-4">
-              {turns.map((turn, i) => {
-                if (turn.type === 'user') {
-                  const message = turn.messages[0];
-                  if (!message) return null;
-                  return <UserBubble key={`user-${message.id}`} message={message} />;
-                } else {
-                  return (
-                    <AgentTurn
-                      key={`agent-${turn.messages[0]?.id ?? i}`}
-                      messages={turn.messages}
-                      toolResults={toolResults}
-                    />
-                  );
-                }
-              })}
-
-              {/* Control request prompt (inline, SDK format) */}
-              {controlRequest && (
-                <ControlRequestPrompt
-                  request={controlRequest}
-                  onAllow={handleControlRequestAllow}
-                  onDeny={handleControlRequestDeny}
+      <div
+        ref={scrollContainerRef}
+        className="flex-1 overflow-y-auto px-6"
+        onScroll={handleScroll}
+      >
+        {/* Chat bubble layout */}
+        <div className="flex flex-col gap-4 py-4">
+          {turns.map((turn, i) => {
+            if (turn.type === 'user') {
+              const message = turn.messages[0];
+              if (!message) return null;
+              return <UserBubble key={`user-${message.id}`} message={message} />;
+            } else {
+              return (
+                <AgentTurn
+                  key={`agent-${turn.messages[0]?.id ?? i}`}
+                  messages={turn.messages}
+                  toolResults={toolResults}
                 />
-              )}
+              );
+            }
+          })}
 
-              {/* Typing indicator */}
-              {showTypingIndicator && <TypingIndicator />}
-            </div>
-          </div>
-
-          {/* New messages button */}
-          {showNewMessagesButton && (
-            <button
-              className="absolute bottom-4 left-1/2 -translate-x-1/2 px-4 py-2 bg-accent-primary text-white rounded-full shadow-lg hover:bg-accent-primary/90 transition-all"
-              onClick={handleScrollToBottom}
-            >
-              New messages
-            </button>
+          {/* Control request prompt (inline, SDK format) */}
+          {controlRequest && (
+            <ControlRequestPrompt
+              request={controlRequest}
+              onAllow={handleControlRequestAllow}
+              onDeny={handleControlRequestDeny}
+            />
           )}
-        </div>
 
-        {/* Diff panel - only show when there are diffs */}
-        {diffs.length > 0 && (
-          <div className="w-1/2 border-l border-bg-elevated overflow-hidden flex flex-col">
-            <SpawnedDiffPanel diffs={diffs} />
-          </div>
-        )}
+          {/* Typing indicator */}
+          {showTypingIndicator && <TypingIndicator />}
+        </div>
       </div>
 
-      {/* Input area */}
-      <SessionInput state={state} onSend={sendMessage} />
+      {/* New messages button */}
+      {showNewMessagesButton && (
+        <button
+          className="absolute bottom-4 left-1/2 -translate-x-1/2 px-4 py-2 bg-accent-primary text-white rounded-full shadow-lg hover:bg-accent-primary/90 transition-all"
+          onClick={handleScrollToBottom}
+        >
+          New messages
+        </button>
+      )}
+    </div>
+  );
+
+  // Diff panel content
+  const diffContent = diffs.length > 0 ? (
+    <SpawnedDiffPanel diffs={diffs} />
+  ) : null;
+
+  // Input area
+  const inputArea = (
+    <SessionInput state={state} onSend={sendMessage} />
+  );
+
+  return (
+    <>
+      <SessionView
+        session={session}
+        messages={convertedMessages}
+        diffs={diffs}
+        mode="remote"
+        remoteState={{ state, duration }}
+        remoteControls={{
+          onInterrupt: interrupt,
+          onEndSession: handleEndSession,
+        }}
+        shareUrl={currentShareUrl}
+        isOwner={isOwner}
+        onShare={openShareModal}
+        onCopy={copyToClipboard}
+        hasPendingInvite={hasPendingInvite}
+        isAcceptingInvite={isAcceptingInvite}
+        onAcceptInvite={acceptInvite}
+        conversationContent={conversationContent}
+        inputArea={inputArea}
+      >
+        {diffContent}
+      </SessionView>
 
       {/* Question modal */}
       {questionPrompt && (
@@ -536,16 +551,35 @@ export function SpawnedSessionView({
         />
       )}
 
-      {/* Toast notification */}
-      {toast && (
-        <div
-          className={`fixed bottom-4 right-4 px-4 py-2 rounded-md shadow-lg text-sm font-medium z-50 ${
-            toast.type === 'success'
-              ? 'bg-diff-add text-white'
-              : 'bg-diff-del text-white'
-          }`}
-        >
-          {toast.message}
+      {/* End confirmation dialog */}
+      {showEndConfirm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-bg-secondary border border-bg-elevated rounded-lg p-6 max-w-md mx-4 shadow-xl">
+            <h3 className="text-lg font-semibold text-text-primary mb-2">
+              End Session?
+            </h3>
+            <p className="text-text-muted mb-4">
+              Claude is still working on your request. Are you sure you want to
+              end this session?
+            </p>
+            <p className="text-text-muted text-sm mb-4">
+              The session will be saved and you can review it later.
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setShowEndConfirm(false)}
+                className="px-4 py-2 text-text-muted hover:text-text-primary transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmEndSession}
+                className="px-4 py-2 bg-diff-del hover:bg-red-500 text-white rounded-md font-medium transition-colors"
+              >
+                End Session
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -555,7 +589,7 @@ export function SpawnedSessionView({
           <p className="text-diff-del">Session ended with error: {error}</p>
         </div>
       )}
-    </div>
+    </>
   );
 }
 
@@ -571,27 +605,32 @@ function SpawnedDiffPanel({ diffs }: SpawnedDiffPanelProps) {
   // Separate session-relevant diffs from other diffs
   const sessionDiffs = diffs.filter((d) => d.is_session_relevant);
   const otherDiffs = diffs.filter((d) => !d.is_session_relevant);
+  const [otherExpanded, setOtherExpanded] = useState(false);
 
   const isLargeDiff = (diff: ParsedDiff) =>
     diff.additions + diff.deletions > 300;
 
+  const summarizeFiles = (diffs: ParsedDiff[]) => {
+    const names = diffs
+      .map((d) => d.filename.split("/").pop() || "unknown")
+      .slice(0, 3);
+    return diffs.length > 3 ? names.join(", ") + "..." : names.join(", ");
+  };
+
   return (
-    <div className="flex flex-col h-full bg-bg-secondary">
+    <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="flex items-center justify-between px-3 py-2 bg-bg-tertiary border-b border-bg-elevated shrink-0">
-        <h2 className="text-sm font-medium text-text-primary">Code Changes</h2>
-        <span className="text-xs text-text-muted">
+      <div className="flex items-center justify-between pt-4 pb-4 pr-4 shrink-0">
+        <h2 className="text-sm font-semibold text-text-primary">Diff</h2>
+        <span className="text-xs text-text-muted tabular-nums">
           {diffs.length} file{diffs.length !== 1 ? "s" : ""}
         </span>
       </div>
 
       {/* Diffs container */}
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto pb-6 pl-6">
         {sessionDiffs.length > 0 && (
-          <div className="diff-group">
-            <div className="px-3 py-2 text-xs font-medium text-text-secondary bg-bg-tertiary/50 border-b border-bg-elevated sticky top-0 z-10">
-              Changed in this session ({sessionDiffs.length})
-            </div>
+          <div className="diff-group flex flex-col gap-4">
             {sessionDiffs.map((diff, index) => (
               <DiffBlock
                 key={`session-${index}`}
@@ -609,28 +648,39 @@ function SpawnedDiffPanel({ diffs }: SpawnedDiffPanelProps) {
         )}
 
         {otherDiffs.length > 0 && (
-          <div className="diff-group">
-            <div className="px-3 py-2 text-xs font-medium text-text-muted bg-bg-tertiary/50 border-b border-bg-elevated">
-              Other branch changes ({otherDiffs.length})
-            </div>
-            {otherDiffs.map((diff, index) => (
-              <DiffBlock
-                key={`other-${index}`}
-                diffId={1000 + index}
-                filename={diff.filename}
-                diffContent={diff.diff_content}
-                additions={diff.additions}
-                deletions={diff.deletions}
-                annotations={[]}
-                reviewModel={null}
-                initiallyExpanded={false}
-              />
-            ))}
+          <div className="diff-group mt-6">
+            <button
+              className="other-toggle w-full pr-4 py-2.5 text-xs font-medium text-text-muted bg-bg-secondary flex items-center gap-2 hover:bg-bg-elevated transition-colors mb-4"
+              onClick={() => setOtherExpanded(!otherExpanded)}
+            >
+              <span>{otherExpanded ? "\u25BC" : "\u25B6"}</span>
+              <span>Other branch changes ({otherDiffs.length})</span>
+              <span className="text-text-muted/60 ml-auto">
+                {summarizeFiles(otherDiffs)}
+              </span>
+            </button>
+            {otherExpanded && (
+              <div className="flex flex-col gap-4">
+                {otherDiffs.map((diff, index) => (
+                  <DiffBlock
+                    key={`other-${index}`}
+                    diffId={1000 + index}
+                    filename={diff.filename}
+                    diffContent={diff.diff_content}
+                    additions={diff.additions}
+                    deletions={diff.deletions}
+                    annotations={[]}
+                    reviewModel={null}
+                    initiallyExpanded={false}
+                  />
+                ))}
+              </div>
+            )}
           </div>
         )}
 
         {diffs.length === 0 && (
-          <div className="px-3 py-6 text-center text-text-muted text-sm">
+          <div className="flex items-center justify-center h-full text-text-muted text-sm">
             No code changes yet
           </div>
         )}

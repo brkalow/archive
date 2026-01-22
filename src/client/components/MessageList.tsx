@@ -167,7 +167,7 @@ export function MessageList(props: MessageListProps) {
         onScroll={handleScroll}
       >
         {/* Chat bubble layout */}
-        <div className="flex flex-col gap-4 px-2 py-4">
+        <div className="flex flex-col gap-4 py-4">
           {turns.map((turn, i) => {
             if (turn.type === 'user') {
               return <UserBubble key={`user-${i}`} message={turn.messages[0]!} />;

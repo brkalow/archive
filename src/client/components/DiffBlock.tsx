@@ -1,7 +1,12 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { escapeHtml } from '../blocks';
-import type { FileDiff as FileDiffType, DiffLineAnnotation } from '@pierre/diffs';
+import { useState, useMemo, useEffect, Suspense, lazy } from 'react';
+import type { DiffLineAnnotation, FileDiffMetadata } from '@pierre/diffs';
 import type { Annotation, AnnotationType } from '../../db/schema';
+import { getSingularPatch } from '@pierre/diffs';
+
+// Lazy load the React FileDiff component
+const FileDiff = lazy(() =>
+  import('@pierre/diffs/react').then(mod => ({ default: mod.FileDiff }))
+);
 
 // Annotation metadata for rendering
 interface AnnotationMetadata {
@@ -43,172 +48,140 @@ export function DiffBlock(props: DiffBlockProps) {
     initiallyExpanded = false,
   } = props;
   const [expanded, setExpanded] = useState(initiallyExpanded);
-  const diffInstanceRef = useRef<FileDiffType<AnnotationMetadata> | null>(null);
-  const containerRef = useRef<HTMLDivElement | null>(null);
 
-  const toggle = useCallback(() => {
-    setExpanded((prev) => !prev);
-  }, []);
-
-  const renderFallback = useCallback((diffContent: string): void => {
-    if (!containerRef.current) return;
-
-    containerRef.current.innerHTML = `
-      <div class="p-4">
-        <div class="flex items-center gap-2 text-text-muted mb-2">
-          <span>Unable to render diff</span>
-        </div>
-        <button class="text-accent-primary text-sm hover:underline show-raw-btn">
-          Show raw diff
-        </button>
-        <pre class="hidden raw-diff mt-2 text-xs font-mono whitespace-pre-wrap bg-bg-primary p-2 rounded overflow-x-auto max-h-96 overflow-y-auto">${escapeHtml(diffContent)}</pre>
-      </div>
-    `;
-
-    // Attach toggle handler
-    const showBtn = containerRef.current.querySelector('.show-raw-btn');
-    showBtn?.addEventListener('click', () => {
-      const raw = containerRef.current?.querySelector('.raw-diff');
-      if (raw) {
-        raw.classList.toggle('hidden');
-        if (showBtn instanceof HTMLElement) {
-          showBtn.textContent = raw.classList.contains('hidden') ? 'Show raw diff' : 'Hide raw diff';
-        }
-      }
-    });
-  }, []);
-
-  const renderDiff = useCallback(async (): Promise<void> => {
-    if (!containerRef.current) return;
-
+  // Parse the diff content
+  const fileDiff = useMemo(() => {
     try {
-      // Lazy load @pierre/diffs to reduce initial bundle size
-      const { FileDiff, getSingularPatch } = await import('@pierre/diffs');
+      return getSingularPatch(diffContent) as FileDiffMetadata;
+    } catch {
+      return null;
+    }
+  }, [diffContent]);
 
-      const fileDiff = getSingularPatch(diffContent);
-
-      // Convert annotations to @pierre/diffs format
-      const lineAnnotations: DiffLineAnnotation<AnnotationMetadata>[] = annotations.map((a) => ({
-        side: a.side as 'additions' | 'deletions',
+  // Convert annotations to @pierre/diffs format
+  const lineAnnotations = useMemo((): DiffLineAnnotation<AnnotationMetadata>[] => {
+    return annotations.map((a) => ({
+      side: a.side as 'additions' | 'deletions',
+      lineNumber: a.line_number,
+      metadata: {
+        id: a.id,
+        type: a.annotation_type,
+        content: a.content,
+        model: reviewModel,
+        filename: filename,
         lineNumber: a.line_number,
-        metadata: {
-          id: a.id,
-          type: a.annotation_type,
-          content: a.content,
-          model: reviewModel,
-          filename: filename,
-          lineNumber: a.line_number,
-        },
-      }));
+      },
+    }));
+  }, [annotations, reviewModel, filename]);
 
-      diffInstanceRef.current = new FileDiff<AnnotationMetadata>({
-        theme: { dark: 'pierre-dark', light: 'pierre-light' },
-        themeType: 'dark',
-        diffStyle: 'unified',
-        diffIndicators: 'classic',
-        disableFileHeader: true,
-        overflow: 'scroll',
-        renderAnnotation: (annotation) => createAnnotationElement(annotation.metadata),
-      });
+  // FileDiff options
+  const options = useMemo(() => ({
+    theme: { dark: 'pierre-dark', light: 'pierre-light' } as const,
+    themeType: 'dark' as const,
+    diffStyle: 'split' as const,
+    diffIndicators: 'bars' as const,
+    overflow: 'scroll' as const,
+    unsafeCSS: `
+      [data-code] { padding-block-start: 0 !important; }
+      :host-context([data-collapsed]) [data-code] { display: none; }
+    `,
+  }), []);
 
-      const diffContainer = document.createElement('diffs-container');
-      containerRef.current.innerHTML = '';
-      containerRef.current.appendChild(diffContainer);
+  // Render header metadata with collapse toggle
+  const renderHeaderMetadata = () => (
+    <button
+      onClick={(e) => {
+        e.stopPropagation();
+        setExpanded(!expanded);
+      }}
+      className="px-2 py-1 text-xs text-text-muted hover:text-text-primary hover:bg-bg-elevated rounded transition-colors"
+    >
+      {expanded ? 'Hide' : 'Show'}
+    </button>
+  );
 
-      diffInstanceRef.current.render({
-        fileDiff,
-        fileContainer: diffContainer,
-        lineAnnotations,
-      });
-    } catch (err) {
-      console.error('Failed to render diff:', err);
-      renderFallback(diffContent);
-    }
-  }, [diffContent, filename, annotations, reviewModel, renderFallback]);
+  // Render annotation
+  const renderAnnotation = (annotation: DiffLineAnnotation<AnnotationMetadata>) => {
+    const metadata = annotation.metadata;
+    if (!metadata) return null;
 
-  // Lazy render diff when expanded
-  useEffect(() => {
-    if (expanded && !diffInstanceRef.current && containerRef.current) {
-      renderDiff();
-    }
-  }, [expanded, renderDiff]);
-
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      diffInstanceRef.current?.cleanUp();
-      diffInstanceRef.current = null;
-    };
-  }, []);
-
-  function createAnnotationElement(metadata: AnnotationMetadata): HTMLElement {
     const config = annotationConfig[metadata.type] || annotationConfig.suggestion;
     const locationText = `${metadata.filename}:${metadata.lineNumber}`;
-    const copyText = `${locationText}\n\n${metadata.content}`;
 
-    const wrapper = document.createElement('div');
-    wrapper.className = 'bg-bg-tertiary border border-bg-elevated rounded-lg p-4 my-3 mx-4';
+    return (
+      <div className="bg-bg-tertiary border border-bg-elevated rounded-lg p-4 my-3 mx-4">
+        <div className="flex items-center gap-3 mb-3">
+          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-accent-secondary to-accent-primary flex items-center justify-center text-white text-sm font-semibold shrink-0">
+            C
+          </div>
+          <span className="font-semibold text-text-primary">Claude</span>
+          <span className="text-xs text-text-muted font-mono">{locationText}</span>
+          <div className="ml-auto flex items-center gap-2">
+            <span className={`px-2 py-0.5 rounded text-xs font-medium ${config.badgeClass}`}>
+              {config.label}
+            </span>
+            <button
+              className="flex items-center gap-1.5 px-2 py-1 text-xs text-text-muted hover:text-text-primary hover:bg-bg-elevated rounded transition-colors"
+              onClick={async () => {
+                const copyText = `${locationText}\n\n${metadata.content}`;
+                await window.copyToClipboard(copyText);
+              }}
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+              </svg>
+              copy prompt
+            </button>
+          </div>
+        </div>
+        <p className="text-[15px] text-text-primary leading-relaxed font-sans">
+          {metadata.content}
+        </p>
+      </div>
+    );
+  };
 
-    wrapper.innerHTML = `
-      <div class="flex items-center gap-3 mb-3">
-        <div class="w-8 h-8 rounded-full bg-gradient-to-br from-accent-secondary to-accent-primary flex items-center justify-center text-white text-sm font-semibold shrink-0">C</div>
-        <span class="font-semibold text-text-primary">Claude</span>
-        <span class="text-xs text-text-muted font-mono">${escapeHtml(locationText)}</span>
-        <div class="ml-auto flex items-center gap-2">
-          <span class="px-2 py-0.5 rounded text-xs font-medium ${config.badgeClass}">${config.label}</span>
-          <button class="flex items-center gap-1.5 px-2 py-1 text-xs text-text-muted hover:text-text-primary hover:bg-bg-elevated rounded transition-colors copy-btn">
-            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-            </svg>
-            copy prompt
-          </button>
+  // Fallback for unparseable diffs
+  if (!fileDiff) {
+    return (
+      <div className="diff-block bg-bg-secondary overflow-hidden rounded-lg border border-bg-elevated" data-filename={filename}>
+        <div className="p-4">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-text-muted">Unable to render diff for {filename}</span>
+            <button
+              onClick={() => setExpanded(!expanded)}
+              className="text-xs text-text-muted hover:text-text-primary"
+            >
+              {expanded ? 'Hide raw diff' : 'Show raw diff'}
+            </button>
+          </div>
+          {expanded && (
+            <pre className="text-xs font-mono whitespace-pre-wrap bg-bg-primary p-2 rounded overflow-x-auto max-h-96 overflow-y-auto">
+              {diffContent}
+            </pre>
+          )}
         </div>
       </div>
-      <p class="text-[15px] text-text-primary leading-relaxed font-sans">${escapeHtml(metadata.content)}</p>
-    `;
-
-    // Add copy handler
-    const copyBtn = wrapper.querySelector('.copy-btn') as HTMLButtonElement | null;
-    copyBtn?.addEventListener('click', async () => {
-      const originalHtml = copyBtn.innerHTML;
-      await window.copyToClipboard(copyText);
-      copyBtn.innerHTML = `
-        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
-        </svg>
-        copied!
-      `;
-      setTimeout(() => {
-        copyBtn.innerHTML = originalHtml;
-      }, 1500);
-    });
-
-    return wrapper;
+    );
   }
 
   return (
-    <div className="diff-block border-b border-bg-elevated last:border-b-0" data-filename={filename}>
-      <button
-        className="diff-header w-full flex items-center justify-between px-3 py-2 bg-bg-tertiary hover:bg-bg-elevated transition-colors text-left"
-        onClick={toggle}
-      >
-        <div className="flex items-center gap-2 min-w-0">
-          <span className="toggle-icon text-text-muted text-xs">
-            {expanded ? '\u25BC' : '\u25B6'}
-          </span>
-          <span className="text-[13px] font-mono text-text-primary truncate">{filename}</span>
-        </div>
-        <div className="flex items-center gap-2 text-xs font-mono shrink-0">
-          {deletions > 0 && <span className="text-diff-del">-{deletions}</span>}
-          {additions > 0 && <span className="text-diff-add">+{additions}</span>}
-          <span className="collapse-label text-text-muted ml-2">
-            {expanded ? 'Hide' : 'Show'}
-          </span>
-        </div>
-      </button>
-      <div className={`diff-content ${expanded ? '' : 'hidden'}`}>
-        <div className="diff-container" ref={containerRef} />
-      </div>
+    <div
+      className="diff-block overflow-hidden rounded-lg border border-bg-elevated"
+      data-filename={filename}
+      data-collapsed={!expanded ? '' : undefined}
+    >
+      <Suspense fallback={
+        <div className="p-4 text-text-muted text-sm">Loading diff...</div>
+      }>
+        <FileDiff
+          fileDiff={fileDiff}
+          options={options}
+          lineAnnotations={lineAnnotations}
+          renderAnnotation={renderAnnotation}
+          renderHeaderMetadata={renderHeaderMetadata}
+        />
+      </Suspense>
     </div>
   );
 }
