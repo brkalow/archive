@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, useParams } from 'react-router-dom';
+import { useAuth } from '@clerk/react';
 import { GettingStartedPage } from './components/GettingStartedPage';
 import { SessionListPage } from './components/SessionListPage';
 import { SessionDetailPage } from './components/SessionDetailPage';
@@ -7,6 +8,7 @@ import { UserMenu } from './components/UserMenu';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { SpawnedSessionView } from './components/SpawnedSessionView';
 import { HomePage } from './components/HomePage';
+import { useClerkConfigured } from './components/AuthContext';
 import { renderComponentsShowcase } from './views';
 import type { Session, Message, Diff, Review, Annotation } from '../db/schema';
 
@@ -86,34 +88,53 @@ function LoadingSpinner() {
   );
 }
 
-// Home page loader - shows GettingStartedPage for new users, HomePage for returning users
-function HomePageLoader() {
+function ErrorMessage({ message }: { message: string }) {
+  return (
+    <div className="flex flex-col items-center justify-center py-16 text-center">
+      <p className="text-diff-del">{message}</p>
+    </div>
+  );
+}
+
+// Hook to fetch sessions with optional wait condition
+function useSessions(waitFor = true): { sessions: Session[] | null; error: string | null } {
   const [sessions, setSessions] = useState<Session[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!waitFor) return;
     fetchSessions()
       .then(setSessions)
       .catch(() => setError('Failed to load sessions'));
-  }, []);
+  }, [waitFor]);
 
-  if (error) {
-    return (
-      <div className="flex flex-col items-center justify-center py-16 text-center">
-        <p className="text-diff-del">{error}</p>
-      </div>
-    );
-  }
+  return { sessions, error };
+}
 
-  if (sessions === null) {
-    return <LoadingSpinner />;
-  }
+// Inner component that uses Clerk hooks (only rendered when Clerk is configured)
+function HomePageLoaderWithAuth() {
+  const { isSignedIn, isLoaded } = useAuth();
+  const { sessions, error } = useSessions(isLoaded);
 
-  // Show getting started page for new users with no sessions
-  if (sessions.length === 0) {
-    return <GettingStartedPage />;
-  }
+  if (error) return <ErrorMessage message={error} />;
+  if (!isLoaded || sessions === null) return <LoadingSpinner />;
+  if (!isSignedIn) return <GettingStartedPage />;
+  return <HomePage sessions={sessions} />;
+}
 
+// Home page loader - shows GettingStartedPage for logged-out users, HomePage for logged-in users
+function HomePageLoader() {
+  const isClerkConfigured = useClerkConfigured();
+  if (!isClerkConfigured) return <HomePageLoaderNoAuth />;
+  return <HomePageLoaderWithAuth />;
+}
+
+// Fallback loader when Clerk is not configured (development mode)
+function HomePageLoaderNoAuth() {
+  const { sessions, error } = useSessions();
+
+  if (error) return <ErrorMessage message={error} />;
+  if (sessions === null) return <LoadingSpinner />;
   return <HomePage sessions={sessions} />;
 }
 
