@@ -205,7 +205,12 @@ export interface StreamJsonMessage {
     role: string;
     content: ContentBlock[];
     model?: string;
-    usage?: { input_tokens: number; output_tokens: number };
+    usage?: {
+      input_tokens: number;
+      output_tokens: number;
+      cache_creation_input_tokens?: number;
+      cache_read_input_tokens?: number;
+    };
   };
   session_id?: string;
   cwd?: string;
