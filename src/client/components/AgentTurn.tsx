@@ -123,9 +123,10 @@ export function AgentTurn({ messages, toolResults }: AgentTurnProps) {
 
   // Build summary text
   const showSummary = toolCount > 0;
+  const nestedMessageCount = activitySection.filter(b => !b.isActivity).length;
   const summaryText = [
     toolCount > 0 && pluralize(toolCount, 'tool call'),
-    trailingTextBlocks.length > 0 && pluralize(trailingTextBlocks.length, 'message'),
+    nestedMessageCount > 0 && pluralize(nestedMessageCount, 'message'),
   ].filter(Boolean).join(', ');
   const durationText = totalDurationMs > 0 ? formatDuration(totalDurationMs) : null;
 
