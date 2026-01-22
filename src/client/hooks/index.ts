@@ -5,3 +5,5 @@ export { useDaemonStatus } from './useDaemonStatus';
 export type { DaemonStatus, DaemonCapabilities, SpawnableHarness } from './useDaemonStatus';
 export { useSpawnedSession } from './useSpawnedSession';
 export type { SessionState, StreamMessage, QuestionPrompt, PermissionPrompt } from './useSpawnedSession';
+export { useCollaborators } from './useCollaborators';
+export type { Collaborator, AuditLogEntry } from './useCollaborators';

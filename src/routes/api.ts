@@ -1,5 +1,7 @@
 import { SessionRepository } from "../db/repository";
-import type { Message, Diff, DiffStatus, ContentBlock, ToolUseBlock, ToolResultBlock, ImageBlock, SessionStatus, AnnotationType, StatType } from "../db/schema";
+import type { Message, Diff, DiffStatus, ContentBlock, ToolUseBlock, ToolResultBlock, ImageBlock, SessionStatus, AnnotationType, StatType, CollaboratorRole, SessionVisibility } from "../db/schema";
+import { normalizeEmail, isValidEmail } from "../lib/email";
+import { getUserDisplayInfo } from "../lib/clerk";
 import { getDateRange, parsePeriod, fillTimeseriesGaps } from "../analytics/queries";
 import { AnalyticsRecorder } from "../analytics/events";
 import { getClientId, getClientIP } from "../utils/request";
@@ -191,12 +193,21 @@ export function createApiRoutes(repo: SessionRepository) {
 
       const auth = await extractAuth(req);
 
-      // Allow access if session is shared or remote (browser-spawned)
-      const isPubliclyAccessible = session.share_token || session.remote;
+      // Allow access if session is shared via token or remote (browser-spawned)
+      const isPubliclyAccessible = session.share_token || session.remote || session.visibility === 'public';
 
       if (!isPubliclyAccessible) {
-        // Check ownership via repository (handles user_id OR client_id)
-        const { allowed } = repo.verifyOwnership(sessionId, auth.userId, auth.clientId);
+        // Get user email for collaborator check
+        const userInfo = auth.userId ? await getUserDisplayInfo(auth.userId) : null;
+
+        // Check access via ownership or collaboration
+        const { allowed } = repo.verifySessionAccess(
+          sessionId,
+          auth.userId,
+          auth.clientId,
+          userInfo?.email
+        );
+
         if (!allowed) {
           return jsonError("Forbidden", 403);
         }
@@ -220,6 +231,19 @@ export function createApiRoutes(repo: SessionRepository) {
         }
       }
 
+      // Determine ownership and invite status
+      const { isOwner } = repo.verifyOwnership(sessionId, auth.userId, auth.clientId);
+      const userInfo = auth.userId ? await getUserDisplayInfo(auth.userId) : null;
+
+      // Check if user has a pending invite
+      let pendingInvite = false;
+      if (userInfo?.email && !isOwner) {
+        const collaborator = repo.getCollaboratorByEmail(sessionId, userInfo.email);
+        if (collaborator && !collaborator.accepted_at) {
+          pendingInvite = true;
+        }
+      }
+
       return json({
         session: normalizeRemoteSessionStatus(session),
         messages,
@@ -227,6 +251,8 @@ export function createApiRoutes(repo: SessionRepository) {
         shareUrl,
         review,
         adapterUIConfig,
+        isOwner,
+        pendingInvite,
       });
     },
 
@@ -240,11 +266,20 @@ export function createApiRoutes(repo: SessionRepository) {
       const auth = await extractAuth(req);
 
       // Allow access if session is shared or remote (browser-spawned)
-      const isPubliclyAccessible = session.share_token || session.remote;
+      const isPubliclyAccessible = session.share_token || session.remote || session.visibility === 'public';
 
       if (!isPubliclyAccessible) {
-        // Check ownership via repository (handles user_id OR client_id)
-        const { allowed } = repo.verifyOwnership(sessionId, auth.userId, auth.clientId);
+        // Get user email for collaborator check
+        const userInfo = auth.userId ? await getUserDisplayInfo(auth.userId) : null;
+
+        // Check access via ownership or collaboration
+        const { allowed } = repo.verifySessionAccess(
+          sessionId,
+          auth.userId,
+          auth.clientId,
+          userInfo?.email
+        );
+
         if (!allowed) {
           return jsonError("Forbidden", 403);
         }
@@ -1782,10 +1817,6 @@ export function createApiRoutes(repo: SessionRepository) {
       const auth = await extractAuth(req);
       const clientId = getClientId(req);
 
-      // Require either user auth or client ID
-      const authError = requireAuth(auth);
-      if (authError) return authError;
-
       // Check if it's a spawned session first
       const spawned = spawnedSessionRegistry.getSession(sessionId);
       if (spawned) {
@@ -1810,13 +1841,24 @@ export function createApiRoutes(repo: SessionRepository) {
       // Fall back to DB session
       const dbSession = repo.getSession(sessionId);
       if (dbSession) {
-        // Check if session is shared (has share_token) - allow public access
-        // Also allow access to remote sessions (browser-spawned) for any authenticated user
-        const isPubliclyAccessible = dbSession.share_token || dbSession.remote;
+        // Check if session is shared (has share_token), public, or remote (browser-spawned)
+        const isPubliclyAccessible = dbSession.share_token || dbSession.remote || dbSession.visibility === 'public';
 
         if (!isPubliclyAccessible) {
-          // Check ownership for non-shared, non-remote sessions
-          const { allowed } = repo.verifyOwnership(sessionId, auth.userId, clientId);
+          // Require auth for non-public sessions
+          const authError = requireAuth(auth);
+          if (authError) return authError;
+
+          // Get user email for collaborator check
+          const userInfo = auth.userId ? await getUserDisplayInfo(auth.userId) : null;
+
+          // Check access via ownership or collaboration
+          const { allowed } = repo.verifySessionAccess(
+            sessionId,
+            auth.userId,
+            clientId,
+            userInfo?.email
+          );
           if (!allowed) {
             return jsonError("Not authorized to access this session", 403);
           }
@@ -1861,6 +1903,425 @@ export function createApiRoutes(repo: SessionRepository) {
         active_spawned_sessions: activeSpawned,
         uptime_seconds: Math.floor(process.uptime()),
       });
+    },
+
+    // === Session Sharing Endpoints ===
+
+    /**
+     * GET /api/sessions/:id/collaborators
+     * Get all collaborators for a session.
+     * Requires owner access.
+     */
+    async getCollaborators(req: Request, sessionId: string): Promise<Response> {
+      const session = repo.getSession(sessionId);
+      if (!session) {
+        return jsonError("Session not found", 404);
+      }
+
+      const auth = await extractAuth(req);
+
+      // Check if user is the owner
+      const { isOwner } = repo.verifyOwnership(sessionId, auth.userId, auth.clientId);
+
+      // Non-owners can see visibility but not collaborators
+      if (!isOwner) {
+        return json({
+          collaborators: [],
+          visibility: session.visibility,
+          error: "You do not have permission to view collaborators",
+        });
+      }
+
+      const collaborators = repo.getCollaborators(sessionId);
+
+      // Enrich with user display info for collaborators who have signed up
+      const enriched = await Promise.all(
+        collaborators.map(async (c) => {
+          let displayInfo = null;
+          if (c.user_id) {
+            displayInfo = await getUserDisplayInfo(c.user_id);
+          }
+          return {
+            id: c.id,
+            email: c.email,
+            role: c.role,
+            status: c.accepted_at ? 'active' : 'invited',
+            invited_at: c.created_at,
+            accepted_at: c.accepted_at,
+            user: displayInfo,
+          };
+        })
+      );
+
+      return json({
+        collaborators: enriched,
+        visibility: session.visibility,
+      });
+    },
+
+    /**
+     * POST /api/sessions/:id/collaborators
+     * Add a collaborator to a session.
+     * Requires owner access.
+     */
+    async addCollaborator(req: Request, sessionId: string): Promise<Response> {
+      const session = repo.getSession(sessionId);
+      if (!session) {
+        return jsonError("Session not found", 404);
+      }
+
+      const auth = await extractAuth(req);
+      const authError = requireAuth(auth);
+      if (authError) return authError;
+
+      // Verify ownership
+      const { isOwner } = repo.verifyOwnership(sessionId, auth.userId, auth.clientId);
+      if (!isOwner) {
+        return jsonError("Only the session owner can add collaborators", 403);
+      }
+
+      // Check collaborator limit (max 50)
+      const count = repo.getCollaboratorCount(sessionId);
+      if (count >= 50) {
+        return jsonError("Maximum collaborator limit (50) reached", 400);
+      }
+
+      const body = await req.json() as { email?: string; role?: CollaboratorRole };
+      const { email, role = 'viewer' } = body;
+
+      if (!email || typeof email !== 'string') {
+        return jsonError("Email is required", 400);
+      }
+
+      if (!isValidEmail(email)) {
+        return jsonError("Invalid email format", 400);
+      }
+
+      if (role !== 'viewer' && role !== 'contributor') {
+        return jsonError("Role must be 'viewer' or 'contributor'", 400);
+      }
+
+      // Check if already a collaborator
+      const existing = repo.getCollaboratorByEmail(sessionId, email);
+      if (existing) {
+        return jsonError("User is already a collaborator", 409);
+      }
+
+      // Add collaborator with audit logging
+      const collaborator = repo.addCollaboratorWithAudit(
+        sessionId,
+        email,
+        role,
+        auth.userId!
+      );
+
+      // Broadcast to connected clients
+      broadcastToSession(sessionId, {
+        type: 'collaborator_added',
+        id: collaborator.id,
+        email: collaborator.email,
+        role: collaborator.role,
+      });
+
+      return json({
+        id: collaborator.id,
+        email: collaborator.email,
+        role: collaborator.role,
+        status: 'invited',
+        invited_at: collaborator.created_at,
+      }, 201);
+    },
+
+    /**
+     * PATCH /api/sessions/:id/collaborators/:collaboratorId
+     * Update a collaborator's role.
+     * Requires owner access.
+     */
+    async updateCollaborator(req: Request, sessionId: string, collaboratorId: number): Promise<Response> {
+      const session = repo.getSession(sessionId);
+      if (!session) {
+        return jsonError("Session not found", 404);
+      }
+
+      const auth = await extractAuth(req);
+      const authError = requireAuth(auth);
+      if (authError) return authError;
+
+      // Verify ownership
+      const { isOwner } = repo.verifyOwnership(sessionId, auth.userId, auth.clientId);
+      if (!isOwner) {
+        return jsonError("Only the session owner can update collaborators", 403);
+      }
+
+      // Verify collaborator belongs to this session
+      const collaborator = repo.getCollaborator(collaboratorId);
+      if (!collaborator || collaborator.session_id !== sessionId) {
+        return jsonError("Collaborator not found", 404);
+      }
+
+      const body = await req.json() as { role?: CollaboratorRole };
+      const { role } = body;
+
+      if (!role || (role !== 'viewer' && role !== 'contributor')) {
+        return jsonError("Role must be 'viewer' or 'contributor'", 400);
+      }
+
+      const oldRole = collaborator.role;
+      const updated = repo.updateCollaboratorRoleWithAudit(
+        collaboratorId,
+        role,
+        auth.userId!
+      );
+
+      if (!updated) {
+        return jsonError("Failed to update collaborator", 500);
+      }
+
+      // Broadcast to connected clients
+      broadcastToSession(sessionId, {
+        type: 'collaborator_role_changed',
+        id: updated.id,
+        email: updated.email,
+        oldRole,
+        newRole: updated.role,
+      });
+
+      return json({
+        id: updated.id,
+        email: updated.email,
+        role: updated.role,
+      });
+    },
+
+    /**
+     * DELETE /api/sessions/:id/collaborators/:collaboratorId
+     * Remove a collaborator from a session.
+     * Requires owner access.
+     */
+    async removeCollaborator(req: Request, sessionId: string, collaboratorId: number): Promise<Response> {
+      const session = repo.getSession(sessionId);
+      if (!session) {
+        return jsonError("Session not found", 404);
+      }
+
+      const auth = await extractAuth(req);
+      const authError = requireAuth(auth);
+      if (authError) return authError;
+
+      // Verify ownership
+      const { isOwner } = repo.verifyOwnership(sessionId, auth.userId, auth.clientId);
+      if (!isOwner) {
+        return jsonError("Only the session owner can remove collaborators", 403);
+      }
+
+      // Verify collaborator belongs to this session
+      const collaborator = repo.getCollaborator(collaboratorId);
+      if (!collaborator || collaborator.session_id !== sessionId) {
+        return jsonError("Collaborator not found", 404);
+      }
+
+      const collaboratorEmail = collaborator.email;
+      const removed = repo.removeCollaboratorWithAudit(collaboratorId, auth.userId!);
+      if (!removed) {
+        return jsonError("Failed to remove collaborator", 500);
+      }
+
+      // Broadcast to connected clients
+      broadcastToSession(sessionId, {
+        type: 'collaborator_removed',
+        id: collaboratorId,
+        email: collaboratorEmail,
+      });
+
+      return json({ success: true });
+    },
+
+    /**
+     * POST /api/sessions/:id/collaborators/accept
+     * Accept a collaboration invite.
+     * Links the authenticated user to their pending collaborator record.
+     */
+    async acceptInvite(req: Request, sessionId: string): Promise<Response> {
+      const session = repo.getSession(sessionId);
+      if (!session) {
+        return jsonError("Session not found", 404);
+      }
+
+      const auth = await extractAuth(req);
+      const authError = requireAuth(auth);
+      if (authError) return authError;
+
+      // Get user email from Clerk
+      const userInfo = auth.userId ? await getUserDisplayInfo(auth.userId) : null;
+      if (!userInfo?.email) {
+        return jsonError("Could not determine user email", 400);
+      }
+
+      // Find and accept the invite
+      const collaborator = repo.acceptInvite(sessionId, userInfo.email, auth.userId!);
+      if (!collaborator) {
+        return jsonError("No pending invite found for your email", 404);
+      }
+
+      return json({
+        id: collaborator.id,
+        email: collaborator.email,
+        role: collaborator.role,
+        status: 'active',
+        accepted_at: collaborator.accepted_at,
+      });
+    },
+
+    /**
+     * PUT /api/sessions/:id/visibility
+     * Update session visibility (public/private).
+     * Requires owner access.
+     */
+    async updateVisibility(req: Request, sessionId: string): Promise<Response> {
+      const session = repo.getSession(sessionId);
+      if (!session) {
+        return jsonError("Session not found", 404);
+      }
+
+      const auth = await extractAuth(req);
+      const authError = requireAuth(auth);
+      if (authError) return authError;
+
+      // Verify ownership
+      const { isOwner } = repo.verifyOwnership(sessionId, auth.userId, auth.clientId);
+      if (!isOwner) {
+        return jsonError("Only the session owner can change visibility", 403);
+      }
+
+      // Remote sessions cannot be made public (security)
+      if (session.remote) {
+        return jsonError("Remote sessions cannot change visibility", 400);
+      }
+
+      const body = await req.json() as { visibility?: SessionVisibility };
+      const { visibility } = body;
+
+      if (!visibility || (visibility !== 'private' && visibility !== 'public')) {
+        return jsonError("Visibility must be 'private' or 'public'", 400);
+      }
+
+      const updated = repo.setSessionVisibilityWithAudit(sessionId, visibility, auth.userId!);
+      if (!updated) {
+        return jsonError("Failed to update visibility", 500);
+      }
+
+      // Broadcast to connected clients
+      broadcastToSession(sessionId, {
+        type: 'visibility_changed',
+        visibility,
+      });
+
+      return json({ visibility });
+    },
+
+    /**
+     * GET /api/sessions/:id/audit
+     * Get audit log for a session.
+     * Requires owner access.
+     */
+    async getAuditLog(req: Request, sessionId: string): Promise<Response> {
+      const session = repo.getSession(sessionId);
+      if (!session) {
+        return jsonError("Session not found", 404);
+      }
+
+      const auth = await extractAuth(req);
+      const authError = requireAuth(auth);
+      if (authError) return authError;
+
+      // Verify ownership
+      const { isOwner } = repo.verifyOwnership(sessionId, auth.userId, auth.clientId);
+      if (!isOwner) {
+        return jsonError("Only the session owner can view audit logs", 403);
+      }
+
+      const url = new URL(req.url);
+      const limit = Math.min(parseInt(url.searchParams.get("limit") || "50", 10), 100);
+
+      const logs = repo.getAuditLogs(sessionId, limit);
+
+      // Enrich with actor display info
+      const enriched = await Promise.all(
+        logs.map(async (log) => {
+          const actor = await getUserDisplayInfo(log.actor_user_id);
+          return {
+            ...log,
+            actor,
+          };
+        })
+      );
+
+      return json({ logs: enriched });
+    },
+
+    /**
+     * GET /api/sessions/shared-with-me
+     * Get sessions shared with the authenticated user.
+     * Returns sessions where the user is a collaborator (not owner).
+     */
+    async getSessionsSharedWithMe(req: Request): Promise<Response> {
+      const auth = await extractAuth(req);
+      const authError = requireAuth(auth);
+      if (authError) return authError;
+
+      // Get user email from Clerk
+      const userInfo = auth.userId ? await getUserDisplayInfo(auth.userId) : null;
+
+      // Get sessions shared with user by user_id
+      let sessions = repo.getSessionsSharedWithUser(auth.userId!);
+
+      // Also get sessions shared with user by email (for users who haven't signed up yet)
+      if (userInfo?.email) {
+        const byEmail = repo.getSessionsSharedWithEmail(userInfo.email);
+        // Merge and dedupe
+        const ids = new Set(sessions.map(s => s.id));
+        for (const s of byEmail) {
+          if (!ids.has(s.id)) {
+            sessions.push(s);
+            ids.add(s.id);
+          }
+        }
+      }
+
+      // Enrich with invite status
+      const enrichedSessions = sessions.map(s => {
+        // Check collaborator status
+        let inviteStatus: 'pending' | 'accepted' = 'accepted';
+        let role: string | null = null;
+
+        // First check by user_id
+        const byUserId = repo.getCollaboratorByUserId(s.id, auth.userId!);
+        if (byUserId) {
+          inviteStatus = byUserId.accepted_at ? 'accepted' : 'pending';
+          role = byUserId.role;
+        } else if (userInfo?.email) {
+          // Fall back to email lookup
+          const byEmail = repo.getCollaboratorByEmail(s.id, userInfo.email);
+          if (byEmail) {
+            inviteStatus = byEmail.accepted_at ? 'accepted' : 'pending';
+            role = byEmail.role;
+          }
+        }
+
+        return {
+          id: s.id,
+          title: s.title,
+          description: s.description,
+          created_at: s.created_at,
+          updated_at: s.updated_at,
+          model: s.model,
+          harness: s.harness,
+          inviteStatus,
+          role,
+        };
+      });
+
+      return json({ sessions: enrichedSessions });
     },
   };
 }

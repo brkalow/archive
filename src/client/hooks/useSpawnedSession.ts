@@ -78,6 +78,7 @@ export function useSpawnedSession({
   const reconnectAttemptsRef = useRef(0);
   const daemonPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const connectRef = useRef<() => void>(() => {});
+  const messageCountRef = useRef(0);
 
   // Store callbacks in refs to avoid reconnecting when callbacks change
   const onMessageRef = useRef(onMessage);
@@ -132,7 +133,11 @@ export function useSpawnedSession({
           // Stream messages from Claude
           if (data.messages && Array.isArray(data.messages)) {
             const newMessages = data.messages as StreamMessage[];
-            setMessages((prev) => [...prev, ...newMessages]);
+            setMessages((prev) => {
+              const updated = [...prev, ...newMessages];
+              messageCountRef.current = updated.length;
+              return updated;
+            });
             onMessageRef.current?.(newMessages);
 
             // Update state based on message content
@@ -332,8 +337,8 @@ export function useSpawnedSession({
       updateState("starting");
       reconnectAttemptsRef.current = 0;
 
-      // Subscribe from beginning
-      ws.send(JSON.stringify({ type: "subscribe", from_index: 0 }));
+      // Subscribe from current message count (0 on first connect, >0 on reconnect)
+      ws.send(JSON.stringify({ type: "subscribe", from_index: messageCountRef.current }));
     };
 
     ws.onmessage = (event) => {

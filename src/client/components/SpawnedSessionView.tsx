@@ -15,6 +15,7 @@ import { AgentTurn } from "./AgentTurn";
 import { QuestionModal } from "./QuestionModal";
 import { ConnectionLostBanner } from "./ConnectionLostBanner";
 import { DiffBlock } from "./DiffBlock";
+import { ShareModal } from "./ShareModal";
 import { buildToolResultMap } from "../blocks";
 import { isNearBottom, scrollToBottom } from "../liveSession";
 import type { Message } from "../../db/schema";
@@ -89,6 +90,12 @@ export function SpawnedSessionView({
     useState<PermissionPrompt | null>(null);
   const [controlRequest, setControlRequest] =
     useState<ControlRequestPromptType | null>(null);
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [currentShareUrl, setCurrentShareUrl] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const [hasPendingInvite, setHasPendingInvite] = useState(false);
+  const [isAcceptingInvite, setIsAcceptingInvite] = useState(false);
+  const [isOwner, setIsOwner] = useState(true); // Default to true until we know otherwise
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const prevMessageCountRef = useRef(0);
@@ -125,6 +132,28 @@ export function SpawnedSessionView({
 
     return () => clearInterval(interval);
   }, [startTime]);
+
+  // Check for pending invite and ownership on mount
+  useEffect(() => {
+    async function checkSessionAccess() {
+      try {
+        const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}`, {
+          credentials: "include",
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.pendingInvite) {
+            setHasPendingInvite(true);
+          }
+          // Update ownership status
+          setIsOwner(data.isOwner ?? true);
+        }
+      } catch {
+        // Ignore errors - default to owner for safety
+      }
+    }
+    checkSessionAccess();
+  }, [sessionId]);
 
   // Convert StreamMessages to Message format for MessageBlock
   // Filter out messages with no renderable content (system init, result without content, etc.)
@@ -285,6 +314,69 @@ export function SpawnedSessionView({
     [controlRequest, sendControlResponse]
   );
 
+  // Toast helper
+  const showToast = useCallback((message: string, type: 'success' | 'error') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3000);
+  }, []);
+
+  // Copy to clipboard
+  const copyToClipboard = useCallback((text: string) => {
+    navigator.clipboard.writeText(text).then(() => {
+      showToast("Copied to clipboard", "success");
+    }).catch(() => {
+      showToast("Failed to copy", "error");
+    });
+  }, [showToast]);
+
+  // Create share link
+  const createShareLink = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/share`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const baseUrl = `${window.location.protocol}//${window.location.host}`;
+        const newShareUrl = `${baseUrl}/s/${data.share_token}`;
+        setCurrentShareUrl(newShareUrl);
+        showToast("Share link created", "success");
+      } else {
+        showToast("Failed to create share link", "error");
+      }
+    } catch {
+      showToast("Failed to create share link", "error");
+    }
+  }, [sessionId, showToast]);
+
+  // Open share modal
+  const openShareModal = useCallback(() => {
+    setShowShareModal(true);
+  }, []);
+
+  // Accept invite
+  const acceptInvite = useCallback(async () => {
+    setIsAcceptingInvite(true);
+    try {
+      const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/collaborators/accept`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (res.ok) {
+        setHasPendingInvite(false);
+        showToast("Invite accepted", "success");
+      } else {
+        const data = await res.json();
+        showToast(data.message || "Failed to accept invite", "error");
+      }
+    } catch {
+      showToast("Failed to accept invite", "error");
+    } finally {
+      setIsAcceptingInvite(false);
+    }
+  }, [sessionId, showToast]);
+
   const showTypingIndicator = state === "running" || state === "starting";
 
   return (
@@ -297,9 +389,34 @@ export function SpawnedSessionView({
         model={model}
         cwd={cwd}
         duration={duration}
+        isOwner={isOwner}
         onInterrupt={interrupt}
         onEndSession={endSession}
+        onShare={openShareModal}
       />
+
+      {/* Pending invite banner */}
+      {hasPendingInvite && (
+        <div className="bg-accent-primary/10 border-b border-accent-primary/20 px-6 py-3">
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <svg className="w-5 h-5 text-accent-primary shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
+              </svg>
+              <span className="text-sm text-text-primary">
+                You've been invited to collaborate on this session.
+              </span>
+            </div>
+            <button
+              onClick={acceptInvite}
+              disabled={isAcceptingInvite}
+              className="px-4 py-1.5 bg-accent-primary hover:bg-accent-primary/90 text-bg-primary text-sm rounded-md font-medium transition-colors disabled:opacity-50"
+            >
+              {isAcceptingInvite ? "Accepting..." : "Accept Invite"}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Connection lost banner */}
       {state === "disconnected" && (
@@ -403,6 +520,31 @@ export function SpawnedSessionView({
           onAllow={() => handlePermissionResponse(true)}
           onDeny={() => handlePermissionResponse(false)}
         />
+      )}
+
+      {/* Share modal */}
+      {showShareModal && (
+        <ShareModal
+          sessionId={sessionId}
+          shareUrl={currentShareUrl}
+          isOwner={true}
+          onClose={() => setShowShareModal(false)}
+          onCopy={copyToClipboard}
+          onCreateShareLink={createShareLink}
+        />
+      )}
+
+      {/* Toast notification */}
+      {toast && (
+        <div
+          className={`fixed bottom-4 right-4 px-4 py-2 rounded-md shadow-lg text-sm font-medium z-50 ${
+            toast.type === 'success'
+              ? 'bg-diff-add text-white'
+              : 'bg-diff-del text-white'
+          }`}
+        >
+          {toast.message}
+        </div>
       )}
 
       {/* Error state */}

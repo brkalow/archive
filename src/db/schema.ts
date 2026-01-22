@@ -193,10 +193,70 @@ export function initializeDatabase(dbPath: string = process.env.DATABASE_PATH ||
   db.run(`CREATE INDEX IF NOT EXISTS idx_daily_stats_date ON analytics_daily_stats(date)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_daily_stats_client ON analytics_daily_stats(client_id)`);
 
+  // === Session Sharing Support ===
+
+  // Session visibility (private or public)
+  safeAddColumn(db, "sessions", "visibility", "TEXT DEFAULT 'private'");
+  db.run(`CREATE INDEX IF NOT EXISTS idx_sessions_visibility ON sessions(visibility)`);
+
+  // Session collaborators table
+  db.run(`
+    CREATE TABLE IF NOT EXISTS session_collaborators (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_id TEXT NOT NULL,
+      email TEXT NOT NULL,
+      user_id TEXT,
+      role TEXT NOT NULL DEFAULT 'viewer',
+      invited_by_user_id TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now', 'utc')),
+      accepted_at TEXT,
+      UNIQUE(session_id, email),
+      FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+    )
+  `);
+
+  db.run(`CREATE INDEX IF NOT EXISTS idx_collaborators_session ON session_collaborators(session_id)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_collaborators_email ON session_collaborators(email)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_collaborators_user ON session_collaborators(user_id)`);
+
+  // Session audit log table
+  db.run(`
+    CREATE TABLE IF NOT EXISTS session_audit_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_id TEXT NOT NULL,
+      action TEXT NOT NULL,
+      actor_user_id TEXT NOT NULL,
+      target_email TEXT,
+      old_value TEXT,
+      new_value TEXT,
+      created_at TEXT DEFAULT (datetime('now', 'utc')),
+      FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+    )
+  `);
+
+  db.run(`CREATE INDEX IF NOT EXISTS idx_audit_session ON session_audit_log(session_id)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_audit_actor ON session_audit_log(actor_user_id)`);
+
   return db;
 }
 
 export type SessionStatus = "live" | "complete" | "archived";
+
+// Session visibility for sharing
+export type SessionVisibility = "private" | "public";
+
+// Collaborator roles
+export type CollaboratorRole = "viewer" | "contributor";
+
+// Collaborator status (derived from data)
+export type CollaboratorStatus = "invited" | "active";
+
+// Audit log actions
+export type AuditAction =
+  | "collaborator_added"
+  | "collaborator_removed"
+  | "collaborator_role_changed"
+  | "visibility_changed";
 
 export type Session = {
   id: string;
@@ -212,6 +272,7 @@ export type Session = {
   repo_url: string | null;
   branch: string | null;  // Git branch name for the working directory
   status: SessionStatus;
+  visibility: SessionVisibility;  // private or public
   last_activity_at: string | null;
   client_id: string | null;
   user_id: string | null;
@@ -219,6 +280,30 @@ export type Session = {
   remote: boolean;  // true for daemon-spawned headless sessions
   created_at: string;
   updated_at: string;
+};
+
+// Session collaborator record
+export type SessionCollaborator = {
+  id: number;
+  session_id: string;
+  email: string;
+  user_id: string | null;
+  role: CollaboratorRole;
+  invited_by_user_id: string;
+  created_at: string;
+  accepted_at: string | null;
+};
+
+// Session audit log record
+export type SessionAuditLog = {
+  id: number;
+  session_id: string;
+  action: AuditAction;
+  actor_user_id: string;
+  target_email: string | null;
+  old_value: string | null;
+  new_value: string | null;
+  created_at: string;
 };
 
 // Feedback message types for interactive sessions

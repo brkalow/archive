@@ -1,5 +1,23 @@
 import { Database, Statement } from "bun:sqlite";
-import type { Session, Message, Diff, Review, Annotation, AnnotationType, FeedbackMessage, FeedbackMessageType, FeedbackMessageStatus, AnalyticsEventType, StatType } from "./schema";
+import type {
+  Session,
+  Message,
+  Diff,
+  Review,
+  Annotation,
+  AnnotationType,
+  FeedbackMessage,
+  FeedbackMessageType,
+  FeedbackMessageStatus,
+  AnalyticsEventType,
+  StatType,
+  SessionVisibility,
+  CollaboratorRole,
+  SessionCollaborator,
+  AuditAction,
+  SessionAuditLog,
+} from "./schema";
+import { normalizeEmail } from "../lib/email";
 
 // Generate SQLite-compatible UTC timestamp (YYYY-MM-DD HH:MM:SS)
 function sqliteDatetimeNow(): string {
@@ -48,14 +66,29 @@ export class SessionRepository {
     getStatsByDateRange: Statement;
     getToolStats: Statement;
     getTimeseries: Statement;
+    // Collaborator statements
+    getCollaborators: Statement;
+    getCollaborator: Statement;
+    getCollaboratorByEmail: Statement;
+    addCollaborator: Statement;
+    updateCollaboratorRole: Statement;
+    updateCollaboratorUserId: Statement;
+    removeCollaborator: Statement;
+    removeCollaboratorByEmail: Statement;
+    getSessionsSharedWithUser: Statement;
+    getSessionsSharedWithEmail: Statement;
+    getCollaboratorByUserId: Statement;
+    // Audit log statements
+    insertAuditLog: Statement;
+    getAuditLogs: Statement;
   };
 
   constructor(private db: Database) {
     // Initialize cached prepared statements
     this.stmts = {
       createSession: db.prepare(`
-        INSERT INTO sessions (id, title, description, claude_session_id, pr_url, share_token, project_path, model, harness, repo_url, status, last_activity_at, stream_token_hash, client_id, user_id, interactive, remote)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO sessions (id, title, description, claude_session_id, agent_session_id, pr_url, share_token, project_path, model, harness, repo_url, branch, status, visibility, last_activity_at, stream_token_hash, client_id, user_id, interactive, remote)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         RETURNING *
       `),
       getSession: db.prepare("SELECT * FROM sessions WHERE id = ?"),
@@ -187,6 +220,63 @@ export class SessionRepository {
         GROUP BY date
         ORDER BY date ASC
       `),
+      // Collaborator statements
+      getCollaborators: db.prepare(`
+        SELECT * FROM session_collaborators
+        WHERE session_id = ?
+        ORDER BY created_at ASC
+      `),
+      getCollaborator: db.prepare(`
+        SELECT * FROM session_collaborators
+        WHERE id = ?
+      `),
+      getCollaboratorByEmail: db.prepare(`
+        SELECT * FROM session_collaborators
+        WHERE session_id = ? AND email = ?
+      `),
+      addCollaborator: db.prepare(`
+        INSERT INTO session_collaborators (session_id, email, user_id, role, invited_by_user_id)
+        VALUES (?, ?, ?, ?, ?)
+        RETURNING *
+      `),
+      updateCollaboratorRole: db.prepare(`
+        UPDATE session_collaborators SET role = ? WHERE id = ? RETURNING *
+      `),
+      updateCollaboratorUserId: db.prepare(`
+        UPDATE session_collaborators SET user_id = ?, accepted_at = datetime('now', 'utc') WHERE id = ?
+      `),
+      removeCollaborator: db.prepare(`
+        DELETE FROM session_collaborators WHERE id = ?
+      `),
+      removeCollaboratorByEmail: db.prepare(`
+        DELETE FROM session_collaborators WHERE session_id = ? AND email = ?
+      `),
+      getSessionsSharedWithUser: db.prepare(`
+        SELECT s.* FROM sessions s
+        INNER JOIN session_collaborators c ON s.id = c.session_id
+        WHERE c.user_id = ?
+        ORDER BY s.created_at DESC
+      `),
+      getSessionsSharedWithEmail: db.prepare(`
+        SELECT s.* FROM sessions s
+        INNER JOIN session_collaborators c ON s.id = c.session_id
+        WHERE c.email = ?
+        ORDER BY s.created_at DESC
+      `),
+      getCollaboratorByUserId: db.prepare(`
+        SELECT * FROM session_collaborators
+        WHERE session_id = ? AND user_id = ?
+      `),
+      // Audit log statements
+      insertAuditLog: db.prepare(`
+        INSERT INTO session_audit_log (session_id, action, actor_user_id, target_email, old_value, new_value)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `),
+      getAuditLogs: db.prepare(`
+        SELECT * FROM session_audit_log
+        WHERE session_id = ?
+        ORDER BY created_at DESC
+      `),
     };
   }
 
@@ -197,13 +287,16 @@ export class SessionRepository {
       session.title,
       session.description,
       session.claude_session_id,
+      session.agent_session_id || null,
       session.pr_url,
       session.share_token,
       session.project_path,
       session.model,
       session.harness,
       session.repo_url,
+      session.branch || null,
       session.status || "archived",
+      session.visibility || "private",
       session.last_activity_at,
       null, // stream_token_hash deprecated, using client_id for auth
       clientId || null,
@@ -231,13 +324,16 @@ export class SessionRepository {
         session.title,
         session.description,
         session.claude_session_id,
+        session.agent_session_id || null,
         session.pr_url,
         session.share_token,
         session.project_path,
         session.model,
         session.harness,
         session.repo_url,
+        session.branch || null,
         session.status || "archived",
+        session.visibility || "private",
         session.last_activity_at,
         null, // stream_token_hash not used for batch uploads
         clientId || null,
@@ -335,6 +431,10 @@ export class SessionRepository {
     if (updates.client_id !== undefined) {
       fields.push("client_id = ?");
       values.push(updates.client_id);
+    }
+    if (updates.visibility !== undefined) {
+      fields.push("visibility = ?");
+      values.push(updates.visibility);
     }
 
     if (fields.length === 0) return this.getSession(id);
@@ -823,13 +923,16 @@ export class SessionRepository {
         session.title,
         session.description,
         session.claude_session_id,
+        session.agent_session_id || null,
         session.pr_url,
         session.share_token,
         session.project_path,
         session.model,
         session.harness,
         session.repo_url,
+        session.branch || null,
         session.status || "archived",
+        session.visibility || "private",
         session.last_activity_at,
         null, // stream_token_hash not used for batch uploads
         clientId || null,
@@ -1117,13 +1220,16 @@ export class SessionRepository {
           session.title,
           session.description,
           session.claude_session_id,
+          session.agent_session_id || null,
           session.pr_url,
           session.share_token,
           session.project_path,
           session.model,
           session.harness,
           session.repo_url,
+          session.branch || null,
           session.status || "archived",
+          session.visibility || "private",
           session.last_activity_at,
           null, // stream_token_hash not used for batch uploads
           clientId || null,
@@ -1360,5 +1466,400 @@ export class SessionRepository {
       clientId ?? null,
       statType
     ) as Array<{ date: string; value: number }>;
+  }
+
+  // === Session Sharing Methods ===
+
+  /**
+   * Update session visibility.
+   */
+  setSessionVisibility(sessionId: string, visibility: SessionVisibility): boolean {
+    const stmt = this.db.prepare(
+      "UPDATE sessions SET visibility = ?, updated_at = datetime('now', 'utc') WHERE id = ?"
+    );
+    const result = stmt.run(visibility, sessionId);
+    return result.changes > 0;
+  }
+
+  /**
+   * Get session visibility.
+   */
+  getSessionVisibility(sessionId: string): SessionVisibility | null {
+    const stmt = this.db.prepare("SELECT visibility FROM sessions WHERE id = ?");
+    const result = stmt.get(sessionId) as { visibility: SessionVisibility } | null;
+    return result?.visibility ?? null;
+  }
+
+  // === Collaborator Methods ===
+
+  /**
+   * Get all collaborators for a session.
+   */
+  getCollaborators(sessionId: string): SessionCollaborator[] {
+    return this.stmts.getCollaborators.all(sessionId) as SessionCollaborator[];
+  }
+
+  /**
+   * Get a collaborator by ID.
+   */
+  getCollaborator(collaboratorId: number): SessionCollaborator | null {
+    return this.stmts.getCollaborator.get(collaboratorId) as SessionCollaborator | null;
+  }
+
+  /**
+   * Get a collaborator by email for a session.
+   */
+  getCollaboratorByEmail(sessionId: string, email: string): SessionCollaborator | null {
+    const normalized = normalizeEmail(email);
+    return this.stmts.getCollaboratorByEmail.get(sessionId, normalized) as SessionCollaborator | null;
+  }
+
+  /**
+   * Get a collaborator by user ID for a session.
+   */
+  getCollaboratorByUserId(sessionId: string, userId: string): SessionCollaborator | null {
+    return this.stmts.getCollaboratorByUserId.get(sessionId, userId) as SessionCollaborator | null;
+  }
+
+  /**
+   * Add a collaborator to a session.
+   */
+  addCollaborator(
+    sessionId: string,
+    email: string,
+    role: CollaboratorRole,
+    invitedByUserId: string,
+    userId?: string
+  ): SessionCollaborator {
+    const normalized = normalizeEmail(email);
+    return this.stmts.addCollaborator.get(
+      sessionId,
+      normalized,
+      userId || null,
+      role,
+      invitedByUserId
+    ) as SessionCollaborator;
+  }
+
+  /**
+   * Update a collaborator's role.
+   */
+  updateCollaboratorRole(collaboratorId: number, role: CollaboratorRole): SessionCollaborator | null {
+    return this.stmts.updateCollaboratorRole.get(role, collaboratorId) as SessionCollaborator | null;
+  }
+
+  /**
+   * Update a collaborator's user_id when they sign up.
+   */
+  updateCollaboratorUserId(collaboratorId: number, userId: string): void {
+    this.stmts.updateCollaboratorUserId.run(userId, collaboratorId);
+  }
+
+  /**
+   * Accept a collaboration invite.
+   * Links the user_id to the collaborator record and sets accepted_at.
+   * Returns the updated collaborator or null if not found.
+   */
+  acceptInvite(sessionId: string, email: string, userId: string): SessionCollaborator | null {
+    const collaborator = this.getCollaboratorByEmail(sessionId, email);
+    if (!collaborator) return null;
+
+    // Already accepted by this user
+    if (collaborator.user_id === userId) return collaborator;
+
+    // Already accepted by another user (shouldn't happen but handle gracefully)
+    if (collaborator.user_id && collaborator.user_id !== userId) return null;
+
+    this.updateCollaboratorUserId(collaborator.id, userId);
+    return this.getCollaborator(collaborator.id);
+  }
+
+  /**
+   * Remove a collaborator by ID.
+   */
+  removeCollaborator(collaboratorId: number): boolean {
+    const result = this.stmts.removeCollaborator.run(collaboratorId);
+    return result.changes > 0;
+  }
+
+  /**
+   * Remove a collaborator by email.
+   */
+  removeCollaboratorByEmail(sessionId: string, email: string): boolean {
+    const normalized = normalizeEmail(email);
+    const result = this.stmts.removeCollaboratorByEmail.run(sessionId, normalized);
+    return result.changes > 0;
+  }
+
+  /**
+   * Get the count of collaborators for a session.
+   */
+  getCollaboratorCount(sessionId: string): number {
+    const stmt = this.db.prepare("SELECT COUNT(*) as count FROM session_collaborators WHERE session_id = ?");
+    const result = stmt.get(sessionId) as { count: number };
+    return result.count;
+  }
+
+  /**
+   * Get sessions shared with a user (by user_id).
+   */
+  getSessionsSharedWithUser(userId: string): Session[] {
+    const results = this.stmts.getSessionsSharedWithUser.all(userId) as Record<string, unknown>[];
+    return results.map(r => this.normalizeSession(r));
+  }
+
+  /**
+   * Get sessions shared with an email address.
+   */
+  getSessionsSharedWithEmail(email: string): Session[] {
+    const normalized = normalizeEmail(email);
+    const results = this.stmts.getSessionsSharedWithEmail.all(normalized) as Record<string, unknown>[];
+    return results.map(r => this.normalizeSession(r));
+  }
+
+  /**
+   * Check if a user has access to a session (owner, collaborator, or public).
+   */
+  checkSessionAccess(
+    sessionId: string,
+    userId: string | null,
+    email: string | null
+  ): {
+    hasAccess: boolean;
+    role: CollaboratorRole | 'owner' | null;
+    isOwner: boolean;
+  } {
+    // Get session to check ownership and visibility
+    const session = this.getSession(sessionId);
+    if (!session) {
+      return { hasAccess: false, role: null, isOwner: false };
+    }
+
+    // Check if user is owner
+    if (userId && session.user_id === userId) {
+      return { hasAccess: true, role: 'owner', isOwner: true };
+    }
+
+    // Check if public
+    if (session.visibility === 'public') {
+      return { hasAccess: true, role: 'viewer', isOwner: false };
+    }
+
+    // Check if collaborator by user_id
+    if (userId) {
+      const collaborator = this.getCollaboratorByUserId(sessionId, userId);
+      if (collaborator) {
+        return { hasAccess: true, role: collaborator.role, isOwner: false };
+      }
+    }
+
+    // Check if collaborator by email
+    if (email) {
+      const normalized = normalizeEmail(email);
+      const collaborator = this.getCollaboratorByEmail(sessionId, normalized);
+      if (collaborator) {
+        return { hasAccess: true, role: collaborator.role, isOwner: false };
+      }
+    }
+
+    return { hasAccess: false, role: null, isOwner: false };
+  }
+
+  /**
+   * Enhanced ownership check that includes collaborators and public visibility.
+   * Returns access level for a session.
+   */
+  verifySessionAccess(
+    sessionId: string,
+    userId: string | null,
+    clientId: string | null,
+    userEmail?: string | null
+  ): {
+    allowed: boolean;
+    isOwner: boolean;
+    role: CollaboratorRole | 'owner' | null;
+    canEdit: boolean;
+  } {
+    // First check ownership
+    const ownership = this.verifyOwnership(sessionId, userId, clientId);
+    if (ownership.isOwner) {
+      return { allowed: true, isOwner: true, role: 'owner', canEdit: true };
+    }
+
+    // Get session to check visibility and collaborators
+    const session = this.getSession(sessionId);
+    if (!session) {
+      return { allowed: false, isOwner: false, role: null, canEdit: false };
+    }
+
+    // Check if public
+    if (session.visibility === 'public') {
+      return { allowed: true, isOwner: false, role: 'viewer', canEdit: false };
+    }
+
+    // Check if collaborator by user_id
+    if (userId) {
+      const collaborator = this.getCollaboratorByUserId(sessionId, userId);
+      if (collaborator) {
+        return {
+          allowed: true,
+          isOwner: false,
+          role: collaborator.role,
+          canEdit: collaborator.role === 'contributor',
+        };
+      }
+    }
+
+    // Check if collaborator by email
+    if (userEmail) {
+      const collaborator = this.getCollaboratorByEmail(sessionId, userEmail);
+      if (collaborator) {
+        return {
+          allowed: true,
+          isOwner: false,
+          role: collaborator.role,
+          canEdit: collaborator.role === 'contributor',
+        };
+      }
+    }
+
+    return { allowed: false, isOwner: false, role: null, canEdit: false };
+  }
+
+  // === Audit Log Methods ===
+
+  /**
+   * Add an entry to the audit log.
+   */
+  addAuditLogEntry(
+    sessionId: string,
+    action: AuditAction,
+    actorUserId: string,
+    targetEmail?: string,
+    oldValue?: string,
+    newValue?: string
+  ): void {
+    this.stmts.insertAuditLog.run(
+      sessionId,
+      action,
+      actorUserId,
+      targetEmail || null,
+      oldValue || null,
+      newValue || null
+    );
+  }
+
+  /**
+   * Get audit log entries for a session.
+   */
+  getAuditLogs(sessionId: string, limit: number = 50): SessionAuditLog[] {
+    const stmt = this.db.prepare(`
+      SELECT * FROM session_audit_log
+      WHERE session_id = ?
+      ORDER BY created_at DESC
+      LIMIT ?
+    `);
+    return stmt.all(sessionId, limit) as SessionAuditLog[];
+  }
+
+  /**
+   * Add collaborator with audit logging in a single transaction.
+   */
+  addCollaboratorWithAudit(
+    sessionId: string,
+    email: string,
+    role: CollaboratorRole,
+    invitedByUserId: string,
+    userId?: string
+  ): SessionCollaborator {
+    const transaction = this.db.transaction(() => {
+      const collaborator = this.addCollaborator(sessionId, email, role, invitedByUserId, userId);
+      this.addAuditLogEntry(sessionId, 'collaborator_added', invitedByUserId, email, undefined, role);
+      return collaborator;
+    });
+    return transaction();
+  }
+
+  /**
+   * Update collaborator role with audit logging.
+   */
+  updateCollaboratorRoleWithAudit(
+    collaboratorId: number,
+    newRole: CollaboratorRole,
+    actorUserId: string
+  ): SessionCollaborator | null {
+    const transaction = this.db.transaction(() => {
+      const existing = this.getCollaborator(collaboratorId);
+      if (!existing) return null;
+
+      const updated = this.updateCollaboratorRole(collaboratorId, newRole);
+      if (updated) {
+        this.addAuditLogEntry(
+          existing.session_id,
+          'collaborator_role_changed',
+          actorUserId,
+          existing.email,
+          existing.role,
+          newRole
+        );
+      }
+      return updated;
+    });
+    return transaction();
+  }
+
+  /**
+   * Remove collaborator with audit logging.
+   */
+  removeCollaboratorWithAudit(
+    collaboratorId: number,
+    actorUserId: string
+  ): boolean {
+    const transaction = this.db.transaction(() => {
+      const existing = this.getCollaborator(collaboratorId);
+      if (!existing) return false;
+
+      const removed = this.removeCollaborator(collaboratorId);
+      if (removed) {
+        this.addAuditLogEntry(
+          existing.session_id,
+          'collaborator_removed',
+          actorUserId,
+          existing.email,
+          existing.role,
+          undefined
+        );
+      }
+      return removed;
+    });
+    return transaction();
+  }
+
+  /**
+   * Set session visibility with audit logging.
+   */
+  setSessionVisibilityWithAudit(
+    sessionId: string,
+    newVisibility: SessionVisibility,
+    actorUserId: string
+  ): boolean {
+    const transaction = this.db.transaction(() => {
+      const oldVisibility = this.getSessionVisibility(sessionId);
+      if (oldVisibility === null) return false;
+
+      const updated = this.setSessionVisibility(sessionId, newVisibility);
+      if (updated && oldVisibility !== newVisibility) {
+        this.addAuditLogEntry(
+          sessionId,
+          'visibility_changed',
+          actorUserId,
+          undefined,
+          oldVisibility,
+          newVisibility
+        );
+      }
+      return updated;
+    });
+    return transaction();
   }
 }

@@ -21,6 +21,8 @@ interface SessionDetailData {
   diffs: Diff[];
   shareUrl: string | null;
   review?: ReviewWithCount | null;
+  isOwner?: boolean;
+  pendingInvite?: boolean;
 }
 
 interface AnnotationsData {
@@ -152,6 +154,8 @@ function SessionDetailLoader() {
     shareUrl: string | null;
     review: Review | null;
     annotationsByDiff: Record<number, Annotation[]>;
+    isOwner: boolean;
+    pendingInvite: boolean;
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -192,6 +196,8 @@ function SessionDetailLoader() {
             shareUrl: sessionData.shareUrl,
             review: annotationsData?.review || null,
             annotationsByDiff: annotationsData?.annotations_by_diff || {},
+            isOwner: sessionData.isOwner ?? true,
+            pendingInvite: sessionData.pendingInvite ?? false,
           });
         });
       })
@@ -236,6 +242,8 @@ function SessionDetailLoader() {
         shareUrl={data.shareUrl}
         review={data.review}
         annotationsByDiff={data.annotationsByDiff}
+        isOwner={data.isOwner}
+        pendingInvite={data.pendingInvite}
       />
     );
   }
