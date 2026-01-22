@@ -898,14 +898,15 @@ describe("Browser-Initiated Sessions Integration", () => {
       const { session_id } = await spawnRes.json();
 
       // Verify session exists in DB
-      const dbSession = repo.getSession(session_id);
-      expect(dbSession).toBeDefined();
-      expect(dbSession?.status).toBe("live");
-      expect(dbSession?.project_path).toBe("/tmp/test-project");
-      expect(dbSession?.harness).toBe("claude-code");
-      expect(dbSession?.model).toBe("claude-sonnet-4-20250514");
-      expect(dbSession?.interactive).toBe(true);
-      expect(dbSession?.title).toBe("Help me build a feature");
+      const dbSessionResult = repo.getSession(session_id);
+      expect(dbSessionResult.isOk()).toBe(true);
+      const dbSession = dbSessionResult.unwrap();
+      expect(dbSession.status).toBe("live");
+      expect(dbSession.project_path).toBe("/tmp/test-project");
+      expect(dbSession.harness).toBe("claude-code");
+      expect(dbSession.model).toBe("claude-sonnet-4-20250514");
+      expect(dbSession.interactive).toBe(true);
+      expect(dbSession.title).toBe("Help me build a feature");
     });
 
     test("spawned session title is truncated for long prompts", async () => {
@@ -922,9 +923,11 @@ describe("Browser-Initiated Sessions Integration", () => {
       });
 
       const { session_id } = await spawnRes.json();
-      const dbSession = repo.getSession(session_id);
+      const dbSessionResult = repo.getSession(session_id);
+      expect(dbSessionResult.isOk()).toBe(true);
+      const dbSession = dbSessionResult.unwrap();
 
-      expect(dbSession?.title).toBe("A".repeat(100) + "...");
+      expect(dbSession.title).toBe("A".repeat(100) + "...");
     });
 
     test("messages are stored in database", async () => {
@@ -1013,15 +1016,17 @@ describe("Browser-Initiated Sessions Integration", () => {
       const { session_id } = await spawnRes.json();
 
       // Verify initial status
-      let dbSession = repo.getSession(session_id);
-      expect(dbSession?.status).toBe("live");
+      let dbSessionResult = repo.getSession(session_id);
+      expect(dbSessionResult.isOk()).toBe(true);
+      expect(dbSessionResult.unwrap().status).toBe("live");
 
       // Simulate session ending (normally done by server.ts when receiving session_ended)
       repo.updateSession(session_id, { status: "complete" });
 
       // Verify status changed
-      dbSession = repo.getSession(session_id);
-      expect(dbSession?.status).toBe("complete");
+      dbSessionResult = repo.getSession(session_id);
+      expect(dbSessionResult.isOk()).toBe(true);
+      expect(dbSessionResult.unwrap().status).toBe("complete");
     });
 
     test("claude session ID is stored in database when session initializes", async () => {
@@ -1036,15 +1041,17 @@ describe("Browser-Initiated Sessions Integration", () => {
       const { session_id } = await spawnRes.json();
 
       // Initially no claude session ID
-      let dbSession = repo.getSession(session_id);
-      expect(dbSession?.claude_session_id).toBeNull();
+      let dbSessionResult = repo.getSession(session_id);
+      expect(dbSessionResult.isOk()).toBe(true);
+      expect(dbSessionResult.unwrap().claude_session_id).toBeNull();
 
       // Simulate claude session init (normally done by server.ts when receiving system/init message)
       repo.updateSession(session_id, { claude_session_id: "claude-abc-123" });
 
       // Verify claude session ID is stored
-      dbSession = repo.getSession(session_id);
-      expect(dbSession?.claude_session_id).toBe("claude-abc-123");
+      dbSessionResult = repo.getSession(session_id);
+      expect(dbSessionResult.isOk()).toBe(true);
+      expect(dbSessionResult.unwrap().claude_session_id).toBe("claude-abc-123");
     });
 
     test("messages persist through simulated refresh", async () => {

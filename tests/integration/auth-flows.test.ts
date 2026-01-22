@@ -86,10 +86,10 @@ describe("Auth Flows - Dual Ownership Model", () => {
         "user-456"    // user_id
       );
 
-      // User ID match should work
+      // User ID match should work - Result.isOk() means allowed
       const result = repo.verifyOwnership(session.id, "user-456", null);
-      expect(result.allowed).toBe(true);
-      expect(result.isOwner).toBe(true);
+      expect(result.isOk()).toBe(true);
+      expect(result.unwrap().isOwner).toBe(true);
     });
 
     test("allows access by client_id match", () => {
@@ -115,8 +115,8 @@ describe("Auth Flows - Dual Ownership Model", () => {
 
       // Client ID match should work
       const result = repo.verifyOwnership(session.id, null, "client-123");
-      expect(result.allowed).toBe(true);
-      expect(result.isOwner).toBe(true);
+      expect(result.isOk()).toBe(true);
+      expect(result.unwrap().isOwner).toBe(true);
     });
 
     test("denies access when neither user_id nor client_id match", () => {
@@ -140,10 +140,9 @@ describe("Auth Flows - Dual Ownership Model", () => {
         "user-456"
       );
 
-      // Neither match should deny
+      // Neither match should deny - Result.isErr() means not allowed
       const result = repo.verifyOwnership(session.id, "other-user", "other-client");
-      expect(result.allowed).toBe(false);
-      expect(result.isOwner).toBe(false);
+      expect(result.isErr()).toBe(true);
     });
 
     test("denies access to legacy sessions without matching owner", () => {
@@ -166,12 +165,10 @@ describe("Auth Flows - Dual Ownership Model", () => {
 
       // Legacy sessions should NOT be accessible without matching owner
       const resultWithUser = repo.verifyOwnership(session.id, "any-user", null);
-      expect(resultWithUser.allowed).toBe(false);
-      expect(resultWithUser.isOwner).toBe(false);
+      expect(resultWithUser.isErr()).toBe(true);
 
       const resultWithClient = repo.verifyOwnership(session.id, null, "any-client");
-      expect(resultWithClient.allowed).toBe(false);
-      expect(resultWithClient.isOwner).toBe(false);
+      expect(resultWithClient.isErr()).toBe(true);
     });
   });
 
@@ -254,9 +251,9 @@ describe("Auth Flows - Dual Ownership Model", () => {
       expect(session.user_id).toBe("upload-user-456");
 
       // Verify the session can be accessed by user_id
-      const { allowed, isOwner } = repo.verifyOwnership(session.id, "upload-user-456", null);
-      expect(allowed).toBe(true);
-      expect(isOwner).toBe(true);
+      const result = repo.verifyOwnership(session.id, "upload-user-456", null);
+      expect(result.isOk()).toBe(true);
+      expect(result.unwrap().isOwner).toBe(true);
     });
 
     test("upsertSessionWithDataAndReview works without user_id (client-only upload)", () => {
@@ -287,8 +284,8 @@ describe("Auth Flows - Dual Ownership Model", () => {
       expect(session.user_id).toBeNull();
 
       // Can still access by client_id
-      const { allowed } = repo.verifyOwnership(session.id, null, "client-only-123");
-      expect(allowed).toBe(true);
+      const result = repo.verifyOwnership(session.id, null, "client-only-123");
+      expect(result.isOk()).toBe(true);
     });
   });
 
@@ -327,15 +324,18 @@ describe("Auth Flows - Dual Ownership Model", () => {
       expect(claimed).toBe(2);
 
       // Verify the sessions are now claimed
-      const session1 = repo.getSession("unclaimed1");
-      expect(session1?.user_id).toBe("new-user");
+      const session1Result = repo.getSession("unclaimed1");
+      expect(session1Result.isOk()).toBe(true);
+      expect(session1Result.unwrap().user_id).toBe("new-user");
 
-      const session2 = repo.getSession("unclaimed2");
-      expect(session2?.user_id).toBe("new-user");
+      const session2Result = repo.getSession("unclaimed2");
+      expect(session2Result.isOk()).toBe(true);
+      expect(session2Result.unwrap().user_id).toBe("new-user");
 
       // Already claimed session should not change
-      const claimedSession = repo.getSession("claimed");
-      expect(claimedSession?.user_id).toBe("existing-user");
+      const claimedResult = repo.getSession("claimed");
+      expect(claimedResult.isOk()).toBe(true);
+      expect(claimedResult.unwrap().user_id).toBe("existing-user");
     });
 
     test("claimSessions returns 0 when no unclaimed sessions", () => {
@@ -347,12 +347,14 @@ describe("Auth Flows - Dual Ownership Model", () => {
       const result = repo.setSessionUserId("unclaimed1", "specific-user");
       expect(result).toBe(true);
 
-      const session = repo.getSession("unclaimed1");
-      expect(session?.user_id).toBe("specific-user");
+      const sessionResult = repo.getSession("unclaimed1");
+      expect(sessionResult.isOk()).toBe(true);
+      expect(sessionResult.unwrap().user_id).toBe("specific-user");
 
       // Other session should remain unclaimed
-      const other = repo.getSession("unclaimed2");
-      expect(other?.user_id).toBeNull();
+      const otherResult = repo.getSession("unclaimed2");
+      expect(otherResult.isOk()).toBe(true);
+      expect(otherResult.unwrap().user_id).toBeNull();
     });
   });
 });

@@ -220,7 +220,8 @@ describe("SessionRepository - Client Ownership", () => {
       expect(result).toBe(true);
 
       const updated = repo.getSession(session.id);
-      expect(updated?.status).toBe("live");
+      expect(updated.isOk()).toBe(true);
+      expect(updated.unwrap().status).toBe("live");
     });
 
     test("returns false for non-existent session", () => {

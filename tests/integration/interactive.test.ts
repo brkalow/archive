@@ -35,10 +35,11 @@ describe("Interactive Sessions", () => {
         const wsMatch = url.pathname.match(/^\/api\/sessions\/([^\/]+)\/ws$/);
         if (wsMatch) {
           const sessionId = wsMatch[1];
-          const session = repo.getSession(sessionId);
-          if (!session) {
+          const sessionResult = repo.getSession(sessionId);
+          if (sessionResult.isErr()) {
             return new Response("Session not found", { status: 404 });
           }
+          const session = sessionResult.unwrap();
           if (session.status !== "live") {
             return new Response("WebSocket only available for live sessions", { status: 410 });
           }
@@ -55,7 +56,8 @@ describe("Interactive Sessions", () => {
         open(ws) {
           const data = ws.data as { sessionId: string };
           addSessionSubscriber(data.sessionId, ws as unknown as WebSocket);
-          const session = repo.getSession(data.sessionId);
+          const sessionResult = repo.getSession(data.sessionId);
+          const session = sessionResult.isOk() ? sessionResult.unwrap() : null;
           const messageCount = repo.getMessageCount(data.sessionId);
           const lastIndex = repo.getLastMessageIndex(data.sessionId);
           ws.send(JSON.stringify({
@@ -117,9 +119,9 @@ describe("Interactive Sessions", () => {
     expect(data.interactive).toBe(true);
 
     // Verify in database
-    const session = repo.getSession(data.id);
-    expect(session).not.toBeNull();
-    expect(session!.interactive).toBe(true);
+    const sessionResult = repo.getSession(data.id);
+    expect(sessionResult.isOk()).toBe(true);
+    expect(sessionResult.unwrap().interactive).toBe(true);
   });
 
   test("creates non-interactive session by default", async () => {
@@ -138,8 +140,9 @@ describe("Interactive Sessions", () => {
     const data = await res.json();
     expect(data.interactive).toBe(false);
 
-    const session = repo.getSession(data.id);
-    expect(session!.interactive).toBe(false);
+    const sessionResult = repo.getSession(data.id);
+    expect(sessionResult.isOk()).toBe(true);
+    expect(sessionResult.unwrap().interactive).toBe(false);
   });
 });
 
@@ -288,8 +291,9 @@ describe("Repository Feedback Methods", () => {
     expect(session.interactive).toBe(false);
 
     repo.setSessionInteractive(session.id, true);
-    const updated = repo.getSession(session.id);
-    expect(updated!.interactive).toBe(true);
+    const updatedResult = repo.getSession(session.id);
+    expect(updatedResult.isOk()).toBe(true);
+    expect(updatedResult.unwrap().interactive).toBe(true);
   });
 });
 

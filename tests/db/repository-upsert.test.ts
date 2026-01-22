@@ -26,9 +26,9 @@ describe("SessionRepository upsert", () => {
   });
 
   describe("getSessionByClaudeSessionId", () => {
-    test("returns null when no session exists", () => {
+    test("returns error when no session exists", () => {
       const result = repo.getSessionByClaudeSessionId("nonexistent-uuid");
-      expect(result).toBeNull();
+      expect(result.isErr()).toBe(true);
     });
 
     test("finds session by claude_session_id", () => {
@@ -48,9 +48,10 @@ describe("SessionRepository upsert", () => {
       });
 
       const result = repo.getSessionByClaudeSessionId("uuid-12345");
-      expect(result).not.toBeNull();
-      expect(result!.id).toBe("sess_123");
-      expect(result!.claude_session_id).toBe("uuid-12345");
+      expect(result.isOk()).toBe(true);
+      const session = result.unwrap();
+      expect(session.id).toBe("sess_123");
+      expect(session.claude_session_id).toBe("uuid-12345");
     });
   });
 
@@ -459,16 +460,18 @@ describe("SessionRepository updateSession - metadata fields", () => {
     });
 
     // Update with branch
-    const updated = repo.updateSession("sess_branch_test", {
+    const updateResult = repo.updateSession("sess_branch_test", {
       branch: "feature/new-feature",
     });
 
-    expect(updated).not.toBeNull();
-    expect(updated!.branch).toBe("feature/new-feature");
+    expect(updateResult.isOk()).toBe(true);
+    const updated = updateResult.unwrap();
+    expect(updated.branch).toBe("feature/new-feature");
 
     // Verify it persists
-    const fetched = repo.getSession("sess_branch_test");
-    expect(fetched!.branch).toBe("feature/new-feature");
+    const fetchResult = repo.getSession("sess_branch_test");
+    expect(fetchResult.isOk()).toBe(true);
+    expect(fetchResult.unwrap().branch).toBe("feature/new-feature");
   });
 
   test("updates agent_session_id field", () => {
@@ -487,12 +490,12 @@ describe("SessionRepository updateSession - metadata fields", () => {
       last_activity_at: null,
     });
 
-    const updated = repo.updateSession("sess_agent_test", {
+    const updateResult = repo.updateSession("sess_agent_test", {
       agent_session_id: "claude-xyz-123",
     });
 
-    expect(updated).not.toBeNull();
-    expect(updated!.agent_session_id).toBe("claude-xyz-123");
+    expect(updateResult.isOk()).toBe(true);
+    expect(updateResult.unwrap().agent_session_id).toBe("claude-xyz-123");
   });
 
   test("updates multiple metadata fields at once", () => {
@@ -511,15 +514,16 @@ describe("SessionRepository updateSession - metadata fields", () => {
       last_activity_at: null,
     });
 
-    const updated = repo.updateSession("sess_multi_update", {
+    const updateResult = repo.updateSession("sess_multi_update", {
       agent_session_id: "agent-abc",
       repo_url: "https://github.com/test/repo",
       branch: "main",
     });
 
-    expect(updated).not.toBeNull();
-    expect(updated!.agent_session_id).toBe("agent-abc");
-    expect(updated!.repo_url).toBe("https://github.com/test/repo");
-    expect(updated!.branch).toBe("main");
+    expect(updateResult.isOk()).toBe(true);
+    const updated = updateResult.unwrap();
+    expect(updated.agent_session_id).toBe("agent-abc");
+    expect(updated.repo_url).toBe("https://github.com/test/repo");
+    expect(updated.branch).toBe("main");
   });
 });

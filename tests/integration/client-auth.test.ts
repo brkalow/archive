@@ -98,8 +98,9 @@ describe("Client ID Authentication", () => {
       expect(data.id).toBeDefined();
 
       // Verify client_id is stored
-      const session = repo.getSession(data.id);
-      expect(session?.client_id).toBe("test-client-123");
+      const sessionResult = repo.getSession(data.id);
+      expect(sessionResult.isOk()).toBe(true);
+      expect(sessionResult.unwrap().client_id).toBe("test-client-123");
     });
   });
 
@@ -166,8 +167,9 @@ describe("Client ID Authentication", () => {
       });
 
       expect(res.ok).toBe(true);
-      const session = repo.getSession(sessionId);
-      expect(session?.status).toBe("complete");
+      const sessionResult = repo.getSession(sessionId);
+      expect(sessionResult.isOk()).toBe(true);
+      expect(sessionResult.unwrap().status).toBe("complete");
     });
 
     test("non-owner cannot complete session", async () => {
@@ -192,7 +194,7 @@ describe("Client ID Authentication", () => {
       });
 
       expect(res.ok).toBe(true);
-      expect(repo.getSession(sessionId)).toBeNull();
+      expect(repo.getSession(sessionId).isErr()).toBe(true);
     });
 
     test("non-owner cannot delete session", async () => {
