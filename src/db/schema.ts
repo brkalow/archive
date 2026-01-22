@@ -137,6 +137,12 @@ export function initializeDatabase(dbPath: string = process.env.DATABASE_PATH ||
   // Git branch name for the session's working directory
   safeAddColumn(db, "sessions", "branch", "TEXT");
 
+  // Token usage tracking
+  safeAddColumn(db, "sessions", "input_tokens", "INTEGER DEFAULT 0");
+  safeAddColumn(db, "sessions", "output_tokens", "INTEGER DEFAULT 0");
+  safeAddColumn(db, "sessions", "cache_creation_tokens", "INTEGER DEFAULT 0");
+  safeAddColumn(db, "sessions", "cache_read_tokens", "INTEGER DEFAULT 0");
+
   // Feedback messages table (for interactive sessions)
   db.run(`
     CREATE TABLE IF NOT EXISTS feedback_messages (
@@ -278,6 +284,10 @@ export type Session = {
   user_id: string | null;
   interactive: boolean;
   remote: boolean;  // true for daemon-spawned headless sessions
+  input_tokens: number;  // Total input tokens (excluding cache)
+  output_tokens: number;  // Total output tokens
+  cache_creation_tokens: number;  // Tokens written to cache
+  cache_read_tokens: number;  // Tokens read from cache (cache hits)
   created_at: string;
   updated_at: string;
 };
@@ -437,6 +447,10 @@ export type StatType =
   | "files_changed"
   | "tools_invoked"
   | "subagents_invoked"
+  | "input_tokens"
+  | "output_tokens"
+  | "cache_creation_tokens"
+  | "cache_read_tokens"
   | `tool_${string}`;
 
 // Raw event record

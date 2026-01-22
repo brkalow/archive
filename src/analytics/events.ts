@@ -214,6 +214,37 @@ export class AnalyticsRecorder {
   }
 
   /**
+   * Record token usage for a session, segmented by model.
+   */
+  recordTokenUsage(
+    tokens: {
+      input: number;
+      output: number;
+      cacheCreation: number;
+      cacheRead: number;
+    },
+    options: {
+      clientId?: string;
+      model?: string;
+    } = {}
+  ): void {
+    const { clientId, model } = options;
+
+    if (tokens.input > 0) {
+      this.repo.incrementDailyStat("input_tokens", { clientId, model, value: tokens.input });
+    }
+    if (tokens.output > 0) {
+      this.repo.incrementDailyStat("output_tokens", { clientId, model, value: tokens.output });
+    }
+    if (tokens.cacheCreation > 0) {
+      this.repo.incrementDailyStat("cache_creation_tokens", { clientId, model, value: tokens.cacheCreation });
+    }
+    if (tokens.cacheRead > 0) {
+      this.repo.incrementDailyStat("cache_read_tokens", { clientId, model, value: tokens.cacheRead });
+    }
+  }
+
+  /**
    * Parse tool_use blocks from message content and record tool invocations
    */
   recordToolsFromMessage(

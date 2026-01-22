@@ -455,6 +455,34 @@ export class SessionRepository {
     return Result.ok(this.normalizeSession(result));
   }
 
+  /**
+   * Increment token usage counters for a session.
+   * Used to accumulate token usage as messages stream in.
+   */
+  incrementTokenUsage(
+    id: string,
+    tokens: {
+      input: number;
+      output: number;
+      cacheCreation: number;
+      cacheRead: number;
+    }
+  ): void {
+    const { input, output, cacheCreation, cacheRead } = tokens;
+    if (input === 0 && output === 0 && cacheCreation === 0 && cacheRead === 0) return;
+
+    const stmt = this.db.prepare(`
+      UPDATE sessions
+      SET input_tokens = input_tokens + ?,
+          output_tokens = output_tokens + ?,
+          cache_creation_tokens = cache_creation_tokens + ?,
+          cache_read_tokens = cache_read_tokens + ?,
+          updated_at = datetime('now', 'utc')
+      WHERE id = ?
+    `);
+    stmt.run(input, output, cacheCreation, cacheRead, id);
+  }
+
   getSession(id: string): Result<Session, NotFoundError> {
     const result = this.stmts.getSession.get(id) as Record<string, unknown> | null;
     if (!result) {

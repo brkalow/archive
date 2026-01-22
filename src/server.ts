@@ -143,12 +143,37 @@ function handleDaemonMessage(
         repo.addMessagesWithIndices(message.session_id, messagesToStore);
       }
 
-      // Record analytics for relayed messages
+      // Record analytics and accumulate token usage (grouped by model for analytics)
+      const totalTokens = { input: 0, output: 0, cacheCreation: 0, cacheRead: 0 };
+      const tokensByModel = new Map<string | undefined, typeof totalTokens>();
+
       for (const msg of message.messages) {
         const role = msg.message?.role || msg.type;
         const contentBlocks = msg.message?.content || [];
+        const usage = msg.message?.usage;
+        const model = msg.message?.model;
 
-        // Track user messages (prompts sent)
+        if (usage) {
+          const input = usage.input_tokens || 0;
+          const output = usage.output_tokens || 0;
+          const cacheCreation = usage.cache_creation_input_tokens || 0;
+          const cacheRead = usage.cache_read_input_tokens || 0;
+
+          totalTokens.input += input;
+          totalTokens.output += output;
+          totalTokens.cacheCreation += cacheCreation;
+          totalTokens.cacheRead += cacheRead;
+
+          // Group by model for analytics
+          const existing = tokensByModel.get(model) || { input: 0, output: 0, cacheCreation: 0, cacheRead: 0 };
+          tokensByModel.set(model, {
+            input: existing.input + input,
+            output: existing.output + output,
+            cacheCreation: existing.cacheCreation + cacheCreation,
+            cacheRead: existing.cacheRead + cacheRead,
+          });
+        }
+
         if (role === "user") {
           analytics.recordMessageSent(message.session_id, {
             clientId: ws.data.clientId,
@@ -156,7 +181,6 @@ function handleDaemonMessage(
           });
         }
 
-        // Track tool invocations from assistant messages
         if (role === "assistant") {
           analytics.recordToolsFromMessage(
             message.session_id,
@@ -164,6 +188,21 @@ function handleDaemonMessage(
             { clientId: ws.data.clientId }
           );
         }
+      }
+
+      // Update session token totals
+      const hasTokens = totalTokens.input > 0 || totalTokens.output > 0 ||
+                        totalTokens.cacheCreation > 0 || totalTokens.cacheRead > 0;
+      if (hasTokens) {
+        repo.incrementTokenUsage(message.session_id, totalTokens);
+      }
+
+      // Record token analytics by model
+      for (const [model, tokens] of tokensByModel) {
+        analytics.recordTokenUsage(tokens, {
+          clientId: ws.data.clientId,
+          model,
+        });
       }
 
       // Update DB activity timestamp
