@@ -33,22 +33,19 @@ export function DiffPanel({ diffs, annotationsByDiff, review }: DiffPanelProps) 
   };
 
   return (
-    <div className="flex flex-col bg-bg-secondary border border-bg-elevated rounded-lg overflow-hidden h-full">
+    <div className="flex flex-col overflow-hidden h-full">
       {/* Header */}
-      <div className="flex items-center justify-between px-3 py-2 bg-bg-tertiary border-b border-bg-elevated shrink-0">
-        <h2 className="text-sm font-medium text-text-primary">Code Changes</h2>
-        <span className="text-xs text-text-muted">
+      <div className="flex items-center justify-between pt-4 pb-4 shrink-0">
+        <h2 className="text-sm font-semibold text-text-primary">Diff</h2>
+        <span className="text-xs text-text-muted tabular-nums">
           {totalCount} file{totalCount !== 1 ? "s" : ""}
         </span>
       </div>
 
       {/* Diffs container */}
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto pb-6">
         {sessionDiffs.length > 0 && (
-          <div className="diff-group">
-            <div className="px-3 py-2 text-xs font-medium text-text-secondary bg-bg-tertiary/50 border-b border-bg-elevated sticky top-0 z-10">
-              Changed in this session ({sessionDiffs.length})
-            </div>
+          <div className="diff-group flex flex-col gap-4">
             {sessionDiffs.map((diff) => (
               <DiffBlock
                 key={diff.id}
@@ -66,9 +63,9 @@ export function DiffPanel({ diffs, annotationsByDiff, review }: DiffPanelProps) 
         )}
 
         {otherDiffs.length > 0 && (
-          <div className="diff-group">
+          <div className="diff-group mt-6">
             <button
-              className="other-toggle w-full px-3 py-2 text-xs font-medium text-text-muted bg-bg-tertiary/50 border-b border-bg-elevated flex items-center gap-2 hover:bg-bg-elevated transition-colors"
+              className="other-toggle w-full pr-4 py-2.5 text-xs font-medium text-text-muted bg-bg-secondary flex items-center gap-2 hover:bg-bg-elevated transition-colors mb-4"
               onClick={() => setOtherExpanded(!otherExpanded)}
             >
               <span>{otherExpanded ? "\u25BC" : "\u25B6"}</span>
@@ -77,20 +74,23 @@ export function DiffPanel({ diffs, annotationsByDiff, review }: DiffPanelProps) 
                 {summarizeFiles(otherDiffs)}
               </span>
             </button>
-            {otherExpanded &&
-              otherDiffs.map((diff) => (
-                <DiffBlock
-                  key={diff.id}
-                  diffId={diff.id}
-                  filename={diff.filename || "Unknown file"}
-                  diffContent={diff.diff_content}
-                  additions={diff.additions || 0}
-                  deletions={diff.deletions || 0}
-                  annotations={annotationsByDiff[diff.id] || []}
-                  reviewModel={review?.model || null}
-                  initiallyExpanded={false}
-                />
-              ))}
+            {otherExpanded && (
+              <div className="flex flex-col gap-4">
+                {otherDiffs.map((diff) => (
+                  <DiffBlock
+                    key={diff.id}
+                    diffId={diff.id}
+                    filename={diff.filename || "Unknown file"}
+                    diffContent={diff.diff_content}
+                    additions={diff.additions || 0}
+                    deletions={diff.deletions || 0}
+                    annotations={annotationsByDiff[diff.id] || []}
+                    reviewModel={review?.model || null}
+                    initiallyExpanded={false}
+                  />
+                ))}
+              </div>
+            )}
           </div>
         )}
 

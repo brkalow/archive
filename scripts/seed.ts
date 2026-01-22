@@ -250,6 +250,7 @@ function generateSession(
     user_id: null,
     interactive: status === "live",
     remote: false,
+    visibility: "public",
   };
 
   // Generate messages

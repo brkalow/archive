@@ -292,3 +292,16 @@ a:focus-visible {
   0%, 100% { width: 0.08em; }
   50% { width: 0.18em; }
 }
+
+/* === @pierre/diffs overrides === */
+
+/* Remove vertical spacing between diff header and code content */
+.diff-container diffs-container {
+  display: block;
+  --diffs-gap-fallback: 0px;
+}
+
+/* Hide diff content when collapsed */
+[data-collapsed] [data-diffs] {
+  display: none;
+}
