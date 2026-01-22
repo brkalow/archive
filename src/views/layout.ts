@@ -60,6 +60,6 @@ export function escapeHtml(text: string): string {
     ">": "&gt;",
     '"': "&quot;",
     "'": "&#39;",
-  };
-  return text.replace(/[&<>"']/g, (char) => map[char]);
+  } as const;
+  return text.replace(/[&<>"']/g, (char) => map[char as keyof typeof map] ?? char);
 }

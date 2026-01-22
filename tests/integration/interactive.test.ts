@@ -34,7 +34,7 @@ describe("Interactive Sessions", () => {
         // Browser WebSocket
         const wsMatch = url.pathname.match(/^\/api\/sessions\/([^\/]+)\/ws$/);
         if (wsMatch) {
-          const sessionId = wsMatch[1];
+          const sessionId = wsMatch[1]!;
           const sessionResult = repo.getSession(sessionId);
           if (sessionResult.isErr()) {
             return new Response("Session not found", { status: 404 });
@@ -90,7 +90,7 @@ describe("Interactive Sessions", () => {
       },
     });
 
-    serverPort = server.port;
+    serverPort = server.port!;
   });
 
   afterEach(() => {
@@ -175,6 +175,9 @@ describe("Repository Feedback Methods", () => {
       status: "live",
       last_activity_at: null,
       interactive: true,
+      remote: false,
+      agent_session_id: null,
+      branch: null,
     });
 
     const feedback = repo.createFeedbackMessage(
@@ -206,6 +209,9 @@ describe("Repository Feedback Methods", () => {
       status: "live",
       last_activity_at: null,
       interactive: true,
+      remote: false,
+      agent_session_id: null,
+      branch: null,
     });
 
     const feedback = repo.createFeedbackMessage(
@@ -236,6 +242,9 @@ describe("Repository Feedback Methods", () => {
       status: "live",
       last_activity_at: null,
       interactive: true,
+      remote: false,
+      agent_session_id: null,
+      branch: null,
     });
 
     repo.createFeedbackMessage(session.id, "First", "message");
@@ -243,8 +252,8 @@ describe("Repository Feedback Methods", () => {
 
     const pending = repo.getPendingFeedback(session.id);
     expect(pending).toHaveLength(2);
-    expect(pending[0].content).toBe("First");
-    expect(pending[1].content).toBe("Second");
+    expect(pending[0]!.content).toBe("First");
+    expect(pending[1]!.content).toBe("Second");
   });
 
   test("updates feedback status", () => {
@@ -262,6 +271,9 @@ describe("Repository Feedback Methods", () => {
       status: "live",
       last_activity_at: null,
       interactive: true,
+      remote: false,
+      agent_session_id: null,
+      branch: null,
     });
 
     const feedback = repo.createFeedbackMessage(session.id, "Test", "message");
@@ -286,6 +298,9 @@ describe("Repository Feedback Methods", () => {
       status: "live",
       last_activity_at: null,
       interactive: false,
+      remote: false,
+      agent_session_id: null,
+      branch: null,
     });
 
     expect(session.interactive).toBe(false);

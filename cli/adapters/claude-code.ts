@@ -87,7 +87,7 @@ export const claudeCodeAdapter: HarnessAdapter = {
 
     // The encoded project path is everything except the last part (session file)
     const encodedProjectPath = parts.slice(0, -1).join("/");
-    const sessionFile = parts[parts.length - 1];
+    const sessionFile = parts[parts.length - 1] ?? "";
     const sessionId = sessionFile.replace(".jsonl", "");
 
     // Decode the project path (replace hyphens with slashes, handle encoding)
@@ -182,7 +182,7 @@ export const claudeCodeAdapter: HarnessAdapter = {
     const messageIndex = context.messages.length;
     for (let i = 0; i < nonToolResultBlocks.length; i++) {
       const block = nonToolResultBlocks[i];
-      if (block.type === "tool_use" && typeof block.id === "string") {
+      if (block && block.type === "tool_use" && typeof block.id === "string") {
         context.pendingToolUses.set(block.id, {
           messageIndex,
           blockIndex: i,

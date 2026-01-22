@@ -256,8 +256,9 @@ export function normalizeRemoteUrl(remoteUrl: string): string {
 
   // Handle SSH format: git@hostname:path
   const sshMatch = url.match(/^git@([^:]+):(.+)$/);
-  if (sshMatch) {
-    const [, hostname, path] = sshMatch;
+  if (sshMatch && sshMatch[1] && sshMatch[2]) {
+    const hostname = sshMatch[1];
+    const path = sshMatch[2];
     url = `${hostname.toLowerCase()}/${path}`;
   } else {
     // Handle HTTPS/SSH URL format

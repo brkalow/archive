@@ -199,11 +199,11 @@ function extractCommandInfo(text: string): { name: string; output: string } | nu
 
   // Extract local-command-stdout content if present
   const stdoutMatch = text.match(/<local-command-stdout>([\s\S]*?)<\/local-command-stdout>/);
-  if (stdoutMatch) {
+  if (stdoutMatch && stdoutMatch[1]) {
     output = stdoutMatch[1].trim();
   }
 
-  return { name, output };
+  return { name: name ?? "", output };
 }
 
 // Render a collapsed command block
@@ -486,7 +486,8 @@ function getDisplayPath(fullPath: string): string {
   const projectIndicators = ["src", "lib", "bin", "test", "tests", "packages", "apps", ".context", "public", "dist"];
 
   for (let i = 0; i < parts.length; i++) {
-    if (projectIndicators.includes(parts[i])) {
+    const part = parts[i];
+    if (part && projectIndicators.includes(part)) {
       // Return from this indicator onwards
       return parts.slice(i).join("/");
     }

@@ -460,8 +460,9 @@ export class SpawnedSessionManager {
 
     // Detect SDK control_request messages (from --permission-prompt-tool stdio)
     // These are top-level messages with type: "control_request"
-    if ((msg as Record<string, unknown>).type === "control_request") {
-      this.handleControlRequest(session, msg as unknown as {
+    const msgRecord = msg as unknown as Record<string, unknown>;
+    if (msgRecord.type === "control_request") {
+      this.handleControlRequest(session, msgRecord as {
         type: "control_request";
         request_id: string;
         request: ControlRequest;
@@ -473,10 +474,9 @@ export class SpawnedSessionManager {
     // Permission requests come as a special message type
     if (
       msg.type === "system" &&
-      (msg.subtype === "permission_request" ||
-        (msg as Record<string, unknown>).permission_request)
+      (msg.subtype === "permission_request" || msgRecord.permission_request)
     ) {
-      this.handlePermissionRequest(session, msg as Record<string, unknown>);
+      this.handlePermissionRequest(session, msgRecord);
       return;
     }
 

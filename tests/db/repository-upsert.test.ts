@@ -45,6 +45,10 @@ describe("SessionRepository upsert", () => {
         repo_url: null,
         status: "archived",
         last_activity_at: null,
+        interactive: false,
+        remote: false,
+        agent_session_id: null,
+        branch: null,
       });
 
       const result = repo.getSessionByClaudeSessionId("uuid-12345");
@@ -71,6 +75,10 @@ describe("SessionRepository upsert", () => {
           repo_url: null,
           status: "archived",
           last_activity_at: null,
+          interactive: false,
+          remote: false,
+          agent_session_id: null,
+          branch: null,
         },
         [
           {
@@ -93,7 +101,7 @@ describe("SessionRepository upsert", () => {
 
       const messages = repo.getMessages("sess_new");
       expect(messages.length).toBe(1);
-      expect(messages[0].content).toBe("Hello");
+      expect(messages[0]!.content).toBe("Hello");
     });
 
     test("updates existing session when claude_session_id matches", () => {
@@ -112,6 +120,10 @@ describe("SessionRepository upsert", () => {
           repo_url: null,
           status: "archived",
           last_activity_at: null,
+          interactive: false,
+          remote: false,
+          agent_session_id: null,
+          branch: null,
         },
         [
           {
@@ -143,6 +155,10 @@ describe("SessionRepository upsert", () => {
           repo_url: null,
           status: "archived",
           last_activity_at: null,
+          interactive: false,
+          remote: false,
+          agent_session_id: null,
+          branch: null,
         },
         [
           {
@@ -180,8 +196,8 @@ describe("SessionRepository upsert", () => {
       // Should have the new messages (old ones cleared)
       const messages = repo.getMessages("sess_original");
       expect(messages.length).toBe(2);
-      expect(messages[0].content).toBe("Updated message 1");
-      expect(messages[1].content).toBe("Updated message 2");
+      expect(messages[0]!.content).toBe("Updated message 1");
+      expect(messages[1]!.content).toBe("Updated message 2");
     });
 
     test("creates new session when claude_session_id is null", () => {
@@ -199,6 +215,10 @@ describe("SessionRepository upsert", () => {
           repo_url: null,
           status: "archived",
           last_activity_at: null,
+          interactive: false,
+          remote: false,
+          agent_session_id: null,
+          branch: null,
         },
         [],
         [],
@@ -226,6 +246,10 @@ describe("SessionRepository upsert", () => {
           repo_url: null,
           status: "archived",
           last_activity_at: null,
+          interactive: false,
+          remote: false,
+          agent_session_id: null,
+          branch: null,
         },
         [],
         [
@@ -237,6 +261,7 @@ describe("SessionRepository upsert", () => {
             additions: 1,
             deletions: 0,
             is_session_relevant: true,
+            status: "modified",
           },
           {
             session_id: "sess_diffs",
@@ -246,6 +271,7 @@ describe("SessionRepository upsert", () => {
             additions: 1,
             deletions: 0,
             is_session_relevant: true,
+            status: "modified",
           },
           {
             session_id: "sess_diffs",
@@ -255,6 +281,7 @@ describe("SessionRepository upsert", () => {
             additions: 1,
             deletions: 0,
             is_session_relevant: true,
+            status: "modified",
           },
           {
             session_id: "sess_diffs",
@@ -264,6 +291,7 @@ describe("SessionRepository upsert", () => {
             additions: 1,
             deletions: 0,
             is_session_relevant: true,
+            status: "modified",
           },
         ],
         undefined,
@@ -297,6 +325,10 @@ describe("SessionRepository upsert", () => {
           repo_url: null,
           status: "archived",
           last_activity_at: null,
+          interactive: false,
+          remote: false,
+          agent_session_id: null,
+          branch: null,
         },
         [],
         [
@@ -309,6 +341,7 @@ describe("SessionRepository upsert", () => {
             additions: 2,
             deletions: 0,
             is_session_relevant: true,
+            status: "modified",
           },
         ],
         undefined,
@@ -362,6 +395,10 @@ describe("SessionRepository upsert", () => {
           repo_url: null,
           status: "archived",
           last_activity_at: null,
+          interactive: false,
+          remote: false,
+          agent_session_id: null,
+          branch: null,
         },
         [],
         [
@@ -373,6 +410,7 @@ describe("SessionRepository upsert", () => {
             additions: 1,
             deletions: 0,
             is_session_relevant: true,
+            status: "modified",
           },
           {
             session_id: "sess_extra",
@@ -382,6 +420,7 @@ describe("SessionRepository upsert", () => {
             additions: 1,
             deletions: 0,
             is_session_relevant: false,
+            status: "modified",
           },
         ],
         undefined,
@@ -405,6 +444,10 @@ describe("SessionRepository upsert", () => {
           repo_url: null,
           status: "archived",
           last_activity_at: null,
+          interactive: false,
+          remote: false,
+          agent_session_id: null,
+          branch: null,
         },
         [],
         [], // No new diffs
@@ -418,7 +461,7 @@ describe("SessionRepository upsert", () => {
       // unrelated.ts should NOT be preserved (not in touchedFiles)
       const diffs = repo.getDiffs("sess_extra");
       expect(diffs.length).toBe(1);
-      expect(diffs[0].filename).toBe("src/file1.ts");
+      expect(diffs[0]!.filename).toBe("src/file1.ts");
     });
   });
 });
@@ -457,6 +500,10 @@ describe("SessionRepository updateSession - metadata fields", () => {
       repo_url: null,
       status: "live",
       last_activity_at: null,
+      interactive: false,
+      remote: false,
+      agent_session_id: null,
+      branch: null,
     });
 
     // Update with branch
@@ -488,6 +535,10 @@ describe("SessionRepository updateSession - metadata fields", () => {
       repo_url: null,
       status: "live",
       last_activity_at: null,
+      interactive: false,
+      remote: false,
+      agent_session_id: null,
+      branch: null,
     });
 
     const updateResult = repo.updateSession("sess_agent_test", {
@@ -512,6 +563,10 @@ describe("SessionRepository updateSession - metadata fields", () => {
       repo_url: null,
       status: "live",
       last_activity_at: null,
+      interactive: false,
+      remote: false,
+      agent_session_id: null,
+      branch: null,
     });
 
     const updateResult = repo.updateSession("sess_multi_update", {

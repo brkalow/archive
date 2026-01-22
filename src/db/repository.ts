@@ -448,7 +448,7 @@ export class SessionRepository {
     const stmt = this.db.prepare(`
       UPDATE sessions SET ${fields.join(", ")} WHERE id = ? RETURNING *
     `);
-    const result = stmt.get(...values) as Record<string, unknown> | null;
+    const result = stmt.get(...(values as (string | number | boolean | null)[])) as Record<string, unknown> | null;
     if (!result) {
       return Result.err(new NotFoundError({ resource: "session", id }));
     }
@@ -920,10 +920,11 @@ export class SessionRepository {
     const annotations = this.getAnnotationsBySession(sessionId);
     const grouped: Record<number, Annotation[]> = {};
     for (const annotation of annotations) {
-      if (!grouped[annotation.diff_id]) {
-        grouped[annotation.diff_id] = [];
+      const diffId = annotation.diff_id;
+      if (!grouped[diffId]) {
+        grouped[diffId] = [];
       }
-      grouped[annotation.diff_id].push(annotation);
+      grouped[diffId]!.push(annotation);
     }
     return grouped;
   }
@@ -1238,6 +1239,7 @@ export class SessionRepository {
                     additions: existingDiff.additions,
                     deletions: existingDiff.deletions,
                     is_session_relevant: existingDiff.is_session_relevant,
+                    status: existingDiff.status,
                   });
                   break;
                 }

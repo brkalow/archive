@@ -448,9 +448,11 @@ export function createApiRoutes(repo: SessionRepository) {
             model: validated.model || null,
             harness,
             repo_url: validated.repo_url || null,
+            branch: null,
             status: "archived",
             last_activity_at: null,
             interactive: false,
+            remote: false,
           },
           messages,
           diffs,
@@ -804,15 +806,18 @@ export function createApiRoutes(repo: SessionRepository) {
             title,
             description: null,
             claude_session_id: harnessSessionId || null,
+            agent_session_id: harnessSessionId || null,
             pr_url: null,
             share_token: null,
             project_path: project_path || null,
             model: model || null,
             harness: harness || null,
             repo_url: repo_url || null,
+            branch: null,
             status: "live" as SessionStatus,
             last_activity_at: sqliteDatetimeNow(),
             interactive: Boolean(interactive),
+            remote: false,
           },
           clientId
         );
@@ -1295,7 +1300,7 @@ export function createApiRoutes(repo: SessionRepository) {
       const params = validationResult.unwrap();
 
       const statType = params.stat;
-      const period = parsePeriod(params.period);
+      const period = parsePeriod(params.period ?? null);
       const fill = params.fill ?? false;
 
       // Always filter stats by the authenticated user's client_id
@@ -1596,12 +1601,14 @@ export function createApiRoutes(repo: SessionRepository) {
           title: body.prompt.slice(0, 100) + (body.prompt.length > 100 ? "..." : ""),
           description: null,
           claude_session_id: null, // Will be updated when Claude initializes
+          agent_session_id: null,
           pr_url: null,
           share_token: null,
           project_path: body.cwd,
           model: body.model || null,
           harness: harness,
           repo_url: null,
+          branch: null,
           status: "live",
           last_activity_at: new Date().toISOString().replace("T", " ").slice(0, 19),
           interactive: true,

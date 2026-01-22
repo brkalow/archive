@@ -612,6 +612,7 @@ export async function promptSessionSelection(
 
   for (let i = 0; i < sessions.length; i++) {
     const session = sessions[i];
+    if (!session) continue;
     const timeAgo = formatRelativeTime(session.modifiedAt);
     const num = String(i + 1).padStart(2, " ");
     console.log(`  ${num}. [${timeAgo}] ${session.projectName}`);
@@ -642,7 +643,7 @@ export async function promptSessionSelection(
         return;
       }
 
-      resolve({ session: sessions[num - 1], cancelled: false });
+      resolve({ session: sessions[num - 1] ?? null, cancelled: false });
     });
   });
 }

@@ -60,15 +60,19 @@ function createComprehensiveSession() {
     title: "Comprehensive UI Test Session",
     description: "A test session demonstrating all content block types",
     claude_session_id: crypto.randomUUID(),
+    agent_session_id: null,
     pr_url: "https://github.com/example/test/pull/42",
     share_token: crypto.randomUUID().slice(0, 16),
     project_path: "/Users/dev/projects/test-project",
     model: "claude-opus-4-20250514",
     harness: "Claude Code",
     repo_url: "https://github.com/example/test",
+    branch: null,
     status: "complete",
     last_activity_at: timestamp,
+    user_id: null,
     interactive: false,
+    remote: false,
   };
 
   const messages: Omit<Message, "id">[] = [];
@@ -461,6 +465,7 @@ index 0000000..abcdef1
       additions: 15,
       deletions: 0,
       is_session_relevant: true,
+      status: "added",
     },
     {
       session_id: sessionId,
@@ -488,6 +493,7 @@ index 1234567..89abcde 100644
       additions: 7,
       deletions: 2,
       is_session_relevant: true,
+      status: "modified",
     },
   ];
 

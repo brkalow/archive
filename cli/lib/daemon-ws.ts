@@ -48,11 +48,12 @@ export class DaemonWebSocket {
         this.options.serverUrl.replace(/^http/, "ws").replace(/\/$/, "") +
         "/api/daemon/ws";
 
-      this.ws = new WebSocket(wsUrl, {
+      // Bun's WebSocket accepts an options object with headers as second parameter
+      this.ws = new (WebSocket as BunWebSocketConstructor)(wsUrl, {
         headers: {
           "X-Openctl-Client-ID": this.options.clientId,
         },
-      } as WebSocketInit);
+      });
 
       this.ws.onopen = () => {
         this.isConnecting = false;
@@ -211,7 +212,11 @@ export class DaemonWebSocket {
   }
 }
 
-// Add type for WebSocket init options (Bun extension)
-interface WebSocketInit {
+// Bun's WebSocket constructor accepts an optional options object with headers
+interface BunWebSocketOptions {
   headers?: Record<string, string>;
+}
+
+interface BunWebSocketConstructor {
+  new (url: string, options?: BunWebSocketOptions): WebSocket;
 }

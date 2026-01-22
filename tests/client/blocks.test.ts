@@ -1,6 +1,6 @@
 import { describe, test, expect } from "bun:test";
 import { renderContentBlocks, buildToolResultMap } from "../../src/client/blocks";
-import type { ContentBlock } from "../../src/client/blocks";
+import type { ContentBlock } from "../../src/db/schema";
 
 describe("blocks", () => {
   describe("renderContentBlocks", () => {

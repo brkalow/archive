@@ -18,7 +18,7 @@ import { DiffBlock } from "./DiffBlock";
 import { ShareModal } from "./ShareModal";
 import { buildToolResultMap } from "../blocks";
 import { isNearBottom, scrollToBottom } from "../liveSession";
-import type { Message } from "../../db/schema";
+import type { Message, ContentBlock as SchemaContentBlock } from "../../db/schema";
 
 // Group messages into turns: each user message starts a new turn,
 // followed by consecutive assistant messages
@@ -178,7 +178,8 @@ export function SpawnedSessionView({
             return true;
           }
           // Also accept string content (shouldn't happen but be safe)
-          if (typeof content === "string" && content.length > 0) {
+          // Cast to unknown first to satisfy TypeScript - this branch is defensive
+          if (typeof content === "string" && (content as unknown as string).length > 0) {
             return true;
           }
           return false;
@@ -202,7 +203,8 @@ export function SpawnedSessionView({
           message_index: index,
           role: (msg.message?.role || msg.type) as string,
           content: textContent, // Legacy field
-          content_blocks: contentBlocks,
+          // Cast daemon-ws ContentBlock[] to schema ContentBlock[] (compatible structure)
+          content_blocks: contentBlocks as SchemaContentBlock[],
           timestamp: new Date().toISOString(),
         };
       });

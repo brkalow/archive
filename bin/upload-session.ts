@@ -78,7 +78,7 @@ function parseArgs() {
         options.model = args[++i];
         break;
       case "--harness":
-        options.harness = args[++i];
+        options.harness = args[++i] ?? options.harness;
         break;
       case "--repo":
         options.repo = args[++i];
@@ -95,7 +95,7 @@ function parseArgs() {
         options.review = true;
         break;
       case "--server":
-        options.server = args[++i];
+        options.server = args[++i] ?? options.server;
         break;
       case "--help":
       case "-h":
@@ -519,7 +519,7 @@ function extractTitle(sessionContent: string): string {
 
         if (text) {
           // Take first line, truncate to 100 chars
-          const firstLine = text.split("\n")[0].trim();
+          const firstLine = (text.split("\n")[0] ?? "").trim();
           return firstLine.length > 100
             ? firstLine.slice(0, 97) + "..."
             : firstLine;
@@ -634,10 +634,11 @@ Options:
   let sessionPath = options.session;
   if (!sessionPath) {
     console.log("Auto-detecting current session...");
-    sessionPath = await findCurrentSession();
-    if (!sessionPath) {
+    const foundSession = await findCurrentSession();
+    if (!foundSession) {
       process.exit(1);
     }
+    sessionPath = foundSession;
   } else if (UUID_PATTERN.test(sessionPath)) {
     // Session is a UUID, look it up in ~/.claude/projects/*/
     console.log(`Looking up session by UUID: ${sessionPath}`);

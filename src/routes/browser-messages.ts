@@ -28,11 +28,12 @@ export function handleBrowserMessage(
       // Existing: resume from index
       if (typeof msg.from_index === "number") {
         const messages = repo.getMessagesFromIndex(sessionId, msg.from_index);
-        if (messages.length > 0) {
+        const lastMessage = messages[messages.length - 1];
+        if (messages.length > 0 && lastMessage) {
           sendToBrowser({
             type: "message",
             messages,
-            index: messages[messages.length - 1].message_index,
+            index: lastMessage.message_index,
           });
         }
       }
@@ -65,9 +66,9 @@ function handleUserMessage(
   repo: SessionRepository,
   sendToBrowser: (msg: ServerToBrowserMessage) => void
 ): void {
-  const session = repo.getSession(sessionId);
+  const sessionResult = repo.getSession(sessionId);
 
-  if (!session?.interactive) {
+  if (sessionResult.isErr() || !sessionResult.unwrap().interactive) {
     sendToBrowser({
       type: "error",
       code: "NOT_INTERACTIVE",
@@ -114,9 +115,9 @@ function handleDiffComment(
   repo: SessionRepository,
   sendToBrowser: (msg: ServerToBrowserMessage) => void
 ): void {
-  const session = repo.getSession(sessionId);
+  const sessionResult = repo.getSession(sessionId);
 
-  if (!session?.interactive) {
+  if (sessionResult.isErr() || !sessionResult.unwrap().interactive) {
     sendToBrowser({
       type: "error",
       code: "UNAVAILABLE",
@@ -169,9 +170,9 @@ function handleSuggestedEdit(
   repo: SessionRepository,
   sendToBrowser: (msg: ServerToBrowserMessage) => void
 ): void {
-  const session = repo.getSession(sessionId);
+  const sessionResult = repo.getSession(sessionId);
 
-  if (!session?.interactive) {
+  if (sessionResult.isErr() || !sessionResult.unwrap().interactive) {
     sendToBrowser({
       type: "error",
       code: "UNAVAILABLE",

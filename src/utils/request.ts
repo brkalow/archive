@@ -15,7 +15,7 @@ export function getClientIP(req: Request): string {
   const forwarded = req.headers.get("X-Forwarded-For");
   if (forwarded) {
     // X-Forwarded-For can contain multiple IPs, first one is client
-    const firstIP = forwarded.split(",")[0].trim();
+    const firstIP = forwarded.split(",")[0]?.trim();
     if (firstIP) return firstIP;
   }
 

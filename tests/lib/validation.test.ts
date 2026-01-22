@@ -216,7 +216,7 @@ describe("PushMessagesSchema", () => {
     });
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.data.messages[0].role).toBe("user");
+      expect(result.data.messages[0]!.role).toBe("user");
     }
   });
 
