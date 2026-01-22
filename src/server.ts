@@ -1,4 +1,4 @@
-import { initializeDatabase } from "./db/schema";
+import { initializeDatabase, type ContentBlock as SchemaContentBlock } from "./db/schema";
 import { SessionRepository } from "./db/repository";
 import { AnalyticsRecorder } from "./analytics/events";
 import { daemonConnections, type DaemonWebSocketData } from "./lib/daemon-connections";
@@ -133,7 +133,8 @@ function handleDaemonMessage(
           session_id: message.session_id,
           role: msg.message?.role || msg.type,
           content: extractTextContent(contentBlocks),
-          content_blocks: contentBlocks,
+          // Cast daemon-ws ContentBlock[] to schema ContentBlock[] (compatible structure)
+          content_blocks: contentBlocks as SchemaContentBlock[],
           timestamp: new Date().toISOString(),
         };
       });
@@ -340,6 +341,9 @@ function handleDaemonMessage(
           additions: d.additions,
           deletions: d.deletions,
           is_session_relevant: d.is_session_relevant,
+          status: d.additions > 0 && d.deletions === 0 ? "added" as const
+            : d.additions === 0 && d.deletions > 0 ? "removed" as const
+            : "modified" as const,
         })));
       }
 
@@ -629,8 +633,11 @@ function handleSpawnedSessionMessage(
   }
 }
 
+// Type for route handler requests (Bun adds params for parameterized routes)
+type RouteRequest = Request & { params: Record<string, string> };
+
 // Start server
-const server = Bun.serve({
+const server = Bun.serve<WebSocketData>({
   port: PORT,
   hostname: HOST,
 
@@ -647,7 +654,7 @@ const server = Bun.serve({
 
     // Server-rendered stats page
     "/stats": {
-      GET: (req) => pages.statsPage(req),
+      GET: (req: Request) => pages.statsPage(req),
     },
 
     // Install script for CLI setup
@@ -657,153 +664,153 @@ const server = Bun.serve({
 
     // API routes for data
     "/api/sessions": {
-      GET: (req) => api.getSessions(req),
-      POST: (req) => api.createSession(req),
+      GET: (req: Request) => api.getSessions(req),
+      POST: (req: Request) => api.createSession(req),
     },
 
     "/api/sessions/:id": {
-      GET: (req) => {
+      GET: (req: RouteRequest) => {
         const url = new URL(req.url);
         const baseUrl = `${url.protocol}//${url.host}`;
-        return api.getSessionDetail(req, req.params.id, baseUrl);
+        return api.getSessionDetail(req, req.params.id!, baseUrl);
       },
-      POST: (req) => api.updateSession(req, req.params.id),
-      PATCH: (req) => api.patchSession(req, req.params.id),
-      DELETE: (req) => api.deleteSession(req, req.params.id),
+      POST: (req: RouteRequest) => api.updateSession(req, req.params.id!),
+      PATCH: (req: RouteRequest) => api.patchSession(req, req.params.id!),
+      DELETE: (req: RouteRequest) => api.deleteSession(req, req.params.id!),
     },
 
     "/api/sessions/:id/share": {
-      POST: (req) => api.shareSession(req, req.params.id),
+      POST: (req: RouteRequest) => api.shareSession(req, req.params.id!),
     },
 
     "/api/sessions/:id/export": {
-      GET: (req) => api.getSessionJson(req, req.params.id),
+      GET: (req: RouteRequest) => api.getSessionJson(req, req.params.id!),
     },
 
     "/api/sessions/:id/diffs": {
-      GET: (req) => api.getSessionDiffs(req, req.params.id),
+      GET: (req: RouteRequest) => api.getSessionDiffs(req, req.params.id!),
     },
 
     "/api/sessions/:id/annotations": {
-      GET: (req) => api.getAnnotations(req, req.params.id),
+      GET: (req: RouteRequest) => api.getAnnotations(req, req.params.id!),
     },
 
     "/api/s/:shareToken": {
-      GET: (req) => {
+      GET: (req: RouteRequest) => {
         const url = new URL(req.url);
         const baseUrl = `${url.protocol}//${url.host}`;
-        return api.getSharedSessionDetail(req.params.shareToken, baseUrl);
+        return api.getSharedSessionDetail(req.params.shareToken!, baseUrl);
       },
     },
 
     // Live streaming endpoints
     "/api/sessions/live": {
       GET: () => api.getLiveSessions(),
-      POST: (req) => api.createLiveSession(req),
+      POST: (req: Request) => api.createLiveSession(req),
     },
 
     "/api/sessions/:id/messages": {
-      POST: (req) => api.pushMessages(req, req.params.id),
+      POST: (req: RouteRequest) => api.pushMessages(req, req.params.id!),
     },
 
     "/api/sessions/:id/tool-results": {
-      POST: (req) => api.pushToolResults(req, req.params.id),
+      POST: (req: RouteRequest) => api.pushToolResults(req, req.params.id!),
     },
 
     "/api/sessions/:id/diff": {
-      PUT: (req) => api.updateDiff(req, req.params.id),
+      PUT: (req: RouteRequest) => api.updateDiff(req, req.params.id!),
     },
 
     "/api/sessions/:id/complete": {
-      POST: (req) => api.completeSession(req, req.params.id),
+      POST: (req: RouteRequest) => api.completeSession(req, req.params.id!),
     },
 
     "/api/sessions/:id/interactive": {
-      POST: (req) => api.markInteractive(req, req.params.id),
-      DELETE: (req) => api.disableInteractive(req, req.params.id),
+      POST: (req: RouteRequest) => api.markInteractive(req, req.params.id!),
+      DELETE: (req: RouteRequest) => api.disableInteractive(req, req.params.id!),
     },
 
     // Feedback API endpoints for plugin-based interactive sessions
     // Note: by-claude-session route must come before :id routes to avoid matching conflicts
     "/api/sessions/by-claude-session/:claudeSessionId/feedback/pending": {
-      GET: (req) => handleGetPendingFeedbackByClaudeSession(req.params.claudeSessionId, repo),
+      GET: (req: RouteRequest) => handleGetPendingFeedbackByClaudeSession(req.params.claudeSessionId!, repo),
     },
 
     "/api/sessions/by-claude-session/:claudeSessionId/interactive": {
-      POST: (req) => handleMarkSessionInteractive(req.params.claudeSessionId, repo),
+      POST: (req: RouteRequest) => handleMarkSessionInteractive(req.params.claudeSessionId!, repo),
     },
 
     "/api/sessions/by-claude-session/:claudeSessionId/finished": {
-      POST: (req) => handleMarkSessionFinished(req.params.claudeSessionId, repo),
+      POST: (req: RouteRequest) => handleMarkSessionFinished(req.params.claudeSessionId!, repo),
     },
 
     "/api/sessions/:id/feedback/pending": {
-      GET: (req) => handleGetPendingFeedback(req.params.id, repo),
+      GET: (req: RouteRequest) => handleGetPendingFeedback(req.params.id!, repo),
     },
 
     "/api/sessions/:id/feedback/:messageId/delivered": {
-      POST: (req) => handleMarkFeedbackDelivered(req.params.id, req.params.messageId, repo),
+      POST: (req: RouteRequest) => handleMarkFeedbackDelivered(req.params.id!, req.params.messageId!, repo),
     },
 
     // Auth callback for CLI OAuth flow
     "/auth/cli/callback": {
-      GET: (req) => api.handleCliAuthCallback(req),
+      GET: (req: Request) => api.handleCliAuthCallback(req),
     },
 
     // Session claiming endpoints (for authenticated users)
     "/api/sessions/unclaimed": {
-      GET: (req) => api.getUnclaimedSessions(req),
+      GET: (req: Request) => api.getUnclaimedSessions(req),
     },
 
     "/api/sessions/claim": {
-      POST: (req) => api.claimSessions(req),
+      POST: (req: Request) => api.claimSessions(req),
     },
 
     // Analytics Stats endpoints
     "/api/stats": {
-      GET: (req) => api.getStats(req),
+      GET: (req: Request) => api.getStats(req),
     },
 
     "/api/stats/timeseries": {
-      GET: (req) => api.getStatsTimeseries(req),
+      GET: (req: Request) => api.getStatsTimeseries(req),
     },
 
     "/api/stats/tools": {
-      GET: (req) => api.getStatsTools(req),
+      GET: (req: Request) => api.getStatsTools(req),
     },
 
     "/api/stats/dashboard": {
-      GET: (req) => api.getDashboardStats(req),
+      GET: (req: Request) => api.getDashboardStats(req),
     },
 
     // Daemon status endpoints
     "/api/daemon/status": {
-      GET: (req) => api.getDaemonStatus(req),
+      GET: (req: Request) => api.getDaemonStatus(req),
     },
 
     "/api/daemon/repos": {
-      GET: (req) => api.getDaemonRepos(req),
+      GET: (req: Request) => api.getDaemonRepos(req),
     },
 
     "/api/daemon/list": {
-      GET: (req) => api.listConnectedDaemons(req),
+      GET: (req: Request) => api.listConnectedDaemons(req),
     },
 
     // Spawned session endpoints
     "/api/sessions/spawn": {
-      POST: (req) => api.spawnSession(req),
+      POST: (req: Request) => api.spawnSession(req),
     },
 
     "/api/sessions/spawned": {
-      GET: (req) => api.getSpawnedSessions(req),
+      GET: (req: Request) => api.getSpawnedSessions(req),
     },
 
     "/api/sessions/:id/resume": {
-      POST: (req) => api.resumeSession(req.params.id, req),
+      POST: (req: RouteRequest) => api.resumeSession(req.params.id!, req),
     },
 
     "/api/sessions/:id/info": {
-      GET: (req) => api.getSessionInfo(req.params.id, req),
+      GET: (req: RouteRequest) => api.getSessionInfo(req.params.id!, req),
     },
 
     // Health check endpoint
@@ -819,7 +826,7 @@ const server = Bun.serve({
     if (url.pathname === "/api/daemon/ws") {
       const clientIdHeader = req.headers.get("X-Openctl-Client-ID");
 
-      const upgraded = server.upgrade<DaemonWebSocketData>(req, {
+      const upgraded = server.upgrade(req, {
         data: {
           type: "daemon",
           clientId: clientIdHeader || undefined,
@@ -835,7 +842,7 @@ const server = Bun.serve({
 
     // Handle WebSocket upgrade for live session subscriptions (browser clients)
     const wsMatch = url.pathname.match(/^\/api\/sessions\/([^\/]+)\/ws$/);
-    if (wsMatch) {
+    if (wsMatch && wsMatch[1]) {
       const sessionId = wsMatch[1];
 
       // Check if this is a spawned session (in-memory registry)
@@ -843,7 +850,7 @@ const server = Bun.serve({
       if (spawnedSession) {
         // Allow WebSocket connection even for ended/failed sessions
         // so the client can receive the error message
-        const upgraded = server.upgrade<BrowserWebSocketData>(req, {
+        const upgraded = server.upgrade(req, {
           data: { type: "browser", sessionId, isSpawned: true },
         });
 
@@ -869,7 +876,7 @@ const server = Bun.serve({
 
       // Use session.remote to determine if this is a spawned session
       // that's not currently in the registry (e.g., daemon disconnected or server restarted)
-      const upgraded = server.upgrade<BrowserWebSocketData>(req, {
+      const upgraded = server.upgrade(req, {
         data: { type: "browser", sessionId, isSpawned: session.remote },
       });
 
@@ -884,8 +891,8 @@ const server = Bun.serve({
   },
 
   websocket: {
-    open(ws) {
-      const data = ws.data as WebSocketData;
+    open(ws: import("bun").ServerWebSocket<WebSocketData>) {
+      const data = ws.data;
 
       // Handle daemon connections
       if (data.type === "daemon") {
@@ -960,8 +967,8 @@ const server = Bun.serve({
       }));
     },
 
-    message(ws, message) {
-      const data = ws.data as WebSocketData;
+    message(ws: import("bun").ServerWebSocket<WebSocketData>, message: string | Buffer) {
+      const data = ws.data;
 
       try {
         const msg = JSON.parse(message.toString());
@@ -1043,8 +1050,8 @@ const server = Bun.serve({
       }
     },
 
-    close(ws) {
-      const data = ws.data as WebSocketData;
+    close(ws: import("bun").ServerWebSocket<WebSocketData>) {
+      const data = ws.data;
 
       // Handle daemon disconnection
       if (data.type === "daemon" && data.clientId) {
@@ -1053,22 +1060,6 @@ const server = Bun.serve({
       }
 
       // Handle browser disconnection
-      if (data.type === "browser") {
-        removeSessionSubscriber(data.sessionId, ws as unknown as WebSocket);
-      }
-    },
-
-    error(ws, error) {
-      console.error("WebSocket error:", error);
-      const data = ws.data as WebSocketData;
-
-      // Handle daemon error
-      if (data.type === "daemon" && data.clientId) {
-        daemonConnections.removeDaemon(data.clientId);
-        return;
-      }
-
-      // Handle browser error
       if (data.type === "browser") {
         removeSessionSubscriber(data.sessionId, ws as unknown as WebSocket);
       }

@@ -71,8 +71,8 @@ describe("Claude Code Adapter", () => {
       );
 
       expect(result).toHaveLength(1);
-      expect(result![0].role).toBe("user");
-      expect(result![0].content_blocks[0]).toEqual({ type: "text", text: "Hello" });
+      expect(result![0]!.role).toBe("user");
+      expect(result![0]!.content_blocks[0]).toEqual({ type: "text", text: "Hello" });
     });
 
     test("normalizes 'human' role to 'user'", () => {
@@ -82,7 +82,7 @@ describe("Claude Code Adapter", () => {
       );
 
       expect(result).toHaveLength(1);
-      expect(result![0].role).toBe("user");
+      expect(result![0]!.role).toBe("user");
     });
 
     test("handles assistant message with array content", () => {
@@ -92,8 +92,8 @@ describe("Claude Code Adapter", () => {
       );
 
       expect(result).toHaveLength(1);
-      expect(result![0].role).toBe("assistant");
-      expect(result![0].content_blocks[0]).toEqual({ type: "text", text: "Let me help." });
+      expect(result![0]!.role).toBe("assistant");
+      expect(result![0]!.content_blocks[0]).toEqual({ type: "text", text: "Let me help." });
     });
 
     test("handles tool_use block", () => {
@@ -106,9 +106,9 @@ describe("Claude Code Adapter", () => {
       context.messages.push(...result!);
 
       expect(context.pendingToolUses.has("tu_001")).toBe(true);
-      expect(result![0].content_blocks).toHaveLength(2);
-      expect(result![0].content_blocks[1].type).toBe("tool_use");
-      expect(result![0].content_blocks[1].id).toBe("tu_001");
+      expect(result![0]!.content_blocks).toHaveLength(2);
+      expect(result![0]!.content_blocks[1]!.type).toBe("tool_use");
+      expect((result![0]!.content_blocks[1] as unknown as { id: string }).id).toBe("tu_001");
     });
 
     test("handles tool_result and attaches to pending tool_use", () => {
@@ -129,8 +129,8 @@ describe("Claude Code Adapter", () => {
       expect(result).toBeNull();
 
       // Result should be attached to the tool_use block
-      const toolUseBlock = context.messages[0].content_blocks[0];
-      expect(toolUseBlock.result).toBe("file contents");
+      const toolUseBlock = context.messages[0]!.content_blocks[0];
+      expect((toolUseBlock as { result?: string }).result).toBe("file contents");
     });
 
     test("skips malformed JSON", () => {
@@ -157,7 +157,7 @@ describe("Claude Code Adapter", () => {
         context
       );
 
-      expect(result![0].timestamp).toBe("2025-01-11T10:00:00Z");
+      expect(result![0]!.timestamp).toBe("2025-01-11T10:00:00Z");
     });
   });
 

@@ -54,7 +54,7 @@ describe("Client ID Authentication", () => {
       },
     });
 
-    serverPort = server.port;
+    serverPort = server.port!;
   });
 
   afterEach(() => {
@@ -263,6 +263,9 @@ describe("Client ID Authentication", () => {
         status: "live",
         last_activity_at: null,
         interactive: false,
+        remote: false,
+        agent_session_id: null,
+        branch: null,
       });
       legacySessionId = session.id;
     });

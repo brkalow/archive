@@ -171,7 +171,7 @@ describe("SpawnedSessionRegistry", () => {
 
     const daemon2Sessions = spawnedSessionRegistry.getSessionsByDaemon("daemon-2");
     expect(daemon2Sessions.length).toBe(1);
-    expect(daemon2Sessions[0].id).toBe("daemon2-session1");
+    expect(daemon2Sessions[0]!.id).toBe("daemon2-session1");
   });
 
   test("checks if session is spawned", () => {

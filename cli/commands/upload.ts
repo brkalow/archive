@@ -91,7 +91,7 @@ function parseArgs(args: string[]): ParsedOptions {
         options.model = args[++i];
         break;
       case "--harness":
-        options.harness = args[++i];
+        options.harness = args[++i] ?? options.harness;
         break;
       case "--repo":
         options.repo = args[++i];
@@ -108,7 +108,7 @@ function parseArgs(args: string[]): ParsedOptions {
         options.review = true;
         break;
       case "--server":
-        options.server = args[++i];
+        options.server = args[++i] ?? options.server;
         break;
       case "--yes":
       case "-y":
@@ -632,7 +632,7 @@ function extractTitle(sessionContent: string): string {
 
         if (text) {
           // Take first line, truncate to 100 chars
-          const firstLine = text.split("\n")[0].trim();
+          const firstLine = (text.split("\n")[0] ?? "").trim();
           return firstLine.length > 100
             ? firstLine.slice(0, 97) + "..."
             : firstLine;
@@ -779,10 +779,11 @@ export async function upload(args: string[]): Promise<void> {
     sessionPath = result.session.filePath;
   } else if (!sessionPath) {
     console.log("Auto-detecting current session...");
-    sessionPath = await findCurrentSession();
-    if (!sessionPath) {
+    const foundSession = await findCurrentSession();
+    if (!foundSession) {
       process.exit(1);
     }
+    sessionPath = foundSession;
     autoDetected = true;
   } else if (UUID_PATTERN.test(sessionPath)) {
     // Session is a UUID, look it up in ~/.claude/projects/*/

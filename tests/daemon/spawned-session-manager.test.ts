@@ -34,8 +34,8 @@ describe("SpawnedSessionManager", () => {
       await manager.startSession(request);
 
       expect(sentMessages.length).toBe(1);
-      expect(sentMessages[0].type).toBe("session_ended");
-      const msg = sentMessages[0] as {
+      expect(sentMessages[0]!.type).toBe("session_ended");
+      const msg = sentMessages[0]! as {
         type: "session_ended";
         error?: string;
         exit_code: number;
@@ -207,13 +207,21 @@ describe("SpawnedSessionManager", () => {
   });
 
   describe("processStreamMessage", () => {
+    type SessionState = "starting" | "running" | "waiting" | "ending" | "ended";
+
     test("extracts claude session ID from init message", () => {
       // Create a mock session to test message processing
-      const session = {
+      const session: {
+        id: string;
+        claudeSessionId: string | undefined;
+        state: SessionState;
+        outputHistory: any[];
+        maxHistorySize: number;
+      } = {
         id: "test-session",
         claudeSessionId: undefined,
-        state: "starting" as const,
-        outputHistory: [] as any[],
+        state: "starting",
+        outputHistory: [],
         maxHistorySize: 1000,
       };
 
@@ -229,10 +237,15 @@ describe("SpawnedSessionManager", () => {
     });
 
     test("updates state to waiting on result message", () => {
-      const session = {
+      const session: {
+        id: string;
+        state: SessionState;
+        outputHistory: any[];
+        maxHistorySize: number;
+      } = {
         id: "test-session",
-        state: "running" as const,
-        outputHistory: [] as any[],
+        state: "running",
+        outputHistory: [],
         maxHistorySize: 1000,
       };
 
@@ -245,11 +258,17 @@ describe("SpawnedSessionManager", () => {
     });
 
     test("detects AskUserQuestion tool use", () => {
-      const session = {
+      const session: {
+        id: string;
+        state: SessionState;
+        pendingToolUseId: string | undefined;
+        outputHistory: any[];
+        maxHistorySize: number;
+      } = {
         id: "test-session",
-        state: "waiting" as const,
+        state: "waiting",
         pendingToolUseId: undefined,
-        outputHistory: [] as any[],
+        outputHistory: [],
         maxHistorySize: 1000,
       };
 

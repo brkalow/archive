@@ -20,7 +20,7 @@ if (container) {
   const root = createRoot(container);
 
   // Always wrap with AuthContextProvider to let components know if Clerk is available
-  if (isClerkConfigured) {
+  if (isClerkConfigured && CLERK_PUBLISHABLE_KEY) {
     root.render(
       <AuthContextProvider isClerkConfigured={true}>
         <ClerkProvider publishableKey={CLERK_PUBLISHABLE_KEY}>

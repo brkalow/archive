@@ -28,11 +28,12 @@ export function handleBrowserMessage(
       // Existing: resume from index
       if (typeof msg.from_index === "number") {
         const messages = repo.getMessagesFromIndex(sessionId, msg.from_index);
-        if (messages.length > 0) {
+        const lastMessage = messages[messages.length - 1];
+        if (messages.length > 0 && lastMessage) {
           sendToBrowser({
             type: "message",
             messages,
-            index: messages[messages.length - 1].message_index,
+            index: lastMessage.message_index,
           });
         }
       }

@@ -80,8 +80,8 @@ describe("AuditLogger", () => {
 
     expect(lines.length).toBe(2);
 
-    const entry1 = JSON.parse(lines[0]);
-    const entry2 = JSON.parse(lines[1]);
+    const entry1 = JSON.parse(lines[0]!);
+    const entry2 = JSON.parse(lines[1]!);
 
     expect(entry1.session_id).toBe("test-1");
     expect(entry2.session_id).toBe("test-2");

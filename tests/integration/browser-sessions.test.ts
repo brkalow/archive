@@ -94,7 +94,7 @@ describe("Browser-Initiated Sessions Integration", () => {
       },
     });
 
-    serverPort = server.port;
+    serverPort = server.port!;
   });
 
   afterEach(() => {
@@ -791,8 +791,8 @@ describe("Browser-Initiated Sessions Integration", () => {
       }
 
       // End one session
-      spawnedSessionRegistry.updateSession(sessionIds[0], { status: "ended" });
-      daemonConnections.unregisterSpawnedSession(clientId, sessionIds[0]);
+      spawnedSessionRegistry.updateSession(sessionIds[0]!, { status: "ended" });
+      daemonConnections.unregisterSpawnedSession(clientId, sessionIds[0]!);
 
       // Should now be able to spawn another
       const res = await fetch(`http://localhost:${serverPort}/api/sessions/spawn`, {
@@ -837,10 +837,10 @@ describe("Browser-Initiated Sessions Integration", () => {
       const history = spawnedSessionRegistry.getPermissionHistory(session_id);
       expect(history).toBeDefined();
       expect(history?.length).toBe(2);
-      expect(history?.[0].tool).toBe("Bash");
-      expect(history?.[0].decision).toBe("allowed");
-      expect(history?.[1].tool).toBe("Write");
-      expect(history?.[1].decision).toBe("denied");
+      expect(history![0]!.tool).toBe("Bash");
+      expect(history![0]!.decision).toBe("allowed");
+      expect(history![1]!.tool).toBe("Write");
+      expect(history![1]!.decision).toBe("denied");
     });
   });
 
@@ -959,10 +959,10 @@ describe("Browser-Initiated Sessions Integration", () => {
       // Verify messages are in DB
       const messages = repo.getMessages(session_id);
       expect(messages.length).toBe(2);
-      expect(messages[0].role).toBe("user");
-      expect(messages[0].content).toBe("Test prompt");
-      expect(messages[1].role).toBe("assistant");
-      expect(messages[1].content).toBe("I will help you with that.");
+      expect(messages[0]!.role).toBe("user");
+      expect(messages[0]!.content).toBe("Test prompt");
+      expect(messages[1]!.role).toBe("assistant");
+      expect(messages[1]!.content).toBe("I will help you with that.");
     });
 
     test("diffs are stored in database", async () => {
@@ -989,16 +989,17 @@ describe("Browser-Initiated Sessions Integration", () => {
           additions: 3,
           deletions: 0,
           is_session_relevant: true,
+          status: "modified",
         },
       ]);
 
       // Verify diffs are in DB
       const diffs = repo.getDiffs(session_id);
       expect(diffs.length).toBe(1);
-      expect(diffs[0].filename).toBe("src/feature.ts");
-      expect(diffs[0].additions).toBe(3);
-      expect(diffs[0].deletions).toBe(0);
-      expect(diffs[0].is_session_relevant).toBe(true);
+      expect(diffs[0]!.filename).toBe("src/feature.ts");
+      expect(diffs[0]!.additions).toBe(3);
+      expect(diffs[0]!.deletions).toBe(0);
+      expect(diffs[0]!.is_session_relevant).toBe(true);
     });
 
     test("session status is updated in database when session ends", async () => {
@@ -1079,12 +1080,12 @@ describe("Browser-Initiated Sessions Integration", () => {
       // Simulate browser refresh - create fresh query to DB (like subscribe handler does)
       const messagesAfterRefresh = repo.getMessages(session_id);
       expect(messagesAfterRefresh.length).toBe(2);
-      expect(messagesAfterRefresh[0].content).toBe("Build a feature");
-      expect(messagesAfterRefresh[1].content).toBe("Sure, let me help you build that feature.");
+      expect(messagesAfterRefresh[0]!.content).toBe("Build a feature");
+      expect(messagesAfterRefresh[1]!.content).toBe("Sure, let me help you build that feature.");
 
       // Verify message indices are correct
-      expect(messagesAfterRefresh[0].message_index).toBe(0);
-      expect(messagesAfterRefresh[1].message_index).toBe(1);
+      expect(messagesAfterRefresh[0]!.message_index).toBe(0);
+      expect(messagesAfterRefresh[1]!.message_index).toBe(1);
     });
 
     test("diffs persist through simulated refresh", async () => {
@@ -1108,6 +1109,7 @@ describe("Browser-Initiated Sessions Integration", () => {
           additions: 1,
           deletions: 0,
           is_session_relevant: true,
+          status: "modified",
         },
         {
           session_id,
@@ -1117,16 +1119,17 @@ describe("Browser-Initiated Sessions Integration", () => {
           additions: 1,
           deletions: 1,
           is_session_relevant: false,
+          status: "modified",
         },
       ]);
 
       // Simulate browser refresh - query diffs from DB (like subscribe handler does)
       const diffsAfterRefresh = repo.getDiffs(session_id);
       expect(diffsAfterRefresh.length).toBe(2);
-      expect(diffsAfterRefresh[0].filename).toBe("src/index.ts");
-      expect(diffsAfterRefresh[0].is_session_relevant).toBe(true);
-      expect(diffsAfterRefresh[1].filename).toBe("src/utils.ts");
-      expect(diffsAfterRefresh[1].is_session_relevant).toBe(false);
+      expect(diffsAfterRefresh[0]!.filename).toBe("src/index.ts");
+      expect(diffsAfterRefresh[0]!.is_session_relevant).toBe(true);
+      expect(diffsAfterRefresh[1]!.filename).toBe("src/utils.ts");
+      expect(diffsAfterRefresh[1]!.is_session_relevant).toBe(false);
     });
 
     test("diffs are replaced on update (not appended)", async () => {
@@ -1150,6 +1153,7 @@ describe("Browser-Initiated Sessions Integration", () => {
           additions: 1,
           deletions: 0,
           is_session_relevant: true,
+          status: "modified",
         },
       ]);
 
@@ -1166,6 +1170,7 @@ describe("Browser-Initiated Sessions Integration", () => {
           additions: 1,
           deletions: 0,
           is_session_relevant: true,
+          status: "modified",
         },
         {
           session_id,
@@ -1175,14 +1180,15 @@ describe("Browser-Initiated Sessions Integration", () => {
           additions: 1,
           deletions: 0,
           is_session_relevant: true,
+          status: "modified",
         },
       ]);
 
       // Should have new diffs only
       const diffs = repo.getDiffs(session_id);
       expect(diffs.length).toBe(2);
-      expect(diffs[0].filename).toBe("src/new.ts");
-      expect(diffs[1].filename).toBe("src/another.ts");
+      expect(diffs[0]!.filename).toBe("src/new.ts");
+      expect(diffs[1]!.filename).toBe("src/another.ts");
     });
   });
 });

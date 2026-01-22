@@ -56,7 +56,7 @@ describe("Auth Flows - Dual Ownership Model", () => {
       },
     });
 
-    serverPort = server.port;
+    serverPort = server.port!;
   });
 
   afterEach(() => {
@@ -81,6 +81,9 @@ describe("Auth Flows - Dual Ownership Model", () => {
           status: "live",
           last_activity_at: null,
           interactive: false,
+          remote: false,
+          agent_session_id: null,
+          branch: null,
         },
         "client-123", // client_id
         "user-456"    // user_id
@@ -108,6 +111,9 @@ describe("Auth Flows - Dual Ownership Model", () => {
           status: "live",
           last_activity_at: null,
           interactive: false,
+          remote: false,
+          agent_session_id: null,
+          branch: null,
         },
         "client-123",
         "user-456"
@@ -135,6 +141,9 @@ describe("Auth Flows - Dual Ownership Model", () => {
           status: "live",
           last_activity_at: null,
           interactive: false,
+          remote: false,
+          agent_session_id: null,
+          branch: null,
         },
         "client-123",
         "user-456"
@@ -162,6 +171,9 @@ describe("Auth Flows - Dual Ownership Model", () => {
         status: "live",
         last_activity_at: null,
         interactive: false,
+        remote: false,
+        agent_session_id: null,
+        branch: null,
       });
 
       // Legacy sessions should NOT be accessible without matching owner
@@ -179,22 +191,22 @@ describe("Auth Flows - Dual Ownership Model", () => {
     beforeEach(() => {
       // Create sessions with various ownership
       repo.createSession(
-        { id: "s1", title: "User A Client 1", description: null, claude_session_id: null, pr_url: null, share_token: null, project_path: "/tmp", model: null, harness: null, repo_url: null, status: "complete", last_activity_at: null, interactive: false },
+        { id: "s1", title: "User A Client 1", description: null, claude_session_id: null, pr_url: null, share_token: null, project_path: "/tmp", model: null, harness: null, repo_url: null, status: "complete", last_activity_at: null, interactive: false, remote: false, agent_session_id: null, branch: null },
         "client-1",
         "user-a"
       );
       repo.createSession(
-        { id: "s2", title: "User A Client 2", description: null, claude_session_id: null, pr_url: null, share_token: null, project_path: "/tmp", model: null, harness: null, repo_url: null, status: "complete", last_activity_at: null, interactive: false },
+        { id: "s2", title: "User A Client 2", description: null, claude_session_id: null, pr_url: null, share_token: null, project_path: "/tmp", model: null, harness: null, repo_url: null, status: "complete", last_activity_at: null, interactive: false, remote: false, agent_session_id: null, branch: null },
         "client-2",
         "user-a"
       );
       repo.createSession(
-        { id: "s3", title: "User B Client 1", description: null, claude_session_id: null, pr_url: null, share_token: null, project_path: "/tmp", model: null, harness: null, repo_url: null, status: "complete", last_activity_at: null, interactive: false },
+        { id: "s3", title: "User B Client 1", description: null, claude_session_id: null, pr_url: null, share_token: null, project_path: "/tmp", model: null, harness: null, repo_url: null, status: "complete", last_activity_at: null, interactive: false, remote: false, agent_session_id: null, branch: null },
         "client-1",
         "user-b"
       );
       repo.createSession(
-        { id: "s4", title: "Client 1 only", description: null, claude_session_id: null, pr_url: null, share_token: null, project_path: "/tmp", model: null, harness: null, repo_url: null, status: "complete", last_activity_at: null, interactive: false },
+        { id: "s4", title: "Client 1 only", description: null, claude_session_id: null, pr_url: null, share_token: null, project_path: "/tmp", model: null, harness: null, repo_url: null, status: "complete", last_activity_at: null, interactive: false, remote: false, agent_session_id: null, branch: null },
         "client-1"
       );
     });
@@ -241,6 +253,8 @@ describe("Auth Flows - Dual Ownership Model", () => {
           status: "archived",
           last_activity_at: null,
           interactive: false,
+          remote: false,
+          branch: null,
         },
         [], // no messages
         [], // no diffs
@@ -276,6 +290,8 @@ describe("Auth Flows - Dual Ownership Model", () => {
           status: "archived",
           last_activity_at: null,
           interactive: false,
+          remote: false,
+          branch: null,
         },
         [],
         [],
@@ -296,16 +312,16 @@ describe("Auth Flows - Dual Ownership Model", () => {
     beforeEach(() => {
       // Create unclaimed sessions (client_id only, no user_id)
       repo.createSession(
-        { id: "unclaimed1", title: "Unclaimed 1", description: null, claude_session_id: null, pr_url: null, share_token: null, project_path: "/tmp", model: null, harness: null, repo_url: null, status: "complete", last_activity_at: null, interactive: false },
+        { id: "unclaimed1", title: "Unclaimed 1", description: null, claude_session_id: null, pr_url: null, share_token: null, project_path: "/tmp", model: null, harness: null, repo_url: null, status: "complete", last_activity_at: null, interactive: false, remote: false, agent_session_id: null, branch: null },
         "device-client"
       );
       repo.createSession(
-        { id: "unclaimed2", title: "Unclaimed 2", description: null, claude_session_id: null, pr_url: null, share_token: null, project_path: "/tmp", model: null, harness: null, repo_url: null, status: "complete", last_activity_at: null, interactive: false },
+        { id: "unclaimed2", title: "Unclaimed 2", description: null, claude_session_id: null, pr_url: null, share_token: null, project_path: "/tmp", model: null, harness: null, repo_url: null, status: "complete", last_activity_at: null, interactive: false, remote: false, agent_session_id: null, branch: null },
         "device-client"
       );
       // Already claimed session
       repo.createSession(
-        { id: "claimed", title: "Already Claimed", description: null, claude_session_id: null, pr_url: null, share_token: null, project_path: "/tmp", model: null, harness: null, repo_url: null, status: "complete", last_activity_at: null, interactive: false },
+        { id: "claimed", title: "Already Claimed", description: null, claude_session_id: null, pr_url: null, share_token: null, project_path: "/tmp", model: null, harness: null, repo_url: null, status: "complete", last_activity_at: null, interactive: false, remote: false, agent_session_id: null, branch: null },
         "device-client",
         "existing-user"
       );
@@ -387,7 +403,7 @@ describe("Auth Flows - API Endpoints", () => {
       },
     });
 
-    serverPort = server.port;
+    serverPort = server.port!;
   });
 
   afterEach(() => {
@@ -477,7 +493,7 @@ describe.skip("Auth Flows - Clerk Integration", () => {
       },
     });
 
-    serverPort = server.port;
+    serverPort = server.port!;
   });
 
   afterEach(() => {
@@ -488,7 +504,7 @@ describe.skip("Auth Flows - Clerk Integration", () => {
   test("authenticated user can list unclaimed sessions", async () => {
     // Create unclaimed sessions
     repo.createSession(
-      { id: "test1", title: "Test", description: null, claude_session_id: null, pr_url: null, share_token: null, project_path: "/tmp", model: null, harness: null, repo_url: null, status: "complete", last_activity_at: null, interactive: false },
+      { id: "test1", title: "Test", description: null, claude_session_id: null, pr_url: null, share_token: null, project_path: "/tmp", model: null, harness: null, repo_url: null, status: "complete", last_activity_at: null, interactive: false, remote: false, agent_session_id: null, branch: null },
       "test-client"
     );
 
@@ -506,7 +522,7 @@ describe.skip("Auth Flows - Clerk Integration", () => {
 
   test("authenticated user can claim sessions", async () => {
     repo.createSession(
-      { id: "test1", title: "Test", description: null, claude_session_id: null, pr_url: null, share_token: null, project_path: "/tmp", model: null, harness: null, repo_url: null, status: "complete", last_activity_at: null, interactive: false },
+      { id: "test1", title: "Test", description: null, claude_session_id: null, pr_url: null, share_token: null, project_path: "/tmp", model: null, harness: null, repo_url: null, status: "complete", last_activity_at: null, interactive: false, remote: false, agent_session_id: null, branch: null },
       "test-client"
     );
 

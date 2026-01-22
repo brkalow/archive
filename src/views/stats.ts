@@ -271,8 +271,8 @@ function renderSimpleChart(data: Array<{ date: string; value: number }>): string
         .join("")}
     </svg>
     <div class="flex justify-between text-xs text-text-muted mt-2">
-      <span>${formatDateShort(data[0].date)}</span>
-      <span>${formatDateShort(data[data.length - 1].date)}</span>
+      <span>${data[0] ? formatDateShort(data[0].date) : ""}</span>
+      <span>${(() => { const last = data[data.length - 1]; return last ? formatDateShort(last.date) : ""; })()}</span>
     </div>
   `;
 }

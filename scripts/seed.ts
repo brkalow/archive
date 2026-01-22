@@ -26,7 +26,7 @@ import type {
 const args = process.argv.slice(2);
 const shouldClean = args.includes("--clean");
 const countIndex = args.indexOf("--count");
-const sessionCount = countIndex !== -1 ? parseInt(args[countIndex + 1], 10) || 3 : 3;
+const sessionCount = countIndex !== -1 ? parseInt(args[countIndex + 1] ?? "3", 10) || 3 : 3;
 
 // Initialize database
 const dbPath = process.env.DATABASE_PATH || "data/sessions.db";
@@ -226,10 +226,10 @@ function generateSession(
   };
 } {
   const sessionId = `seed_${generateId()}`;
-  const project = projectNames[index % projectNames.length];
-  const model = models[index % models.length];
-  const harness = harnesses[index % harnesses.length];
-  const userPrompt = userPrompts[index % userPrompts.length];
+  const project = projectNames[index % projectNames.length] ?? "project";
+  const model = models[index % models.length] ?? "claude-sonnet-4-20250514";
+  const harness = harnesses[index % harnesses.length] ?? "Claude Code";
+  const userPrompt = userPrompts[index % userPrompts.length] ?? "Default task";
   const daysAgo = Math.floor(Math.random() * 14);
 
   const session: Omit<Session, "created_at" | "updated_at" | "client_id"> = {
@@ -237,15 +237,19 @@ function generateSession(
     title: userPrompt,
     description: `Session for ${project} - ${userPrompt.toLowerCase()}`,
     claude_session_id: crypto.randomUUID(),
+    agent_session_id: null,
     pr_url: index % 3 === 0 ? `https://github.com/example/${project}/pull/${100 + index}` : null,
     share_token: index % 4 === 0 ? crypto.randomUUID().slice(0, 16) : null,
     project_path: `/Users/dev/projects/${project}`,
     model,
     harness,
     repo_url: `https://github.com/example/${project}`,
+    branch: null,
     status,
     last_activity_at: status === "live" ? sqliteDatetime(0) : null,
+    user_id: null,
     interactive: status === "live",
+    remote: false,
   };
 
   // Generate messages
@@ -264,8 +268,9 @@ function generateSession(
 
   // Assistant thinking + response with tool use
   const readToolUse = toolUseBlock("Read", { file_path: `/Users/dev/projects/${project}/src/index.ts` });
+  const sampleDiff = sampleDiffs[index % sampleDiffs.length];
   const writeToolUse = toolUseBlock("Write", {
-    file_path: `/Users/dev/projects/${project}/${sampleDiffs[index % sampleDiffs.length].filename}`,
+    file_path: `/Users/dev/projects/${project}/${sampleDiff?.filename ?? "file.ts"}`,
     content: "// Updated content...",
   });
 
@@ -339,6 +344,7 @@ function generateSession(
 
   for (let i = 0; i < numDiffs; i++) {
     const diffData = sampleDiffs[(index + i) % sampleDiffs.length];
+    if (!diffData) continue;
     diffs.push({
       session_id: sessionId,
       filename: diffData.filename,
@@ -347,17 +353,36 @@ function generateSession(
       additions: diffData.additions,
       deletions: diffData.deletions,
       is_session_relevant: true,
+      status: "modified",
     });
   }
 
   // Add review for some sessions
-  let review: typeof generateSession extends (...args: unknown[]) => { review?: infer R } ? R : never;
+  let review: {
+    summary: string;
+    model: string;
+    annotations: Array<{
+      filename: string;
+      line_number: number;
+      side: "additions" | "deletions";
+      annotation_type: AnnotationType;
+      content: string;
+    }>;
+  } | undefined;
   if (index % 2 === 0 && diffs.length > 0) {
-    const annotations = [];
+    const annotations: Array<{
+      filename: string;
+      line_number: number;
+      side: "additions" | "deletions";
+      annotation_type: AnnotationType;
+      content: string;
+    }> = [];
     for (let i = 0; i < Math.min(2, diffs.length); i++) {
       const ann = reviewAnnotations[(index + i) % reviewAnnotations.length];
+      const diff = diffs[i];
+      if (!ann || !diff || !diff.filename) continue;
       annotations.push({
-        filename: diffs[i].filename!,
+        filename: diff.filename,
         line_number: 5 + i * 3,
         side: "additions" as const,
         annotation_type: ann.annotation_type,

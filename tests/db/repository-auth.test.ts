@@ -33,6 +33,9 @@ describe("SessionRepository - Client Ownership", () => {
           status: "live",
           last_activity_at: null,
           interactive: false,
+          remote: false,
+          agent_session_id: null,
+          branch: null,
         },
         "owner-client-123"
       );
@@ -56,6 +59,9 @@ describe("SessionRepository - Client Ownership", () => {
           status: "live",
           last_activity_at: null,
           interactive: false,
+          remote: false,
+          agent_session_id: null,
+          branch: null,
         },
         "owner-client-123"
       );
@@ -79,6 +85,9 @@ describe("SessionRepository - Client Ownership", () => {
           status: "live",
           last_activity_at: null,
           interactive: false,
+          remote: false,
+          agent_session_id: null,
+          branch: null,
         },
         "owner-client-123"
       );
@@ -102,6 +111,9 @@ describe("SessionRepository - Client Ownership", () => {
         status: "live",
         last_activity_at: null,
         interactive: false,
+        remote: false,
+        agent_session_id: null,
+        branch: null,
       });
 
       // Any authenticated client should be able to access legacy sessions
@@ -129,6 +141,9 @@ describe("SessionRepository - Client Ownership", () => {
             status: "live",
             last_activity_at: null,
             interactive: false,
+            remote: false,
+            agent_session_id: null,
+            branch: null,
           },
           "owner-client-123"
         );
@@ -156,6 +171,9 @@ describe("SessionRepository - Client Ownership", () => {
             status: "live",
             last_activity_at: null,
             interactive: false,
+            remote: false,
+            agent_session_id: null,
+            branch: null,
           },
           "owner-client-123"
         );
@@ -183,6 +201,9 @@ describe("SessionRepository - Client Ownership", () => {
             status: "live",
             last_activity_at: null,
             interactive: false,
+            remote: false,
+            agent_session_id: null,
+            branch: null,
           },
           "owner-client-123"
         );
@@ -210,6 +231,9 @@ describe("SessionRepository - Client Ownership", () => {
           status: "complete",
           last_activity_at: null,
           interactive: false,
+          remote: false,
+          agent_session_id: null,
+          branch: null,
         },
         "owner-client"
       );

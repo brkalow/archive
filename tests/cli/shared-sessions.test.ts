@@ -60,8 +60,8 @@ describe("Shared Sessions", () => {
       };
 
       expect(Object.keys(config.sessions)).toHaveLength(1);
-      expect(config.sessions["abc-123-def"].filePath).toContain("abc-123-def.jsonl");
-      expect(config.sessions["abc-123-def"].servers).toContain("http://localhost:3000");
+      expect(config.sessions["abc-123-def"]!.filePath).toContain("abc-123-def.jsonl");
+      expect(config.sessions["abc-123-def"]!.servers).toContain("http://localhost:3000");
     });
 
     test("session can be shared with multiple servers", () => {
@@ -76,9 +76,9 @@ describe("Shared Sessions", () => {
         },
       };
 
-      expect(config.sessions["abc-123-def"].servers).toHaveLength(2);
-      expect(config.sessions["abc-123-def"].servers).toContain("http://localhost:3000");
-      expect(config.sessions["abc-123-def"].servers).toContain("https://prod.example.com");
+      expect(config.sessions["abc-123-def"]!.servers).toHaveLength(2);
+      expect(config.sessions["abc-123-def"]!.servers).toContain("http://localhost:3000");
+      expect(config.sessions["abc-123-def"]!.servers).toContain("https://prod.example.com");
     });
   });
 
@@ -120,14 +120,14 @@ describe("Shared Sessions", () => {
       const newServerUrl = "https://prod.example.com";
 
       // Simulate addSharedSession logic
-      const session = config.sessions[sessionUuid];
+      const session = config.sessions[sessionUuid]!;
       if (!session.servers.includes(newServerUrl)) {
         session.servers.push(newServerUrl);
       }
 
-      expect(config.sessions[sessionUuid].servers).toHaveLength(2);
-      expect(config.sessions[sessionUuid].servers).toContain("http://localhost:3000");
-      expect(config.sessions[sessionUuid].servers).toContain(newServerUrl);
+      expect(config.sessions[sessionUuid]!.servers).toHaveLength(2);
+      expect(config.sessions[sessionUuid]!.servers).toContain("http://localhost:3000");
+      expect(config.sessions[sessionUuid]!.servers).toContain(newServerUrl);
     });
 
     test("does not duplicate server in session", () => {
@@ -146,12 +146,12 @@ describe("Shared Sessions", () => {
       const serverUrl = "http://localhost:3000";
 
       // Simulate addSharedSession logic
-      const session = config.sessions[sessionUuid];
+      const session = config.sessions[sessionUuid]!;
       if (!session.servers.includes(serverUrl)) {
         session.servers.push(serverUrl);
       }
 
-      expect(config.sessions[sessionUuid].servers).toHaveLength(1);
+      expect(config.sessions[sessionUuid]!.servers).toHaveLength(1);
     });
   });
 
@@ -172,15 +172,15 @@ describe("Shared Sessions", () => {
       const serverUrl = "http://localhost:3000";
 
       // Simulate removeSharedSession logic (with serverUrl)
-      const session = config.sessions[sessionUuid];
+      const session = config.sessions[sessionUuid]!;
       session.servers = session.servers.filter((s) => s !== serverUrl);
       if (session.servers.length === 0) {
         delete config.sessions[sessionUuid];
       }
 
       expect(config.sessions[sessionUuid]).toBeDefined();
-      expect(config.sessions[sessionUuid].servers).toHaveLength(1);
-      expect(config.sessions[sessionUuid].servers).not.toContain(serverUrl);
+      expect(config.sessions[sessionUuid]!.servers).toHaveLength(1);
+      expect(config.sessions[sessionUuid]!.servers).not.toContain(serverUrl);
     });
 
     test("removes session when no servers left", () => {
@@ -199,7 +199,7 @@ describe("Shared Sessions", () => {
       const serverUrl = "http://localhost:3000";
 
       // Simulate removeSharedSession logic (with serverUrl)
-      const session = config.sessions[sessionUuid];
+      const session = config.sessions[sessionUuid]!;
       session.servers = session.servers.filter((s) => s !== serverUrl);
       if (session.servers.length === 0) {
         delete config.sessions[sessionUuid];
@@ -383,7 +383,7 @@ describe("Shared Sessions", () => {
 
       expect(loaded.version).toBe(1);
       expect(loaded.sessions["test-uuid-123"]).toBeDefined();
-      expect(loaded.sessions["test-uuid-123"].filePath).toBe("/path/to/session.jsonl");
+      expect(loaded.sessions["test-uuid-123"]!.filePath).toBe("/path/to/session.jsonl");
     });
   });
 

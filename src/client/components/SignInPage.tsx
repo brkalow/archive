@@ -14,7 +14,7 @@ export function SignInPage() {
         routing="path"
         path="/sign-in"
         signUpUrl="/sign-up"
-        afterSignInUrl="/sessions"
+        fallbackRedirectUrl="/sessions"
         appearance={{
           elements: {
             rootBox: 'mx-auto',

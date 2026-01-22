@@ -177,15 +177,18 @@ export function handleMarkSessionInteractive(
       title: "Interactive Session",
       description: null,
       claude_session_id: claudeSessionId,
+      agent_session_id: claudeSessionId,
       pr_url: null,
       share_token: null,
       project_path: null,
       model: null,
       harness: "claude-code",
       repo_url: null,
+      branch: null,
       status: "live",
       last_activity_at: sqliteDatetimeNow(),
       interactive: true,
+      remote: false,
     });
 
     console.log(`[interactive] Created new session: id=${session.id}`);
