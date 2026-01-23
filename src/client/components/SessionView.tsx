@@ -193,7 +193,7 @@ export function SessionView(props: SessionViewProps) {
         <div className="max-w-[1400px] w-full mx-auto px-6 lg:px-10 flex flex-1 h-full min-h-0">
           {/* Conversation panel */}
           {showConversation && (
-            <div className={`${showDiff ? "w-1/3 pr-6" : "flex-1"} overflow-y-auto flex flex-col min-h-0`}>
+            <div className={`${showDiff ? "w-1/3 pr-6" : "flex-1 max-w-3xl mx-auto"} overflow-y-auto flex flex-col min-h-0`}>
               {conversationContent}
             </div>
           )}
