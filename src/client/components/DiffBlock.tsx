@@ -229,25 +229,28 @@ export function DiffBlock({
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        width: '20px',
-        height: '20px',
-        borderRadius: '4px',
-        backgroundColor: 'rgba(99, 102, 241, 0.2)',
-        color: '#818cf8',
+        width: '22px',
+        height: '22px',
+        borderRadius: '50%',
+        backgroundColor: '#67e8f9',
+        color: '#0c0c0c',
         border: 'none',
         cursor: 'pointer',
-        transition: 'background-color 0.15s',
+        transition: 'opacity 0.15s, transform 0.15s',
+        boxShadow: '0 1px 3px rgba(0, 0, 0, 0.3)',
       }}
       onMouseEnter={(e) => {
-        e.currentTarget.style.backgroundColor = 'rgba(99, 102, 241, 0.4)';
+        e.currentTarget.style.opacity = '0.9';
+        e.currentTarget.style.transform = 'scale(1.05)';
       }}
       onMouseLeave={(e) => {
-        e.currentTarget.style.backgroundColor = 'rgba(99, 102, 241, 0.2)';
+        e.currentTarget.style.opacity = '1';
+        e.currentTarget.style.transform = 'scale(1)';
       }}
       title="Add comment"
     >
-      <svg style={{ width: '12px', height: '12px' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+      <svg style={{ width: '14px', height: '14px' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
       </svg>
     </button>
   ), [handleAddComment]);
