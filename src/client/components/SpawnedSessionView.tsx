@@ -17,52 +17,9 @@ import { DiffBlock } from "./DiffBlock";
 import { ShareModal } from "./ShareModal";
 import { buildToolResultMap } from "../blocks";
 import { isNearBottom, scrollToBottom } from "../liveSession";
+import { groupMessagesIntoTurns } from "../lib/messageUtils";
 import { useToast, useClipboard } from "../hooks";
 import type { Message, ContentBlock as SchemaContentBlock, Session } from "../../db/schema";
-
-// Group messages into turns: each user message starts a new turn,
-// followed by consecutive assistant messages
-interface Turn {
-  type: 'user' | 'agent';
-  messages: Message[];
-}
-
-function groupMessagesIntoTurns(messages: Message[]): Turn[] {
-  const turns: Turn[] = [];
-  let currentAgentMessages: Message[] = [];
-
-  for (const message of messages) {
-    // Skip user messages with no displayable content (tool_result-only or empty)
-    if (message.role === 'user') {
-      const hasDisplayableContent = message.content_blocks?.some(
-        (block) => block.type !== 'tool_result'
-      );
-      if (!hasDisplayableContent) {
-        continue;
-      }
-
-      // Flush any pending agent messages
-      if (currentAgentMessages.length > 0) {
-        turns.push({ type: 'agent', messages: currentAgentMessages });
-        currentAgentMessages = [];
-      }
-
-      // Add user turn
-      turns.push({ type: 'user', messages: [message] });
-    } else if (message.role === 'assistant') {
-      // Accumulate assistant messages
-      currentAgentMessages.push(message);
-    }
-    // Skip system messages
-  }
-
-  // Flush remaining agent messages
-  if (currentAgentMessages.length > 0) {
-    turns.push({ type: 'agent', messages: currentAgentMessages });
-  }
-
-  return turns;
-}
 
 interface SpawnedSessionViewProps {
   sessionId: string;
