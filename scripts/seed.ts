@@ -239,7 +239,7 @@ function generateSession(
     claude_session_id: crypto.randomUUID(),
     agent_session_id: null,
     pr_url: index % 3 === 0 ? `https://github.com/example/${project}/pull/${100 + index}` : null,
-    share_token: index % 4 === 0 ? crypto.randomUUID().slice(0, 16) : null,
+    share_token: crypto.randomUUID().slice(0, 16),
     project_path: `/Users/dev/projects/${project}`,
     model,
     harness,
@@ -416,7 +416,7 @@ function generateRichSession(): {
     claude_session_id: crypto.randomUUID(),
     agent_session_id: null,
     pr_url: null,
-    share_token: null,
+    share_token: crypto.randomUUID().slice(0, 16),
     project_path: "/Users/dev/projects/webapp",
     model: "claude-sonnet-4-20250514",
     harness: "Claude Code",
@@ -576,6 +576,122 @@ function generateRichSession(): {
   return { session, messages, diffs };
 }
 
+// Generate a remote session to test the remote session UI
+function generateRemoteSession(): {
+  session: Omit<Session, "created_at" | "updated_at" | "client_id">;
+  messages: Omit<Message, "id">[];
+  diffs: Omit<Diff, "id">[];
+} {
+  const sessionId = `seed_remote_${generateId()}`;
+
+  const session: Omit<Session, "created_at" | "updated_at" | "client_id"> = {
+    id: sessionId,
+    title: "Deploy microservices to production cluster",
+    description: "Remote session for deploying and monitoring microservices",
+    claude_session_id: crypto.randomUUID(),
+    agent_session_id: crypto.randomUUID(),
+    pr_url: "https://github.com/example/infra/pull/42",
+    share_token: crypto.randomUUID().slice(0, 16),
+    project_path: "/home/deploy/infra",
+    model: "claude-sonnet-4-20250514",
+    harness: "Claude Code",
+    repo_url: "https://github.com/example/infra",
+    branch: "deploy/v2.1.0",
+    status: "live",
+    last_activity_at: sqliteDatetime(0),
+    user_id: null,
+    interactive: true,
+    remote: true,
+    visibility: "public",
+  };
+
+  const messages: Omit<Message, "id">[] = [];
+  let messageIndex = 0;
+
+  // User message
+  messages.push({
+    session_id: sessionId,
+    role: "user",
+    content: "Deploy the updated microservices to the production Kubernetes cluster",
+    content_blocks: [textBlock("Deploy the updated microservices to the production Kubernetes cluster")],
+    timestamp: sqliteDatetime(0),
+    message_index: messageIndex++,
+  });
+
+  // Assistant response with deployment commands
+  const deployTools = [
+    toolUseBlock("Bash", { command: "kubectl get pods -n production" }),
+    toolUseBlock("Bash", { command: "helm upgrade api-gateway ./charts/api-gateway --namespace production" }),
+    toolUseBlock("Bash", { command: "kubectl rollout status deployment/api-gateway -n production" }),
+  ];
+
+  messages.push({
+    session_id: sessionId,
+    role: "assistant",
+    content: "I'll deploy the microservices to the production cluster.",
+    content_blocks: [
+      thinkingBlock("Need to check current pod status before deploying to ensure no issues."),
+      textBlock("I'll deploy the updated microservices to production. Let me first check the current cluster status."),
+      ...deployTools,
+    ],
+    timestamp: sqliteDatetime(0),
+    message_index: messageIndex++,
+  });
+
+  // Tool results
+  messages.push({
+    session_id: sessionId,
+    role: "user",
+    content: "[Tool results]",
+    content_blocks: [
+      toolResultBlock(deployTools[0]!.id, "NAME                          READY   STATUS    RESTARTS   AGE\napi-gateway-7d8f9b6c4-x2k9l   1/1     Running   0          2d\nuser-service-5c4d3b2a1-m8n7   1/1     Running   0          2d"),
+      toolResultBlock(deployTools[1]!.id, "Release \"api-gateway\" has been upgraded. Happy Helming!"),
+      toolResultBlock(deployTools[2]!.id, "deployment \"api-gateway\" successfully rolled out"),
+    ],
+    timestamp: sqliteDatetime(0),
+    message_index: messageIndex++,
+  });
+
+  // Final assistant message
+  messages.push({
+    session_id: sessionId,
+    role: "assistant",
+    content: "The api-gateway has been successfully deployed to production.",
+    content_blocks: [
+      textBlock("The api-gateway has been successfully deployed to production. The rollout completed without issues. All pods are running and healthy."),
+    ],
+    timestamp: sqliteDatetime(0),
+    message_index: messageIndex++,
+  });
+
+  const diffs: Omit<Diff, "id">[] = [
+    {
+      session_id: sessionId,
+      filename: "charts/api-gateway/values.yaml",
+      diff_content: `diff --git a/charts/api-gateway/values.yaml b/charts/api-gateway/values.yaml
+index abc1234..def5678 100644
+--- a/charts/api-gateway/values.yaml
++++ b/charts/api-gateway/values.yaml
+@@ -1,5 +1,5 @@
+ replicaCount: 3
+-image:
+-  tag: v2.0.5
++image:
++  tag: v2.1.0
+ resources:
+   limits:
+     cpu: 500m`,
+      diff_index: 0,
+      additions: 2,
+      deletions: 2,
+      is_session_relevant: true,
+      status: "modified",
+    },
+  ];
+
+  return { session, messages, diffs };
+}
+
 // Main seed function
 async function seed() {
   console.log(`Seeding database at ${dbPath}...`);
@@ -600,6 +716,15 @@ async function seed() {
     console.error(`  Failed to create rich session:`, error);
   }
 
+  // Add a remote session for testing remote session UI
+  const remoteData = generateRemoteSession();
+  try {
+    repo.createSessionWithDataAndReview(remoteData.session, remoteData.messages, remoteData.diffs, undefined);
+    console.log(`  Created session: ${remoteData.session.id} (remote) - "${remoteData.session.title}"`);
+  } catch (error) {
+    console.error(`  Failed to create remote session:`, error);
+  }
+
   // Generate sessions with varied statuses
   const statuses: Array<"live" | "complete" | "archived"> = ["live", "complete", "archived"];
 
@@ -615,7 +740,7 @@ async function seed() {
     }
   }
 
-  console.log(`\nSeeded ${sessionCount + 1} sessions successfully.`);
+  console.log(`\nSeeded ${sessionCount + 2} sessions successfully.`);
   console.log(`\nView at: http://localhost:${process.env.PORT || 3000}/`);
 }
 

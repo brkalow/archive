@@ -107,14 +107,14 @@ export function ToolLine({ block, result }: ToolLineProps) {
   return (
     <div className="tool-line">
       <button
-        className="flex items-center gap-1.5 text-text-muted hover:text-text-secondary transition-colors text-[13px] py-0.5"
+        className="flex items-center gap-1.5 text-text-muted hover:text-text-secondary transition-colors text-sm py-1"
         onClick={handleToggle}
       >
         <span className={`flex-shrink-0 ${expanded ? 'text-text-secondary' : ''}`}>
           {expanded ? <IconChevron /> : <Icon />}
         </span>
         <span className="font-medium">{block.name}</span>
-        <span className="font-mono truncate max-w-[300px]">{summary}</span>
+        <span className="font-mono truncate max-w-[350px]">{summary}</span>
         {status}
       </button>
 
@@ -147,7 +147,7 @@ export function ThinkingLine({ block }: ThinkingLineProps) {
   return (
     <div className="thinking-line">
       <button
-        className="flex items-center gap-1.5 text-text-muted hover:text-text-secondary transition-colors text-[13px] py-0.5"
+        className="flex items-center gap-1.5 text-text-muted hover:text-text-secondary transition-colors text-sm py-1"
         onClick={handleToggle}
       >
         <span className="flex-shrink-0">
@@ -155,7 +155,7 @@ export function ThinkingLine({ block }: ThinkingLineProps) {
         </span>
         <span className="font-medium">Thinking</span>
         {!expanded && (
-          <span className="truncate max-w-[400px] opacity-70">{preview}...</span>
+          <span className="truncate max-w-[450px] opacity-70">{preview}...</span>
         )}
         {expanded && duration && (
           <span className="text-xs opacity-70">{duration}</span>

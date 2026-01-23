@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef } from 'react';
+import { useState, useMemo } from 'react';
 import { TextBlock } from './TextBlock';
 import { ToolLine, ThinkingLine } from './ActivityLine';
 import type { Message, ContentBlock, ToolResultBlock, ToolUseBlock, ThinkingBlock } from '../../db/schema';
@@ -56,32 +56,17 @@ interface AgentTurnProps {
   toolResults: Map<string, ToolResultBlock>;
 }
 
-function pluralize(count: number, singular: string): string {
-  return `${count} ${singular}${count !== 1 ? 's' : ''}`;
-}
-
-function formatDuration(ms: number): string {
-  if (ms < 1000) return `${ms}ms`;
-  const seconds = ms / 1000;
-  if (seconds < 60) return `${seconds.toFixed(1)}s`;
-  const minutes = Math.floor(seconds / 60);
-  const remainingSeconds = Math.floor(seconds % 60);
-  return `${minutes}m ${remainingSeconds}s`;
-}
-
 interface BlockItem {
   block: ContentBlock;
   key: string;
-  messageId: number;
   isActivity: boolean;
 }
 
 export function AgentTurn({ messages, toolResults }: AgentTurnProps) {
   // Collect all blocks in order, tracking which are activity (tools/thinking) vs text
-  const { allBlocks, toolCount, totalDurationMs } = useMemo(() => {
+  const { allBlocks, toolCount } = useMemo(() => {
     const blocks: BlockItem[] = [];
     let tools = 0;
-    let durationMs = 0;
 
     for (const message of messages) {
       for (let i = 0; i < (message.content_blocks ?? []).length; i++) {
@@ -89,18 +74,15 @@ export function AgentTurn({ messages, toolResults }: AgentTurnProps) {
         const key = `${message.id}-${i}`;
 
         if (block.type === 'text' && block.text.trim()) {
-          blocks.push({ block, key, messageId: message.id, isActivity: false });
+          blocks.push({ block, key, isActivity: false });
         } else if (block.type === 'tool_use' || block.type === 'thinking') {
-          blocks.push({ block, key, messageId: message.id, isActivity: true });
+          blocks.push({ block, key, isActivity: true });
           if (block.type === 'tool_use') tools++;
-          if (block.type === 'thinking' && (block as { duration_ms?: number }).duration_ms) {
-            durationMs += (block as { duration_ms: number }).duration_ms;
-          }
         }
       }
     }
 
-    return { allBlocks: blocks, toolCount: tools, totalDurationMs: durationMs };
+    return { allBlocks: blocks, toolCount: tools };
   }, [messages]);
 
   // Split blocks: activity section (up to last tool/thinking) and trailing text (response)
@@ -108,61 +90,29 @@ export function AgentTurn({ messages, toolResults }: AgentTurnProps) {
   const activitySection = lastActivityIndex >= 0 ? allBlocks.slice(0, lastActivityIndex + 1) : [];
   const trailingTextBlocks = lastActivityIndex >= 0 ? allBlocks.slice(lastActivityIndex + 1) : allBlocks;
 
-  // Auto-collapse when response first arrives during streaming
-  const [expanded, setExpanded] = useState(trailingTextBlocks.length === 0);
-  const hadTextRef = useRef(trailingTextBlocks.length > 0);
-
-  useEffect(() => {
-    const hasText = trailingTextBlocks.length > 0;
-    // Collapse when response first arrives (transition from no text to has text)
-    if (hasText && !hadTextRef.current) {
-      setExpanded(false);
-    }
-    hadTextRef.current = hasText;
-  }, [trailingTextBlocks.length]);
-
-  // Build summary text
-  const showSummary = toolCount > 0;
-  const nestedMessageCount = activitySection.filter(b => !b.isActivity).length;
-  const summaryText = [
-    toolCount > 0 && pluralize(toolCount, 'tool call'),
-    nestedMessageCount > 0 && pluralize(nestedMessageCount, 'message'),
-  ].filter(Boolean).join(', ');
-  const durationText = totalDurationMs > 0 ? formatDuration(totalDurationMs) : null;
+  // Show activity section if there are tools
+  const showActivity = toolCount > 0;
 
   return (
     <div className="agent-turn">
-      {/* Collapsible activity summary (only if there are tool calls) */}
-      {showSummary && (
-        <>
-          <button
-            className="flex items-center gap-1.5 text-text-muted text-[13px] hover:text-text-secondary transition-colors px-2 py-1 rounded border border-bg-elevated"
-            onClick={() => setExpanded(!expanded)}
-          >
-            <IconChevron expanded={expanded} />
-            <span>{summaryText}</span>
-            {durationText && <span className="opacity-70">({durationText})</span>}
-          </button>
-
-          {expanded && (
-            <div className="activity-list flex flex-col gap-0.5 py-2">
-              {activitySection.map(({ block, key, messageId, isActivity }) => {
-                if (isActivity) {
-                  return renderActivityBlock(block, key, messageId, toolResults);
-                }
-                return (
-                  <div key={key} className="text-sm text-text-secondary leading-relaxed py-0.5 italic">
-                    <TextBlock text={(block as { text: string }).text} />
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </>
+      {/* Activity list (sequential tools - always visible) */}
+      {showActivity && (
+        <div className="activity-list flex flex-col gap-1.5 py-1">
+          {activitySection.map(({ block, key, isActivity }) => {
+            if (isActivity) {
+              return renderActivityBlock(block, key, toolResults);
+            }
+            return (
+              <div key={key} className="text-sm text-text-secondary leading-relaxed py-0.5 italic">
+                <TextBlock text={(block as { text: string }).text} />
+              </div>
+            );
+          })}
+        </div>
       )}
 
       {/* Trailing text responses (always visible) */}
-      {trailingTextBlocks.length > 0 && showSummary && (
+      {trailingTextBlocks.length > 0 && showActivity && (
         <div className="text-xs uppercase tracking-[0.1em] text-text-muted font-mono mt-3 mb-1">Response</div>
       )}
       {trailingTextBlocks.map(({ block, key }) => (
@@ -177,33 +127,29 @@ export function AgentTurn({ messages, toolResults }: AgentTurnProps) {
 function renderActivityBlock(
   block: ContentBlock,
   key: string,
-  messageId: number,
   toolResults: Map<string, ToolResultBlock>
 ): JSX.Element | null {
-  switch (block.type) {
-    case 'tool_use':
-      if (block.name === 'TodoWrite') {
-        return <TodoWriteLine key={key} block={block as ToolUseBlock} />;
-      }
-      if (block.name === 'AskUserQuestion' || block.name === 'mcp__conductor__AskUserQuestion') {
-        return <QuestionLine key={key} block={block as ToolUseBlock} result={toolResults.get(block.id)} />;
-      }
-      if (block.name === 'Task') {
-        return <TaskLine key={key} block={block as ToolUseBlock} result={toolResults.get(block.id)} />;
-      }
-      return (
-        <ToolLine
-          key={key}
-          block={block as ToolUseBlock}
-          result={toolResults.get(block.id)}
-        />
-      );
+  if (block.type === 'thinking') {
+    return <ThinkingLine key={key} block={block as ThinkingBlock} />;
+  }
 
-    case 'thinking':
-      return <ThinkingLine key={key} block={block as ThinkingBlock} />;
+  if (block.type !== 'tool_use') {
+    return null;
+  }
 
+  const toolBlock = block as ToolUseBlock;
+  const result = toolResults.get(block.id);
+
+  switch (block.name) {
+    case 'TodoWrite':
+      return <TodoWriteLine key={key} block={toolBlock} />;
+    case 'AskUserQuestion':
+    case 'mcp__conductor__AskUserQuestion':
+      return <QuestionLine key={key} block={toolBlock} result={result} />;
+    case 'Task':
+      return <TaskLine key={key} block={toolBlock} result={result} />;
     default:
-      return null;
+      return <ToolLine key={key} block={toolBlock} result={result} />;
   }
 }
 
@@ -221,7 +167,7 @@ function TodoWriteLine({ block }: TodoWriteLineProps) {
 
   return (
     <div className="todo-line py-1">
-      <div className="flex items-center gap-1.5 text-text-muted text-[13px]">
+      <div className="flex items-center gap-1.5 text-text-muted text-sm">
         <IconList />
         <span className="font-medium">Tasks</span>
       </div>
@@ -229,7 +175,7 @@ function TodoWriteLine({ block }: TodoWriteLineProps) {
         {todos.map((todo, i) => {
           const icon = getStatusIcon(todo.status);
           return (
-            <div key={i} className="flex items-center gap-1.5 text-[13px]">
+            <div key={i} className="flex items-center gap-1.5 text-sm">
               {icon}
               <span className={todo.status === 'completed' ? 'text-text-muted line-through' : 'text-text-primary'}>
                 {todo.content}
@@ -263,18 +209,18 @@ function QuestionLine({ block, result }: QuestionLineProps) {
 
   return (
     <div className="question-line py-1">
-      <div className="flex items-center gap-1.5 text-text-muted text-[13px]">
+      <div className="flex items-center gap-1.5 text-text-muted text-sm">
         <IconQuestion />
         <span className="font-medium">Question</span>
       </div>
       <div className="ml-5 mt-1 space-y-1">
         {questions.map((q, i) => (
           <div key={i}>
-            <div className="text-[13px] text-text-primary">{q.question}</div>
+            <div className="text-sm text-text-primary">{q.question}</div>
             {answers[i] && (
               <div className="flex items-center gap-1 mt-0.5">
                 <span className="text-accent-primary text-xs">&rarr;</span>
-                <span className="text-[13px] font-medium text-text-primary">{String(answers[i])}</span>
+                <span className="text-sm font-medium text-text-primary">{String(answers[i])}</span>
               </div>
             )}
           </div>
@@ -324,24 +270,33 @@ function TaskLine({ block, result }: TaskLineProps) {
   const agentType = input.subagent_type || 'general-purpose';
   const agentName = SUBAGENT_CONFIG[agentType] || agentType;
   const { status, statusColor } = getTaskStatus(result);
-  const hasContent = result?.content && result.content.length > 0;
+  const hasContent = Boolean(result?.content);
 
-  const baseClassName = "flex items-center gap-1.5 text-text-muted text-[13px]";
-  const Element = hasContent ? 'button' : 'div';
-  const elementProps = hasContent
-    ? { className: `${baseClassName} hover:text-text-secondary transition-colors`, onClick: () => setExpanded(!expanded) }
-    : { className: baseClassName };
+  const content = (
+    <>
+      <span className={`flex-shrink-0 ${expanded ? 'text-text-secondary' : ''}`}>
+        {expanded ? <IconChevron expanded /> : <IconRobot />}
+      </span>
+      <span className="font-medium">{agentName}</span>
+      <span className="truncate max-w-[350px]">{description.slice(0, 60)}</span>
+      {status && <span className={statusColor}>{status}</span>}
+    </>
+  );
 
   return (
-    <div className="task-line py-0.5">
-      <Element {...elementProps}>
-        <span className={`flex-shrink-0 ${expanded ? 'text-text-secondary' : ''}`}>
-          {expanded ? <IconChevron expanded /> : <IconRobot />}
-        </span>
-        <span className="font-medium">{agentName}</span>
-        <span className="truncate max-w-[300px]">{description.slice(0, 50)}</span>
-        {status && <span className={statusColor}>{status}</span>}
-      </Element>
+    <div className="task-line py-1">
+      {hasContent ? (
+        <button
+          className="flex items-center gap-1.5 text-text-muted text-sm hover:text-text-secondary transition-colors"
+          onClick={() => setExpanded(!expanded)}
+        >
+          {content}
+        </button>
+      ) : (
+        <div className="flex items-center gap-1.5 text-text-muted text-sm">
+          {content}
+        </div>
+      )}
 
       {expanded && result?.content && (
         <div className="ml-5 mt-1">

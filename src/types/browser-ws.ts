@@ -16,7 +16,7 @@ export type BrowserToServerMessage =
   | { type: "subscribe"; from_index?: number }
   | { type: "ping" }
   // Interactive session messages (plugin-based)
-  | { type: "user_message"; content: string }
+  | { type: "user_message"; content: string; user_id?: string }
   | { type: "diff_comment"; file: string; line: number; content: string }
   | { type: "suggested_edit"; file: string; old_content: string; new_content: string }
   // Spawned session messages (browser-initiated)

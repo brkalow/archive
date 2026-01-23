@@ -158,6 +158,7 @@ export interface SendInputMessage {
   type: "send_input";
   session_id: string;
   content: string;
+  user_id?: string; // ID of the user who sent this message (for multi-user remote sessions)
 }
 
 export interface EndSessionMessage {
@@ -216,6 +217,7 @@ export interface StreamJsonMessage {
   cwd?: string;
   duration_ms?: number;
   is_error?: boolean;
+  user_id?: string; // ID of the user who sent this message (for multi-user remote sessions)
 }
 
 export interface ContentBlock {

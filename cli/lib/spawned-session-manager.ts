@@ -606,7 +606,7 @@ export class SpawnedSessionManager {
     }
   }
 
-  async sendInput(sessionId: string, content: string): Promise<void> {
+  async sendInput(sessionId: string, content: string, userId?: string): Promise<void> {
     const session = this.sessions.get(sessionId);
     if (!session) {
       console.error(`[spawner] Session not found: ${sessionId}`);
@@ -628,7 +628,7 @@ export class SpawnedSessionManager {
       session.stdin.write(message);
       session.stdin.flush();
       session.state = "running";
-      console.log(`[spawner] Sent input to session ${sessionId}`);
+      console.log(`[spawner] Sent input to session ${sessionId}${userId ? ` from user ${userId}` : ""}`);
 
       // Echo the user message back to the server so it appears in the UI
       const userMessage: StreamJsonMessage = {
@@ -638,6 +638,7 @@ export class SpawnedSessionManager {
           role: "user",
           content: [{ type: "text", text: content }],
         },
+        user_id: userId, // Track which user sent this message
       };
       this.recordMessage(session, userMessage);
       this.sendToServer({

@@ -240,7 +240,7 @@ function handleServerMessage(message: ServerToDaemonMessage): void {
 
     case "send_input":
       debug(`[daemon] Received send_input: ${message.session_id}`);
-      sessionManager.sendInput(message.session_id, message.content);
+      sessionManager.sendInput(message.session_id, message.content, message.user_id);
       break;
 
     case "end_session":

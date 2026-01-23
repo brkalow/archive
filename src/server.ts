@@ -136,6 +136,7 @@ function handleDaemonMessage(
           // Cast daemon-ws ContentBlock[] to schema ContentBlock[] (compatible structure)
           content_blocks: contentBlocks as SchemaContentBlock[],
           timestamp: new Date().toISOString(),
+          user_id: msg.user_id || null, // Track which user sent this message (for multi-user sessions)
         };
       });
 
@@ -546,11 +547,12 @@ function handleSpawnedSessionMessage(
       // Record activity for idle timeout
       sessionLimitEnforcer.recordActivity(sessionId);
 
-      // Relay to daemon
+      // Relay to daemon (include user_id for multi-user attribution)
       const sent = daemonConnections.sendToDaemon(session.daemonClientId, {
         type: "send_input",
         session_id: sessionId,
         content: message.content,
+        user_id: message.user_id,
       });
 
       if (!sent) {
