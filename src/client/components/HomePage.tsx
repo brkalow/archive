@@ -13,6 +13,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useDaemonStatus } from '../hooks/useDaemonStatus';
 import { useClipboard } from '../hooks';
 import { stripSystemTags } from '../blocks';
+import { StatsSection } from './StatsSection';
 import type { Session } from '../../db/schema';
 
 type PermissionMode = 'relay' | 'auto-safe' | 'auto';
@@ -205,6 +206,9 @@ export function HomePage({ sessions }: HomePageProps) {
             ))}
           </div>
         )}
+
+        {/* Stats section */}
+        {sessions.length > 0 && <StatsSection />}
 
         {/* Keyboard hints footer */}
         <footer className="mt-12 pt-6 border-t border-bg-elevated">

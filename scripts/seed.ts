@@ -232,6 +232,12 @@ function generateSession(
   const userPrompt = userPrompts[index % userPrompts.length] ?? "Default task";
   const daysAgo = Math.floor(Math.random() * 14);
 
+  // Generate realistic token usage
+  const inputTokens = 5000 + Math.floor(Math.random() * 45000); // 5K-50K
+  const outputTokens = 2000 + Math.floor(Math.random() * 18000); // 2K-20K
+  const cacheReadTokens = Math.floor(inputTokens * (0.3 + Math.random() * 0.5)); // 30-80% cache hit
+  const cacheCreationTokens = Math.floor(inputTokens * 0.1 * Math.random()); // 0-10%
+
   const session: Omit<Session, "created_at" | "updated_at" | "client_id"> = {
     id: sessionId,
     title: userPrompt,
@@ -251,6 +257,10 @@ function generateSession(
     interactive: status === "live",
     remote: false,
     visibility: "public",
+    input_tokens: inputTokens,
+    output_tokens: outputTokens,
+    cache_read_tokens: cacheReadTokens,
+    cache_creation_tokens: cacheCreationTokens,
   };
 
   // Generate messages
@@ -428,6 +438,10 @@ function generateRichSession(): {
     interactive: false,
     remote: false,
     visibility: "public",
+    input_tokens: 125000,
+    output_tokens: 48000,
+    cache_read_tokens: 87000,
+    cache_creation_tokens: 12000,
   };
 
   const messages: Omit<Message, "id">[] = [];
@@ -593,7 +607,7 @@ function generateRemoteSession(): {
     pr_url: "https://github.com/example/infra/pull/42",
     share_token: crypto.randomUUID().slice(0, 16),
     project_path: "/home/deploy/infra",
-    model: "claude-sonnet-4-20250514",
+    model: "claude-opus-4-20250514",
     harness: "Claude Code",
     repo_url: "https://github.com/example/infra",
     branch: "deploy/v2.1.0",
@@ -603,6 +617,10 @@ function generateRemoteSession(): {
     interactive: true,
     remote: true,
     visibility: "public",
+    input_tokens: 42000,
+    output_tokens: 15000,
+    cache_read_tokens: 28000,
+    cache_creation_tokens: 5000,
   };
 
   const messages: Omit<Message, "id">[] = [];

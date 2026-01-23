@@ -824,6 +824,10 @@ const server = Bun.serve<WebSocketData>({
       GET: (req: Request) => api.getDashboardStats(req),
     },
 
+    "/api/stats/homepage": {
+      GET: (req: Request) => api.getHomepageStats(req),
+    },
+
     // Daemon status endpoints
     "/api/daemon/status": {
       GET: (req: Request) => api.getDaemonStatus(req),

@@ -89,8 +89,8 @@ export class SessionRepository {
     // Initialize cached prepared statements
     this.stmts = {
       createSession: db.prepare(`
-        INSERT INTO sessions (id, title, description, claude_session_id, agent_session_id, pr_url, share_token, project_path, model, harness, repo_url, branch, status, visibility, last_activity_at, stream_token_hash, client_id, user_id, interactive, remote)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO sessions (id, title, description, claude_session_id, agent_session_id, pr_url, share_token, project_path, model, harness, repo_url, branch, status, visibility, last_activity_at, stream_token_hash, client_id, user_id, interactive, remote, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         RETURNING *
       `),
       getSession: db.prepare("SELECT * FROM sessions WHERE id = ?"),
@@ -1054,7 +1054,11 @@ export class SessionRepository {
         clientId || null,
         userId || null,
         session.interactive ? 1 : 0,
-        session.remote ? 1 : 0
+        session.remote ? 1 : 0,
+        (session as { input_tokens?: number }).input_tokens || 0,
+        (session as { output_tokens?: number }).output_tokens || 0,
+        (session as { cache_read_tokens?: number }).cache_read_tokens || 0,
+        (session as { cache_creation_tokens?: number }).cache_creation_tokens || 0
       ) as Record<string, unknown>;
 
       // Insert messages
@@ -1985,5 +1989,173 @@ export class SessionRepository {
       return updated;
     });
     return transaction();
+  }
+
+  // === Homepage Stats Methods ===
+
+  /**
+   * Get top models by total token usage (input + output).
+   * Includes sessions owned by the user/client plus all public sessions.
+   * Returns models sorted by total tokens, limited to top N.
+   */
+  getTopModelsByTokenUsage(
+    userId?: string,
+    clientId?: string,
+    limit = 5
+  ): Array<{ model: string; total_tokens: number; session_count: number }> {
+    let query: string;
+    let params: (string | number)[];
+
+    const baseQuery = `
+      SELECT
+        model,
+        SUM(input_tokens + output_tokens) as total_tokens,
+        COUNT(*) as session_count
+      FROM sessions
+      WHERE model IS NOT NULL AND model != ''
+    `;
+
+    // Include owned sessions + public sessions
+    if (userId && clientId) {
+      query = `${baseQuery} AND (user_id = ? OR client_id = ? OR visibility = 'public') GROUP BY model ORDER BY total_tokens DESC LIMIT ?`;
+      params = [userId, clientId, limit];
+    } else if (userId) {
+      query = `${baseQuery} AND (user_id = ? OR visibility = 'public') GROUP BY model ORDER BY total_tokens DESC LIMIT ?`;
+      params = [userId, limit];
+    } else if (clientId) {
+      query = `${baseQuery} AND (client_id = ? OR visibility = 'public') GROUP BY model ORDER BY total_tokens DESC LIMIT ?`;
+      params = [clientId, limit];
+    } else {
+      // No auth - only public sessions
+      query = `${baseQuery} AND visibility = 'public' GROUP BY model ORDER BY total_tokens DESC LIMIT ?`;
+      params = [limit];
+    }
+
+    const stmt = this.db.prepare(query);
+    return stmt.all(...params) as Array<{ model: string; total_tokens: number; session_count: number }>;
+  }
+
+  /**
+   * Get top harnesses (agents) by session count.
+   * Includes sessions owned by the user/client plus all public sessions.
+   * Returns harnesses sorted by session count, limited to top N.
+   */
+  getTopHarnessesBySessionCount(
+    userId?: string,
+    clientId?: string,
+    limit = 5
+  ): Array<{ harness: string; session_count: number }> {
+    let query: string;
+    let params: (string | number)[];
+
+    const baseQuery = `
+      SELECT
+        harness,
+        COUNT(*) as session_count
+      FROM sessions
+      WHERE harness IS NOT NULL AND harness != ''
+    `;
+
+    // Include owned sessions + public sessions
+    if (userId && clientId) {
+      query = `${baseQuery} AND (user_id = ? OR client_id = ? OR visibility = 'public') GROUP BY harness ORDER BY session_count DESC LIMIT ?`;
+      params = [userId, clientId, limit];
+    } else if (userId) {
+      query = `${baseQuery} AND (user_id = ? OR visibility = 'public') GROUP BY harness ORDER BY session_count DESC LIMIT ?`;
+      params = [userId, limit];
+    } else if (clientId) {
+      query = `${baseQuery} AND (client_id = ? OR visibility = 'public') GROUP BY harness ORDER BY session_count DESC LIMIT ?`;
+      params = [clientId, limit];
+    } else {
+      // No auth - only public sessions
+      query = `${baseQuery} AND visibility = 'public' GROUP BY harness ORDER BY session_count DESC LIMIT ?`;
+      params = [limit];
+    }
+
+    const stmt = this.db.prepare(query);
+    return stmt.all(...params) as Array<{ harness: string; session_count: number }>;
+  }
+
+  /**
+   * Get most active repos by session count.
+   * Includes sessions owned by the user/client plus all public sessions.
+   * Returns repos sorted by session count, limited to top N.
+   */
+  getMostActiveRepos(
+    userId?: string,
+    clientId?: string,
+    limit = 5
+  ): Array<{ repo_url: string; session_count: number; total_tokens: number }> {
+    let query: string;
+    let params: (string | number)[];
+
+    const baseQuery = `
+      SELECT
+        repo_url,
+        COUNT(*) as session_count,
+        SUM(input_tokens + output_tokens) as total_tokens
+      FROM sessions
+      WHERE repo_url IS NOT NULL AND repo_url != ''
+    `;
+
+    // Include owned sessions + public sessions
+    if (userId && clientId) {
+      query = `${baseQuery} AND (user_id = ? OR client_id = ? OR visibility = 'public') GROUP BY repo_url ORDER BY session_count DESC LIMIT ?`;
+      params = [userId, clientId, limit];
+    } else if (userId) {
+      query = `${baseQuery} AND (user_id = ? OR visibility = 'public') GROUP BY repo_url ORDER BY session_count DESC LIMIT ?`;
+      params = [userId, limit];
+    } else if (clientId) {
+      query = `${baseQuery} AND (client_id = ? OR visibility = 'public') GROUP BY repo_url ORDER BY session_count DESC LIMIT ?`;
+      params = [clientId, limit];
+    } else {
+      // No auth - only public sessions
+      query = `${baseQuery} AND visibility = 'public' GROUP BY repo_url ORDER BY session_count DESC LIMIT ?`;
+      params = [limit];
+    }
+
+    const stmt = this.db.prepare(query);
+    return stmt.all(...params) as Array<{ repo_url: string; session_count: number; total_tokens: number }>;
+  }
+
+  /**
+   * Get aggregate token totals for accessible sessions.
+   * Includes sessions owned by the user/client plus all public sessions.
+   */
+  getTotalTokenUsage(
+    userId?: string,
+    clientId?: string
+  ): { input_tokens: number; output_tokens: number; cache_read_tokens: number; cache_creation_tokens: number } {
+    let query: string;
+    let params: string[];
+
+    const baseQuery = `
+      SELECT
+        COALESCE(SUM(input_tokens), 0) as input_tokens,
+        COALESCE(SUM(output_tokens), 0) as output_tokens,
+        COALESCE(SUM(cache_read_tokens), 0) as cache_read_tokens,
+        COALESCE(SUM(cache_creation_tokens), 0) as cache_creation_tokens
+      FROM sessions
+      WHERE 1=1
+    `;
+
+    // Include owned sessions + public sessions
+    if (userId && clientId) {
+      query = `${baseQuery} AND (user_id = ? OR client_id = ? OR visibility = 'public')`;
+      params = [userId, clientId];
+    } else if (userId) {
+      query = `${baseQuery} AND (user_id = ? OR visibility = 'public')`;
+      params = [userId];
+    } else if (clientId) {
+      query = `${baseQuery} AND (client_id = ? OR visibility = 'public')`;
+      params = [clientId];
+    } else {
+      // No auth - only public sessions
+      query = `${baseQuery} AND visibility = 'public'`;
+      params = [];
+    }
+
+    const stmt = this.db.prepare(query);
+    return stmt.get(...params) as { input_tokens: number; output_tokens: number; cache_read_tokens: number; cache_creation_tokens: number };
   }
 }
