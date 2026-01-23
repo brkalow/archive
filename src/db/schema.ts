@@ -205,6 +205,9 @@ export function initializeDatabase(dbPath: string = process.env.DATABASE_PATH ||
   safeAddColumn(db, "sessions", "visibility", "TEXT DEFAULT 'private'");
   db.run(`CREATE INDEX IF NOT EXISTS idx_sessions_visibility ON sessions(visibility)`);
 
+  // Per-message user tracking (for multi-user remote sessions)
+  safeAddColumn(db, "messages", "user_id", "TEXT");
+
   // Session collaborators table
   db.run(`
     CREATE TABLE IF NOT EXISTS session_collaborators (
@@ -387,6 +390,7 @@ export type Message = {
   content_blocks: ContentBlock[]; // Structured content
   timestamp: string | null;
   message_index: number;
+  user_id?: string | null; // User who sent this message (for multi-user remote sessions)
 };
 
 export type DiffStatus = "added" | "removed" | "modified";

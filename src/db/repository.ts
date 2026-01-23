@@ -98,8 +98,8 @@ export class SessionRepository {
       getAllSessions: db.prepare("SELECT * FROM sessions ORDER BY created_at DESC"),
       deleteSession: db.prepare("DELETE FROM sessions WHERE id = ?"),
       insertMessage: db.prepare(`
-        INSERT INTO messages (session_id, role, content, content_blocks, timestamp, message_index)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO messages (session_id, role, content, content_blocks, timestamp, message_index, user_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
       `),
       getMessages: db.prepare("SELECT * FROM messages WHERE session_id = ? ORDER BY message_index ASC"),
       clearMessages: db.prepare("DELETE FROM messages WHERE session_id = ?"),
@@ -351,7 +351,8 @@ export class SessionRepository {
           msg.content,
           JSON.stringify(msg.content_blocks || []),
           msg.timestamp,
-          msg.message_index
+          msg.message_index,
+          msg.user_id || null
         );
       }
 
@@ -573,24 +574,28 @@ export class SessionRepository {
   }
 
   /**
-   * Get sessions owned by either user_id or client_id.
-   * Used for authenticated users who may have both user-owned and device-owned sessions.
+   * Get sessions accessible to the given user/client.
+   * Returns sessions owned by user_id or client_id, plus all public sessions.
+   * Used to populate the activity feed with sessions the user can see.
    */
-  getSessionsByOwner(userId?: string, clientId?: string): Session[] {
-    if (!userId && !clientId) return [];
-
+  getAccessibleSessions(userId?: string, clientId?: string): Session[] {
     let query: string;
     let params: string[];
 
+    // Always include public sessions, plus sessions owned by the user/client
     if (userId && clientId) {
-      query = "SELECT * FROM sessions WHERE user_id = ? OR client_id = ? ORDER BY created_at DESC";
+      query = "SELECT * FROM sessions WHERE user_id = ? OR client_id = ? OR visibility = 'public' ORDER BY created_at DESC";
       params = [userId, clientId];
     } else if (userId) {
-      query = "SELECT * FROM sessions WHERE user_id = ? ORDER BY created_at DESC";
+      query = "SELECT * FROM sessions WHERE user_id = ? OR visibility = 'public' ORDER BY created_at DESC";
       params = [userId];
+    } else if (clientId) {
+      query = "SELECT * FROM sessions WHERE client_id = ? OR visibility = 'public' ORDER BY created_at DESC";
+      params = [clientId];
     } else {
-      query = "SELECT * FROM sessions WHERE client_id = ? ORDER BY created_at DESC";
-      params = [clientId!];
+      // No auth - only show public sessions
+      query = "SELECT * FROM sessions WHERE visibility = 'public' ORDER BY created_at DESC";
+      params = [];
     }
 
     const stmt = this.db.prepare(query);
@@ -668,7 +673,8 @@ export class SessionRepository {
       message.content,
       JSON.stringify(message.content_blocks || []),
       message.timestamp,
-      message.message_index
+      message.message_index,
+      message.user_id || null
     );
   }
 
@@ -681,7 +687,8 @@ export class SessionRepository {
           msg.content,
           JSON.stringify(msg.content_blocks || []),
           msg.timestamp,
-          msg.message_index
+          msg.message_index,
+          msg.user_id || null
         );
       }
     });
@@ -787,7 +794,8 @@ export class SessionRepository {
           msg.content,
           JSON.stringify(msg.content_blocks || []),
           msg.timestamp,
-          lastIndex
+          lastIndex,
+          msg.user_id || null
         );
       }
 
@@ -1057,7 +1065,8 @@ export class SessionRepository {
           msg.content,
           JSON.stringify(msg.content_blocks || []),
           msg.timestamp,
-          msg.message_index
+          msg.message_index,
+          msg.user_id || null
         );
       }
 
@@ -1362,7 +1371,8 @@ export class SessionRepository {
           msg.content,
           JSON.stringify(msg.content_blocks || []),
           msg.timestamp,
-          msg.message_index
+          msg.message_index,
+          msg.user_id || null
         );
       }
 

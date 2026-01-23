@@ -185,8 +185,6 @@ export function SessionView(props: SessionViewProps) {
         <ViewToggleBar
           viewMode={viewMode}
           onViewModeChange={setViewMode}
-          messageCount={messages.length}
-          diffCount={diffs.length}
         />
       )}
 
@@ -322,9 +320,24 @@ function SessionViewHeader({
         <div className="flex items-center justify-between gap-4">
           {/* Left: Metadata badges */}
           <div className="flex items-center gap-2 flex-wrap min-w-0">
+            {/* PR badge */}
+            {session.pr_url && (
+              <a
+                href={session.pr_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-diff-add/15 text-diff-add hover:bg-diff-add/25 transition-colors"
+              >
+                <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 16 16">
+                  <path d="M1.5 3.25a2.25 2.25 0 1 1 3 2.122v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.25 2.25 0 0 1 1.5 3.25Zm5.677-.177L9.573.677A.25.25 0 0 1 10 .854V2.5h1A2.5 2.5 0 0 1 13.5 5v5.628a2.251 2.251 0 1 1-1.5 0V5a1 1 0 0 0-1-1h-1v1.646a.25.25 0 0 1-.427.177L7.177 3.427a.25.25 0 0 1 0-.354ZM3.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm0 9.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm8.25.75a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0Z" />
+                </svg>
+                <span>{extractPrNumber(session.pr_url)}</span>
+              </a>
+            )}
+
             {/* Repo/path badge */}
             {session.project_path && (
-              <Badge icon={<BookmarkIcon />}>
+              <Badge icon={<ProjectIcon repoUrl={session.repo_url} />}>
                 {extractRepoName(session.project_path)}
               </Badge>
             )}
@@ -341,19 +354,6 @@ function SessionViewHeader({
               <Badge icon={<HarnessIcon harness={session.harness} />}>
                 {session.harness}
               </Badge>
-            )}
-
-            {/* PR badge */}
-            {session.pr_url && (
-              <a
-                href={session.pr_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-bg-tertiary hover:bg-bg-elevated text-text-secondary text-xs rounded-md transition-colors"
-              >
-                <PRIcon />
-                <span>PR</span>
-              </a>
             )}
 
             {/* Remote badge */}
@@ -474,15 +474,13 @@ function SessionViewHeader({
 interface ViewToggleBarProps {
   viewMode: ViewMode;
   onViewModeChange: (mode: ViewMode) => void;
-  messageCount: number;
-  diffCount: number;
 }
 
-function ViewToggleBar({ viewMode, onViewModeChange, messageCount, diffCount }: ViewToggleBarProps) {
+function ViewToggleBar({ viewMode, onViewModeChange }: ViewToggleBarProps) {
   return (
     <div className="bg-bg-secondary border-b border-bg-elevated">
-      <div className="max-w-[1400px] mx-auto px-6 lg:px-10 py-2 flex items-center justify-between">
-        <div className="flex items-center gap-1 bg-bg-tertiary rounded-lg p-1">
+      <div className="max-w-[1400px] mx-auto px-6 lg:px-10 py-2">
+        <div className="flex items-center bg-bg-secondary rounded-lg p-0.5 border border-bg-elevated">
           <ViewToggleButton
             active={viewMode === "split"}
             onClick={() => onViewModeChange("split")}
@@ -502,12 +500,6 @@ function ViewToggleBar({ viewMode, onViewModeChange, messageCount, diffCount }: 
             label="Diff"
           />
         </div>
-
-        {/* Stats */}
-        <div className="flex items-center gap-4 text-xs text-text-muted">
-          <span>{messageCount} messages</span>
-          <span>{diffCount} files changed</span>
-        </div>
       </div>
     </div>
   );
@@ -524,10 +516,11 @@ function ViewToggleButton({ active, onClick, icon, label }: ViewToggleButtonProp
   return (
     <button
       onClick={onClick}
-      className={`flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md transition-colors ${
+      aria-pressed={active}
+      className={`flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded-md transition-colors ${
         active
-          ? "bg-bg-elevated text-text-primary"
-          : "text-text-muted hover:text-text-primary hover:bg-bg-elevated/50"
+          ? "bg-bg-tertiary text-text-primary"
+          : "text-text-muted hover:text-text-secondary"
       }`}
     >
       {icon}
@@ -617,18 +610,22 @@ function Badge({ icon, children }: BadgeProps) {
 // Icons
 // ============================================================================
 
-function BookmarkIcon() {
-  return (
-    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
-    </svg>
-  );
-}
+function ProjectIcon({ repoUrl }: { repoUrl?: string | null }) {
+  // Use GitHub logo for GitHub repos, folder icon for local paths
+  const isGitHub = repoUrl?.includes('github.com');
 
-function PRIcon() {
+  if (isGitHub) {
+    return (
+      <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 16 16">
+        <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z" />
+      </svg>
+    );
+  }
+
+  // Folder icon for local paths
   return (
     <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
     </svg>
   );
 }
@@ -746,6 +743,14 @@ export function formatModelName(model: string): string {
     return parts.slice(0, 2).map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(' ');
   }
   return model;
+}
+
+/**
+ * Extract PR number from URL (e.g., "https://github.com/org/repo/pull/123" -> "#123")
+ */
+function extractPrNumber(prUrl: string): string {
+  const prMatch = prUrl.match(/\/pull\/(\d+)/);
+  return prMatch ? `#${prMatch[1]}` : 'PR';
 }
 
 /**

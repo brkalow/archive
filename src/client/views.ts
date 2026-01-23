@@ -699,6 +699,46 @@ function renderPrimitivesSection(): string {
           </div>
         </div>
 
+        <!-- Segmented Controls -->
+        <div>
+          <h3 class="text-sm font-semibold text-text-secondary uppercase tracking-wide mb-4">Segmented Controls</h3>
+          <div class="space-y-4 p-4 bg-bg-secondary border border-bg-elevated rounded-md">
+            <div>
+              <div class="text-xs text-text-muted mb-2">Text only (Activity feed)</div>
+              <div class="flex items-center bg-bg-secondary rounded-lg p-0.5 border border-bg-elevated w-fit">
+                <button class="px-3 py-1 text-xs font-medium rounded-md transition-colors bg-bg-tertiary text-text-primary">
+                  Project
+                </button>
+                <button class="px-3 py-1 text-xs font-medium rounded-md transition-colors text-text-muted hover:text-text-secondary">
+                  Timeline
+                </button>
+              </div>
+            </div>
+            <div>
+              <div class="text-xs text-text-muted mb-2">With icons (Session view)</div>
+              <div class="flex items-center bg-bg-secondary rounded-lg p-0.5 border border-bg-elevated w-fit">
+                <button class="flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded-md transition-colors bg-bg-tertiary text-text-primary">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" /></svg>
+                  <span>Split</span>
+                </button>
+                <button class="flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded-md transition-colors text-text-muted hover:text-text-secondary">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg>
+                  <span>Conversation</span>
+                </button>
+                <button class="flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded-md transition-colors text-text-muted hover:text-text-secondary">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h7" /></svg>
+                  <span>Diff</span>
+                </button>
+              </div>
+            </div>
+          </div>
+          <div class="mt-2 text-xs text-text-muted font-mono">
+            Container: bg-bg-secondary rounded-lg p-0.5 border border-bg-elevated<br/>
+            Active: bg-bg-tertiary text-text-primary<br/>
+            Inactive: text-text-muted hover:text-text-secondary
+          </div>
+        </div>
+
         <!-- Border Radius -->
         <div>
           <h3 class="text-sm font-semibold text-text-secondary uppercase tracking-wide mb-4">Border Radius</h3>
