@@ -574,10 +574,11 @@ export class SessionRepository {
   }
 
   /**
-   * Get sessions owned by either user_id or client_id, plus all public sessions.
-   * Used for authenticated users who may have both user-owned and device-owned sessions.
+   * Get sessions accessible to the given user/client.
+   * Returns sessions owned by user_id or client_id, plus all public sessions.
+   * Used to populate the activity feed with sessions the user can see.
    */
-  getSessionsByOwner(userId?: string, clientId?: string): Session[] {
+  getAccessibleSessions(userId?: string, clientId?: string): Session[] {
     let query: string;
     let params: string[];
 

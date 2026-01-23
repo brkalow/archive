@@ -199,8 +199,8 @@ export function createApiRoutes(repo: SessionRepository) {
       const authError = requireAuth(auth);
       if (authError) return authError;
 
-      // Always filter by owner (no more "all sessions" mode)
-      const sessions = repo.getSessionsByOwner(auth.userId ?? undefined, auth.clientId ?? undefined);
+      // Get sessions accessible to this user (owned + public)
+      const sessions = repo.getAccessibleSessions(auth.userId ?? undefined, auth.clientId ?? undefined);
       return json({ sessions: sessions.map(normalizeRemoteSessionStatus) });
     },
 

@@ -184,7 +184,7 @@ describe("Auth Flows - Dual Ownership Model", () => {
     });
   });
 
-  describe("getSessionsByOwner - filtering", () => {
+  describe("getAccessibleSessions - filtering", () => {
     beforeEach(() => {
       // Create sessions with various ownership
       repo.createSession(
@@ -209,25 +209,25 @@ describe("Auth Flows - Dual Ownership Model", () => {
     });
 
     test("returns sessions for user_id only", () => {
-      const sessions = repo.getSessionsByOwner("user-a", undefined);
+      const sessions = repo.getAccessibleSessions("user-a", undefined);
       expect(sessions).toHaveLength(2);
       expect(sessions.map(s => s.id).sort()).toEqual(["s1", "s2"]);
     });
 
     test("returns sessions for client_id only", () => {
-      const sessions = repo.getSessionsByOwner(undefined, "client-1");
+      const sessions = repo.getAccessibleSessions(undefined, "client-1");
       expect(sessions).toHaveLength(3);
       expect(sessions.map(s => s.id).sort()).toEqual(["s1", "s3", "s4"]);
     });
 
     test("returns sessions for both user_id and client_id", () => {
-      const sessions = repo.getSessionsByOwner("user-a", "client-1");
+      const sessions = repo.getAccessibleSessions("user-a", "client-1");
       // Should return sessions owned by user-a OR client-1
       expect(sessions).toHaveLength(4);
     });
 
     test("returns empty for no identity", () => {
-      const sessions = repo.getSessionsByOwner(undefined, undefined);
+      const sessions = repo.getAccessibleSessions(undefined, undefined);
       expect(sessions).toHaveLength(0);
     });
   });

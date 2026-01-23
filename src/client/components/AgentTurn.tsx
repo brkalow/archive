@@ -62,11 +62,21 @@ interface BlockItem {
   isActivity: boolean;
 }
 
+function formatDuration(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  const seconds = ms / 1000;
+  if (seconds < 60) return `${seconds.toFixed(1)}s`;
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = Math.floor(seconds % 60);
+  return `${minutes}m ${remainingSeconds}s`;
+}
+
 export function AgentTurn({ messages, toolResults }: AgentTurnProps) {
   // Collect all blocks in order, tracking which are activity (tools/thinking) vs text
-  const { allBlocks, toolCount } = useMemo(() => {
+  const { allBlocks, toolCount, totalDurationMs } = useMemo(() => {
     const blocks: BlockItem[] = [];
     let tools = 0;
+    let durationMs = 0;
 
     for (const message of messages) {
       for (let i = 0; i < (message.content_blocks ?? []).length; i++) {
@@ -78,11 +88,14 @@ export function AgentTurn({ messages, toolResults }: AgentTurnProps) {
         } else if (block.type === 'tool_use' || block.type === 'thinking') {
           blocks.push({ block, key, isActivity: true });
           if (block.type === 'tool_use') tools++;
+          if (block.type === 'thinking' && (block as { duration_ms?: number }).duration_ms) {
+            durationMs += (block as { duration_ms: number }).duration_ms;
+          }
         }
       }
     }
 
-    return { allBlocks: blocks, toolCount: tools };
+    return { allBlocks: blocks, toolCount: tools, totalDurationMs: durationMs };
   }, [messages]);
 
   // Split blocks: activity section (up to last tool/thinking) and trailing text (response)
@@ -113,7 +126,10 @@ export function AgentTurn({ messages, toolResults }: AgentTurnProps) {
 
       {/* Trailing text responses (always visible) */}
       {trailingTextBlocks.length > 0 && showActivity && (
-        <div className="text-xs uppercase tracking-[0.1em] text-text-muted font-mono mt-3 mb-1">Response</div>
+        <div className="flex items-center gap-2 text-xs uppercase tracking-[0.1em] text-text-muted font-mono mt-3 mb-1">
+          <span>Response</span>
+          {totalDurationMs > 0 && <span className="normal-case tracking-normal opacity-70">({formatDuration(totalDurationMs)})</span>}
+        </div>
       )}
       {trailingTextBlocks.map(({ block, key }) => (
         <div key={key} className="agent-text text-sm text-text-primary leading-relaxed py-1">
