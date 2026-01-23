@@ -65,7 +65,7 @@ const FileDiff = lazy(() =>
 );
 
 const UserIcon = () => (
-  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
   </svg>
 );
@@ -262,33 +262,30 @@ export function DiffBlock({
     // Render pending comment input form
     if (metadata.type === 'user_comment' && metadata.id === 'pending') {
       return (
-        <div className="bg-bg-tertiary border border-accent-primary/30 rounded-lg p-4 my-3 mx-4">
-          <div className="flex items-center gap-3 mb-3">
-            <div className="w-8 h-8 rounded-full bg-bg-elevated flex items-center justify-center text-text-muted text-sm font-semibold shrink-0">
-              <UserIcon />
-            </div>
-            <span className="font-semibold text-text-primary">Add comment</span>
-            <span className="text-xs text-text-muted font-mono">{locationText}</span>
+        <div className="bg-bg-secondary border border-bg-elevated rounded-lg p-4 my-3 mx-4 shadow-sm">
+          <div className="flex items-center gap-2 mb-3">
+            <span className="text-sm font-medium text-text-primary">Add comment</span>
+            <span className="text-xs text-text-muted font-mono">Line {metadata.lineNumber}</span>
           </div>
           <textarea
             value={commentText}
             onChange={(e) => setCommentText(e.target.value)}
             placeholder="Write a comment..."
-            className="w-full bg-bg-primary border border-bg-elevated rounded-lg p-3 text-[15px] text-text-primary placeholder:text-text-muted resize-none focus:outline-none focus:ring-1 focus:ring-accent-primary"
-            rows={3}
+            className="w-full bg-bg-primary border border-bg-elevated rounded-lg p-3 text-sm text-text-primary placeholder:text-text-muted resize-none transition-shadow focus:outline-2 focus:outline-accent-primary focus:outline-offset-2"
+            rows={2}
             autoFocus
           />
           <div className="flex items-center justify-end gap-2 mt-3">
             <button
               onClick={handleCancelComment}
-              className="px-3 py-1.5 text-sm text-text-muted hover:text-text-primary hover:bg-bg-elevated rounded transition-colors"
+              className="px-3 py-1.5 text-sm text-text-muted hover:text-text-primary transition-colors"
             >
               Cancel
             </button>
             <button
               onClick={handleSubmitComment}
               disabled={!commentText.trim()}
-              className="px-3 py-1.5 text-sm font-medium text-white bg-accent-primary hover:bg-accent-primary/90 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-4 py-1.5 text-sm font-medium bg-accent-primary text-bg-primary rounded-lg hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
             >
               Comment
             </button>
@@ -300,20 +297,15 @@ export function DiffBlock({
     // Render user comment
     if (metadata.type === 'user_comment') {
       return (
-        <div className="bg-bg-tertiary border border-bg-elevated rounded-lg p-4 my-3 mx-4">
-          <div className="flex items-center gap-3 mb-3">
-            <div className="w-8 h-8 rounded-full bg-bg-elevated flex items-center justify-center text-text-muted text-sm font-semibold shrink-0">
+        <div className="bg-bg-secondary border border-bg-elevated rounded-lg p-4 my-3 mx-4">
+          <div className="flex items-center gap-2 mb-2">
+            <div className="w-6 h-6 rounded-full bg-role-user/20 flex items-center justify-center text-role-user shrink-0">
               <UserIcon />
             </div>
-            <span className="font-semibold text-text-primary">You</span>
-            <span className="text-xs text-text-muted font-mono">{locationText}</span>
-            <div className="ml-auto flex items-center gap-2">
-              <span className="px-2 py-0.5 rounded text-xs font-medium bg-bg-elevated text-text-muted">
-                comment
-              </span>
-            </div>
+            <span className="text-sm font-medium text-text-primary">You</span>
+            <span className="text-xs text-text-muted font-mono">Line {metadata.lineNumber}</span>
           </div>
-          <p className="text-[15px] text-text-primary leading-relaxed font-sans">
+          <p className="text-sm text-text-secondary leading-relaxed pl-8">
             {metadata.content}
           </p>
         </div>
@@ -324,30 +316,28 @@ export function DiffBlock({
     const config = annotationConfig[(metadata as AnnotationMetadata).type] || annotationConfig.suggestion;
 
     return (
-      <div className="bg-bg-tertiary border border-bg-elevated rounded-lg p-4 my-3 mx-4">
-        <div className="flex items-center gap-3 mb-3">
-          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-accent-secondary to-accent-primary flex items-center justify-center text-white text-sm font-semibold shrink-0">
+      <div className="bg-bg-secondary border border-bg-elevated rounded-lg p-4 my-3 mx-4">
+        <div className="flex items-center gap-2 mb-2">
+          <div className="w-6 h-6 rounded-full bg-gradient-to-br from-accent-secondary to-accent-primary flex items-center justify-center text-white text-xs font-semibold shrink-0">
             C
           </div>
-          <span className="font-semibold text-text-primary">Claude</span>
-          <span className="text-xs text-text-muted font-mono">{locationText}</span>
-          <div className="ml-auto flex items-center gap-2">
-            <span className={`px-2 py-0.5 rounded text-xs font-medium ${config.badgeClass}`}>
-              {config.label}
-            </span>
-            <button
-              className="flex items-center gap-1.5 px-2 py-1 text-xs text-text-muted hover:text-text-primary hover:bg-bg-elevated rounded transition-colors"
-              onClick={async () => {
-                const copyText = `${locationText}\n\n${metadata.content}`;
-                await window.copyToClipboard(copyText);
-              }}
-            >
-              <CopyIcon />
-              copy prompt
-            </button>
-          </div>
+          <span className="text-sm font-medium text-text-primary">Claude</span>
+          <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${config.badgeClass}`}>
+            {config.label}
+          </span>
+          <span className="text-xs text-text-muted font-mono ml-auto">Line {(metadata as AnnotationMetadata).lineNumber}</span>
+          <button
+            className="p-1 text-text-muted hover:text-text-primary hover:bg-bg-tertiary rounded transition-colors"
+            onClick={async () => {
+              const copyText = `${locationText}\n\n${metadata.content}`;
+              await window.copyToClipboard(copyText);
+            }}
+            title="Copy to clipboard"
+          >
+            <CopyIcon />
+          </button>
         </div>
-        <p className="text-[15px] text-text-primary leading-relaxed font-sans">
+        <p className="text-sm text-text-secondary leading-relaxed pl-8">
           {metadata.content}
         </p>
       </div>
