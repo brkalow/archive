@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { formatMarkdown, escapeHtml, getToolIcon, stripSystemTags } from '../blocks';
+import { formatMarkdown, escapeHtml, getToolIcon, stripSystemTags, extractText } from '../blocks';
 import type { ToolUseBlock as ToolUseBlockType, ToolResultBlock } from '../../db/schema';
 
 interface ToolBlockProps {
@@ -366,19 +366,24 @@ function TaskBlock({ block, result }: TaskBlockProps) {
   const [expanded, setExpanded] = useState(false);
 
   const input = block.input as {
-    description?: string;
-    prompt?: string;
+    description?: string | { type: string; text: string };
+    prompt?: string | { type: string; text: string };
     subagent_type?: string;
   };
-  const description = input.description || input.prompt || 'Sub-task';
+
+  const descriptionText = extractText(input.description);
+  const promptText = extractText(input.prompt);
+  const description = descriptionText || promptText || 'Sub-task';
+  const prompt = promptText;
   const agentType = input.subagent_type || 'general-purpose';
   const status = getStatus(result);
   const blockId = `task-${block.id}`;
 
   const agentDisplayName = getAgentDisplayName(agentType);
-  const resultContent = result?.content || '';
+  const resultContent = extractText(result?.content);
   const isLarge = resultContent.length > 2000;
   const displayContent = isLarge ? resultContent.slice(0, 2000) : resultContent;
+  const hasContent = Boolean(result?.content) || Boolean(prompt);
 
   const handleToggle = useCallback(() => {
     setExpanded((prev) => !prev);
@@ -387,8 +392,9 @@ function TaskBlock({ block, result }: TaskBlockProps) {
   return (
     <div className="tool-block border-l-2 border-accent-primary/30 ml-4" data-tool-id={block.id}>
       <button
-        className="tool-header flex items-center gap-1.5 py-0.5 pl-2 pr-1.5 rounded hover:bg-bg-elevated transition-colors"
+        className={`tool-header flex items-center gap-1.5 py-0.5 pl-2 pr-1.5 rounded transition-colors ${hasContent ? 'hover:bg-bg-elevated cursor-pointer' : 'opacity-60 cursor-default'}`}
         onClick={handleToggle}
+        disabled={!hasContent}
       >
         <span className="text-accent-primary">
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -405,19 +411,36 @@ function TaskBlock({ block, result }: TaskBlockProps) {
           {description.slice(0, 60)}
         </span>
         <span dangerouslySetInnerHTML={{ __html: status }} />
-        <span className="toggle-icon text-text-muted text-[10px]">
-          {expanded ? '\u25BC' : '\u25B6'}
-        </span>
+        {hasContent && (
+          <span className="toggle-icon text-text-muted text-[10px]">
+            {expanded ? '\u25BC' : '\u25B6'}
+          </span>
+        )}
       </button>
-      <div id={blockId} className={`task-content mt-1 pl-2 ${expanded ? '' : 'hidden'}`}>
+      <div id={blockId} className={`task-content mt-2 pl-2 space-y-2 ${expanded ? '' : 'hidden'}`}>
+        {/* Subagent prompt - styled without avatar */}
+        {prompt && (
+          <div className="bg-bg-tertiary border border-bg-elevated rounded-lg px-4 py-3">
+            <div className="text-sm text-text-primary leading-relaxed whitespace-pre-wrap">
+              {prompt}
+            </div>
+          </div>
+        )}
+
+        {/* Subagent response */}
         {result ? (
-          <div className="text-sm text-text-secondary leading-relaxed">
-            <div dangerouslySetInnerHTML={{ __html: formatMarkdown(displayContent) }} />
-            {isLarge && (
-              <button className="text-accent-primary text-xs hover:underline mt-2 block">
-                Show all ({Math.round(resultContent.length / 1000)}k chars)
-              </button>
-            )}
+          <div className="bg-bg-secondary rounded border border-bg-elevated overflow-hidden">
+            <div className="px-3 py-1.5 text-xs text-text-muted border-b border-bg-elevated">
+              Response
+            </div>
+            <div className="p-2 text-sm text-text-secondary leading-relaxed">
+              <div dangerouslySetInnerHTML={{ __html: formatMarkdown(displayContent) }} />
+              {isLarge && (
+                <button className="text-accent-primary text-xs hover:underline mt-2 block">
+                  Show all ({Math.round(resultContent.length / 1000)}k chars)
+                </button>
+              )}
+            </div>
           </div>
         ) : (
           <div className="text-text-muted text-sm italic">... running</div>

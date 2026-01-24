@@ -49,7 +49,7 @@ export function UserBubble({ message }: UserBubbleProps) {
         </button>
 
         {/* Message content */}
-        <div className="text-sm text-text-primary leading-relaxed">
+        <div className="text-sm text-text-primary leading-relaxed break-words">
           {textBlocks.map((block, i) => (
             <TextBlock key={i} text={(block as ContentBlock & { type: 'text' }).text} />
           ))}

@@ -118,6 +118,27 @@ export function getToolIcon(toolName: string, adapterConfig?: AdapterUIConfig | 
   }
 }
 
+/**
+ * Extract string from potentially structured content.
+ * Handles plain strings, single objects with `text` property, and arrays of such objects.
+ * Used for parsing Task tool inputs where content can be structured.
+ */
+export function extractText(value: unknown): string {
+  if (!value) return '';
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value)) {
+    return value
+      .filter((item): item is { type: string; text: string } =>
+        item && typeof item === 'object' && 'text' in item)
+      .map(item => item.text)
+      .join('\n');
+  }
+  if (typeof value === 'object' && value !== null && 'text' in value) {
+    return (value as { text: string }).text;
+  }
+  return '';
+}
+
 // HTML escaping utility
 export function escapeHtml(str: string): string {
   const htmlEscapes: Record<string, string> = {

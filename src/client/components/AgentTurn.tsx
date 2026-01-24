@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { TextBlock } from './TextBlock';
 import { ToolLine, ThinkingLine } from './ActivityLine';
+import { extractText } from '../blocks';
 import type { Message, ContentBlock, ToolResultBlock, ToolUseBlock, ThinkingBlock } from '../../db/schema';
 
 // SVG Icon Components
@@ -278,15 +279,23 @@ function TaskLine({ block, result }: TaskLineProps) {
   const [expanded, setExpanded] = useState(false);
 
   const input = block.input as {
-    description?: string;
-    prompt?: string;
+    description?: string | { type: string; text: string };
+    prompt?: string | { type: string; text: string };
     subagent_type?: string;
   };
-  const description = input.description || input.prompt || 'Sub-task';
+
+  const descriptionText = extractText(input.description);
+  const promptText = extractText(input.prompt);
+  const description = descriptionText || promptText || 'Sub-task';
+  const prompt = promptText;
   const agentType = input.subagent_type || 'general-purpose';
   const agentName = SUBAGENT_CONFIG[agentType] || agentType;
   const { status, statusColor } = getTaskStatus(result);
-  const hasContent = Boolean(result?.content);
+  const hasContent = Boolean(result?.content) || Boolean(prompt);
+
+  // Pre-compute truncated result content to avoid IIFE in JSX
+  const resultText = extractText(result?.content ?? '');
+  const truncatedResult = resultText.length > 2000 ? resultText.slice(0, 2000) + '...' : resultText;
 
   const content = (
     <>
@@ -314,14 +323,28 @@ function TaskLine({ block, result }: TaskLineProps) {
         </div>
       )}
 
-      {expanded && result?.content && (
-        <div className="ml-5 mt-1">
-          <div className="bg-bg-secondary rounded border border-bg-elevated overflow-hidden">
-            <pre className="p-2 text-xs font-mono text-text-secondary whitespace-pre-wrap max-h-48 overflow-y-auto">
-              {result.content.slice(0, 2000)}
-              {result.content.length > 2000 && '...'}
-            </pre>
-          </div>
+      {expanded && (
+        <div className="ml-5 mt-2 space-y-2">
+          {/* Subagent prompt - styled without avatar */}
+          {prompt && (
+            <div className="bg-bg-tertiary border border-bg-elevated rounded-lg px-4 py-3">
+              <div className="text-sm text-text-primary leading-relaxed whitespace-pre-wrap">
+                {prompt}
+              </div>
+            </div>
+          )}
+
+          {/* Subagent response */}
+          {result?.content && (
+            <div className="bg-bg-secondary rounded border border-bg-elevated overflow-hidden">
+              <div className="px-3 py-1.5 text-xs text-text-muted border-b border-bg-elevated">
+                Response
+              </div>
+              <pre className="p-2 text-xs font-mono text-text-secondary whitespace-pre-wrap max-h-48 overflow-y-auto">
+                {truncatedResult}
+              </pre>
+            </div>
+          )}
         </div>
       )}
     </div>

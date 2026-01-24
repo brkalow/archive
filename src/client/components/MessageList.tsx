@@ -4,6 +4,7 @@ import { AgentTurn } from './AgentTurn';
 import { useLiveSession } from '../hooks/useLiveSession';
 import { buildToolResultMap } from '../blocks';
 import { isNearBottom, scrollToBottom } from '../liveSession';
+import { groupMessagesIntoTurns, type Turn } from '../lib/messageUtils';
 import type { Message, Session } from '../../db/schema';
 
 interface MessageListProps {
@@ -25,50 +26,6 @@ interface MessageListProps {
 export interface MessageListHandle {
   sendFeedback: (content: string) => void;
   getMessageCount: () => number;
-}
-
-// Group messages into turns: each user message starts a new turn,
-// followed by consecutive assistant messages
-interface Turn {
-  type: 'user' | 'agent';
-  messages: Message[];
-}
-
-function groupMessagesIntoTurns(messages: Message[]): Turn[] {
-  const turns: Turn[] = [];
-  let currentAgentMessages: Message[] = [];
-
-  for (const message of messages) {
-    // Skip user messages that only contain tool_result blocks
-    if (message.role === 'user') {
-      const hasNonToolResult = message.content_blocks?.some(
-        (block) => block.type !== 'tool_result'
-      );
-      if (!hasNonToolResult) {
-        continue;
-      }
-
-      // Flush any pending agent messages
-      if (currentAgentMessages.length > 0) {
-        turns.push({ type: 'agent', messages: currentAgentMessages });
-        currentAgentMessages = [];
-      }
-
-      // Add user turn
-      turns.push({ type: 'user', messages: [message] });
-    } else if (message.role === 'assistant') {
-      // Accumulate assistant messages
-      currentAgentMessages.push(message);
-    }
-    // Skip system messages
-  }
-
-  // Flush remaining agent messages
-  if (currentAgentMessages.length > 0) {
-    turns.push({ type: 'agent', messages: currentAgentMessages });
-  }
-
-  return turns;
 }
 
 export function MessageList(props: MessageListProps) {
