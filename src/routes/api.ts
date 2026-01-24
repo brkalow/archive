@@ -1416,6 +1416,41 @@ export function createApiRoutes(repo: SessionRepository) {
       });
     },
 
+    /**
+     * GET /api/stats/homepage
+     * Returns aggregated stats for the homepage: top models, top agents, most active repos.
+     * Requires authentication, filters by user's ownership.
+     */
+    async getHomepageStats(req: Request): Promise<Response> {
+      const auth = await extractAuth(req);
+
+      if (!auth.isAuthenticated) {
+        return jsonError("Unauthorized", 401);
+      }
+
+      const userId = auth.userId ?? undefined;
+      const clientId = auth.clientId ?? undefined;
+
+      // Get aggregated stats
+      const topModels = repo.getTopModelsByTokenUsage(userId, clientId, 5);
+      const topAgents = repo.getTopHarnessesBySessionCount(userId, clientId, 5);
+      const mostActiveRepos = repo.getMostActiveRepos(userId, clientId, 5);
+      const tokenTotals = repo.getTotalTokenUsage(userId, clientId);
+
+      return json({
+        top_models: topModels,
+        top_agents: topAgents,
+        most_active_repos: mostActiveRepos,
+        totals: {
+          input_tokens: tokenTotals.input_tokens,
+          output_tokens: tokenTotals.output_tokens,
+          cache_read_tokens: tokenTotals.cache_read_tokens,
+          cache_creation_tokens: tokenTotals.cache_creation_tokens,
+          total_tokens: tokenTotals.input_tokens + tokenTotals.output_tokens,
+        },
+      });
+    },
+
     // === Auth & Session Claiming Endpoints ===
 
     /**

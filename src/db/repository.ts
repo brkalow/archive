@@ -89,8 +89,8 @@ export class SessionRepository {
     // Initialize cached prepared statements
     this.stmts = {
       createSession: db.prepare(`
-        INSERT INTO sessions (id, title, description, claude_session_id, agent_session_id, pr_url, share_token, project_path, model, harness, repo_url, branch, status, visibility, last_activity_at, stream_token_hash, client_id, user_id, interactive, remote)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO sessions (id, title, description, claude_session_id, agent_session_id, pr_url, share_token, project_path, model, harness, repo_url, branch, status, visibility, last_activity_at, stream_token_hash, client_id, user_id, interactive, remote, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         RETURNING *
       `),
       getSession: db.prepare("SELECT * FROM sessions WHERE id = ?"),
@@ -304,7 +304,11 @@ export class SessionRepository {
       clientId || null,
       userId || null,
       session.interactive ? 1 : 0,
-      session.remote ? 1 : 0
+      session.remote ? 1 : 0,
+      (session as { input_tokens?: number }).input_tokens || 0,
+      (session as { output_tokens?: number }).output_tokens || 0,
+      (session as { cache_read_tokens?: number }).cache_read_tokens || 0,
+      (session as { cache_creation_tokens?: number }).cache_creation_tokens || 0
     ) as Record<string, unknown>;
 
     // Convert SQLite integers to booleans for the returned object
@@ -341,7 +345,11 @@ export class SessionRepository {
         clientId || null,
         userId || null,
         session.interactive ? 1 : 0,
-        session.remote ? 1 : 0
+        session.remote ? 1 : 0,
+        (session as { input_tokens?: number }).input_tokens || 0,
+        (session as { output_tokens?: number }).output_tokens || 0,
+        (session as { cache_read_tokens?: number }).cache_read_tokens || 0,
+        (session as { cache_creation_tokens?: number }).cache_creation_tokens || 0
       ) as Record<string, unknown>;
 
       for (const msg of messages) {
@@ -1054,7 +1062,11 @@ export class SessionRepository {
         clientId || null,
         userId || null,
         session.interactive ? 1 : 0,
-        session.remote ? 1 : 0
+        session.remote ? 1 : 0,
+        (session as { input_tokens?: number }).input_tokens || 0,
+        (session as { output_tokens?: number }).output_tokens || 0,
+        (session as { cache_read_tokens?: number }).cache_read_tokens || 0,
+        (session as { cache_creation_tokens?: number }).cache_creation_tokens || 0
       ) as Record<string, unknown>;
 
       // Insert messages
@@ -1356,7 +1368,11 @@ export class SessionRepository {
           clientId || null,
           userId || null,
           session.interactive ? 1 : 0,
-          session.remote ? 1 : 0
+          session.remote ? 1 : 0,
+          (session as { input_tokens?: number }).input_tokens || 0,
+          (session as { output_tokens?: number }).output_tokens || 0,
+          (session as { cache_read_tokens?: number }).cache_read_tokens || 0,
+          (session as { cache_creation_tokens?: number }).cache_creation_tokens || 0
         ) as Record<string, unknown>;
         resultSession = this.normalizeSession(created);
       }
@@ -1985,5 +2001,95 @@ export class SessionRepository {
       return updated;
     });
     return transaction();
+  }
+
+  // === Homepage Stats Methods ===
+
+  /**
+   * Build WHERE clause for accessible sessions (owned + public).
+   * Returns { clause, params } to be appended to queries.
+   */
+  private buildAccessClause(userId?: string, clientId?: string): { clause: string; params: string[] } {
+    if (userId && clientId) {
+      return { clause: "(user_id = ? OR client_id = ? OR visibility = 'public')", params: [userId, clientId] };
+    } else if (userId) {
+      return { clause: "(user_id = ? OR visibility = 'public')", params: [userId] };
+    } else if (clientId) {
+      return { clause: "(client_id = ? OR visibility = 'public')", params: [clientId] };
+    }
+    return { clause: "visibility = 'public'", params: [] };
+  }
+
+  /**
+   * Get top models by total token usage (input + output).
+   */
+  getTopModelsByTokenUsage(
+    userId?: string,
+    clientId?: string,
+    limit = 5
+  ): Array<{ model: string; total_tokens: number; session_count: number }> {
+    const { clause, params } = this.buildAccessClause(userId, clientId);
+    const stmt = this.db.prepare(`
+      SELECT model, SUM(input_tokens + output_tokens) as total_tokens, COUNT(*) as session_count
+      FROM sessions
+      WHERE model IS NOT NULL AND model != '' AND ${clause}
+      GROUP BY model ORDER BY total_tokens DESC LIMIT ?
+    `);
+    return stmt.all(...params, limit) as Array<{ model: string; total_tokens: number; session_count: number }>;
+  }
+
+  /**
+   * Get top harnesses (agents) by session count.
+   */
+  getTopHarnessesBySessionCount(
+    userId?: string,
+    clientId?: string,
+    limit = 5
+  ): Array<{ harness: string; session_count: number }> {
+    const { clause, params } = this.buildAccessClause(userId, clientId);
+    const stmt = this.db.prepare(`
+      SELECT harness, COUNT(*) as session_count
+      FROM sessions
+      WHERE harness IS NOT NULL AND harness != '' AND ${clause}
+      GROUP BY harness ORDER BY session_count DESC LIMIT ?
+    `);
+    return stmt.all(...params, limit) as Array<{ harness: string; session_count: number }>;
+  }
+
+  /**
+   * Get most active repos by session count.
+   */
+  getMostActiveRepos(
+    userId?: string,
+    clientId?: string,
+    limit = 5
+  ): Array<{ repo_url: string; session_count: number; total_tokens: number }> {
+    const { clause, params } = this.buildAccessClause(userId, clientId);
+    const stmt = this.db.prepare(`
+      SELECT repo_url, COUNT(*) as session_count, SUM(input_tokens + output_tokens) as total_tokens
+      FROM sessions
+      WHERE repo_url IS NOT NULL AND repo_url != '' AND ${clause}
+      GROUP BY repo_url ORDER BY session_count DESC LIMIT ?
+    `);
+    return stmt.all(...params, limit) as Array<{ repo_url: string; session_count: number; total_tokens: number }>;
+  }
+
+  /**
+   * Get aggregate token totals for accessible sessions.
+   */
+  getTotalTokenUsage(
+    userId?: string,
+    clientId?: string
+  ): { input_tokens: number; output_tokens: number; cache_read_tokens: number; cache_creation_tokens: number } {
+    const { clause, params } = this.buildAccessClause(userId, clientId);
+    const stmt = this.db.prepare(`
+      SELECT
+        COALESCE(SUM(input_tokens), 0) as input_tokens,
+        COALESCE(SUM(output_tokens), 0) as output_tokens,
+        COALESCE(SUM(cache_read_tokens), 0) as cache_read_tokens,
+        COALESCE(SUM(cache_creation_tokens), 0) as cache_creation_tokens
+      FROM sessions WHERE ${clause}
+    `);
+    return stmt.get(...params) as { input_tokens: number; output_tokens: number; cache_read_tokens: number; cache_creation_tokens: number };
   }
 }

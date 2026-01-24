@@ -190,22 +190,22 @@ export function SessionView(props: SessionViewProps) {
 
       {/* Main content area */}
       <div className="flex-1 overflow-hidden border-bg-elevated flex flex-col min-h-0">
-        <div className="max-w-[1400px] w-full mx-auto px-6 lg:px-10 flex flex-1 h-full min-h-0">
+        <div className="max-w-[1400px] w-full mx-auto px-0 md:px-6 lg:px-10 flex flex-col md:flex-row flex-1 h-full min-h-0">
           {/* Conversation panel */}
           {showConversation && (
-            <div className={`${showDiff ? "w-1/3 pr-6" : "flex-1 max-w-3xl mx-auto"} overflow-y-auto flex flex-col min-h-0`}>
+            <div className={`${showDiff ? "md:w-1/3 md:pr-6" : "flex-1 max-w-3xl mx-auto"} overflow-y-auto flex flex-col min-h-0 ${showDiff ? "max-h-[50vh] md:max-h-none" : ""}`}>
               {conversationContent}
             </div>
           )}
 
           {/* Separator */}
           {showConversation && showDiff && (
-            <div className="w-px bg-text-muted/30" />
+            <div className="hidden md:block w-px bg-text-muted/30" />
           )}
 
           {/* Diff panel */}
           {showDiff && (
-            <div className={`${showConversation ? "w-2/3 pl-6" : "flex-1"} overflow-hidden flex flex-col`}>
+            <div className={`${showConversation ? "md:w-2/3 md:pl-6 border-t md:border-t-0 border-bg-elevated" : "flex-1"} overflow-hidden flex flex-col flex-1`}>
               {children}
             </div>
           )}

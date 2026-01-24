@@ -1,7 +1,20 @@
-import { useState, useMemo, useEffect, Suspense, lazy } from 'react';
+import { useState, useMemo, useEffect, Suspense, lazy, useSyncExternalStore } from 'react';
 import type { DiffLineAnnotation, FileDiffMetadata } from '@pierre/diffs';
 import type { Annotation, AnnotationType } from '../../db/schema';
 import { getSingularPatch } from '@pierre/diffs';
+
+// Hook to detect if screen is mobile width (matches Tailwind's md breakpoint)
+function useIsMobile() {
+  return useSyncExternalStore(
+    (callback) => {
+      const mq = window.matchMedia('(max-width: 767px)');
+      mq.addEventListener('change', callback);
+      return () => mq.removeEventListener('change', callback);
+    },
+    () => window.matchMedia('(max-width: 767px)').matches,
+    () => false // SSR fallback
+  );
+}
 
 // Lazy load the React FileDiff component
 const FileDiff = lazy(() =>
@@ -48,6 +61,7 @@ export function DiffBlock(props: DiffBlockProps) {
     initiallyExpanded = false,
   } = props;
   const [expanded, setExpanded] = useState(initiallyExpanded);
+  const isMobile = useIsMobile();
 
   // Parse the diff content
   const fileDiff = useMemo(() => {
@@ -74,18 +88,18 @@ export function DiffBlock(props: DiffBlockProps) {
     }));
   }, [annotations, reviewModel, filename]);
 
-  // FileDiff options
+  // FileDiff options - use unified (stacked) view on mobile
   const options = useMemo(() => ({
     theme: { dark: 'pierre-dark', light: 'pierre-light' } as const,
     themeType: 'dark' as const,
-    diffStyle: 'split' as const,
+    diffStyle: isMobile ? 'unified' as const : 'split' as const,
     diffIndicators: 'bars' as const,
     overflow: 'scroll' as const,
     unsafeCSS: `
       [data-code] { padding-block-start: 0 !important; }
       :host-context([data-collapsed]) [data-code] { display: none; }
     `,
-  }), []);
+  }), [isMobile]);
 
   // Render header metadata with collapse toggle
   const renderHeaderMetadata = () => (
@@ -167,7 +181,7 @@ export function DiffBlock(props: DiffBlockProps) {
 
   return (
     <div
-      className="diff-block overflow-hidden rounded-lg border border-bg-elevated"
+      className="diff-block overflow-hidden rounded-none md:rounded-lg border-y md:border border-bg-elevated"
       data-filename={filename}
       data-collapsed={!expanded ? '' : undefined}
     >

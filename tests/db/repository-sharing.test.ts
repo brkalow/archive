@@ -65,12 +65,12 @@ describe("SessionRepository - Session Sharing", () => {
       expect(session.visibility).toBe("private");
 
       repo.setSessionVisibility(session.id, "public");
-      const updated = repo.getSession(session.id);
-      expect(updated?.visibility).toBe("public");
+      const updated = repo.getSession(session.id).unwrap();
+      expect(updated.visibility).toBe("public");
 
       repo.setSessionVisibility(session.id, "private");
-      const reverted = repo.getSession(session.id);
-      expect(reverted?.visibility).toBe("private");
+      const reverted = repo.getSession(session.id).unwrap();
+      expect(reverted.visibility).toBe("private");
     });
 
     test("getSessionVisibility returns correct value", () => {
