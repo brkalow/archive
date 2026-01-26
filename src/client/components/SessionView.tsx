@@ -299,8 +299,8 @@ function SessionViewHeader({
   const canEnd = mode === "remote" && remoteState?.state !== "ended" && remoteState?.state !== "failed";
 
   return (
-    <header className="bg-bg-primary border-b border-bg-elevated">
-      <div className="max-w-[1400px] mx-auto px-6 lg:px-10 py-4">
+    <header className="bg-bg-primary">
+      <div className="max-w-[1400px] mx-auto px-6 lg:px-10 pt-4 pb-2">
         {/* Row 1: Title with status */}
         <div className="flex items-center gap-3 mb-2">
           {statusBadge && (
@@ -478,9 +478,9 @@ interface ViewToggleBarProps {
 
 function ViewToggleBar({ viewMode, onViewModeChange }: ViewToggleBarProps) {
   return (
-    <div className="bg-bg-secondary border-b border-bg-elevated">
-      <div className="max-w-[1400px] mx-auto px-6 lg:px-10 py-2">
-        <div className="flex items-center bg-bg-secondary rounded-lg p-0.5 border border-bg-elevated">
+    <div className="border-b border-bg-elevated">
+      <div className="max-w-[1400px] mx-auto px-6 lg:px-10 pt-3 pb-4">
+        <div className="inline-flex items-center bg-bg-secondary rounded-lg p-0.5 border border-bg-elevated">
           <ViewToggleButton
             active={viewMode === "split"}
             onClick={() => onViewModeChange("split")}
