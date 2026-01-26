@@ -480,7 +480,7 @@ function ViewToggleBar({ viewMode, onViewModeChange }: ViewToggleBarProps) {
   return (
     <div className="bg-bg-secondary border-b border-bg-elevated">
       <div className="max-w-[1400px] mx-auto px-6 lg:px-10 py-2">
-        <div className="flex items-center bg-bg-secondary rounded-lg p-0.5 border border-bg-elevated">
+        <div className="inline-flex items-center bg-bg-secondary rounded-lg p-0.5 border border-bg-elevated">
           <ViewToggleButton
             active={viewMode === "split"}
             onClick={() => onViewModeChange("split")}

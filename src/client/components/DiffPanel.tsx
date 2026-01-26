@@ -33,7 +33,7 @@ export function DiffPanel({ diffs, annotationsByDiff, review }: DiffPanelProps) 
   };
 
   return (
-    <div className="flex flex-col overflow-hidden h-full">
+    <div className="flex flex-col overflow-hidden h-full w-full max-w-full">
       {/* Header */}
       <div className="flex items-center justify-between pt-4 pb-4 shrink-0">
         <h2 className="text-sm font-semibold text-text-primary">Diff</h2>

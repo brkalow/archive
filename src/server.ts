@@ -417,6 +417,13 @@ function handleDaemonMessage(
           `[relay] Updated metadata for session ${message.session_id}:`,
           updates
         );
+
+        // Broadcast metadata update to browser clients
+        broadcastToSession(message.session_id, {
+          type: "session_metadata",
+          repo_url: message.repo_url,
+          branch: message.branch,
+        });
       }
       break;
     }

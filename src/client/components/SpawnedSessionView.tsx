@@ -70,6 +70,8 @@ export function SpawnedSessionView({
     canResume,
     daemonConnected,
     isResuming,
+    repoUrl,
+    branch,
     sendMessage,
     interrupt,
     endSession,
@@ -184,6 +186,7 @@ export function SpawnedSessionView({
   // Note: Remote sessions are newly spawned and don't have pre-existing database records,
   // so we use sensible defaults. Visibility defaults to "private" as a safe default for
   // new sessions - users can share via the share modal if desired.
+  // repo_url and branch are populated asynchronously via session_metadata from the daemon.
   const session: Session = useMemo(() => ({
     id: sessionId,
     title: title,
@@ -202,12 +205,12 @@ export function SpawnedSessionView({
     interactive: true,
     share_token: null,
     description: null,
-    repo_url: null,
-    branch: null,
+    repo_url: repoUrl,
+    branch: branch,
     visibility: "private",
     last_activity_at: null,
     remote: true,
-  }), [sessionId, title, state, startTime, harness, model, cwd]);
+  }), [sessionId, title, state, startTime, harness, model, cwd, repoUrl, branch]);
 
   // Derive title from first user message
   useEffect(() => {

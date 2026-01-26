@@ -73,6 +73,8 @@ export function useSpawnedSession({
   const [canResume, setCanResume] = useState(false);
   const [daemonConnected, setDaemonConnected] = useState(true);
   const [isResuming, setIsResuming] = useState(false);
+  const [repoUrl, setRepoUrl] = useState<string | null>(null);
+  const [branch, setBranch] = useState<string | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectAttemptsRef = useRef(0);
@@ -208,6 +210,16 @@ export function useSpawnedSession({
           // Update diffs when daemon sends them
           if (data.diffs && Array.isArray(data.diffs)) {
             setDiffs(data.diffs as ParsedDiff[]);
+          }
+          break;
+
+        case "session_metadata":
+          // Update session metadata (repo_url, branch) from daemon
+          if (data.repo_url && typeof data.repo_url === "string") {
+            setRepoUrl(data.repo_url);
+          }
+          if (data.branch && typeof data.branch === "string") {
+            setBranch(data.branch);
           }
           break;
 
@@ -482,6 +494,8 @@ export function useSpawnedSession({
     canResume,
     daemonConnected,
     isResuming,
+    repoUrl,
+    branch,
     sendMessage,
     interrupt,
     endSession,
