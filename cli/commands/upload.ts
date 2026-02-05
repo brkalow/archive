@@ -8,9 +8,22 @@ import { basename, join } from "path";
 import { Glob } from "bun";
 import { getClientId } from "../lib/client-id";
 import { DEFAULT_SERVER, getServerUrl } from "../lib/config";
-import { listRecentSessions, promptSessionSelection } from "../lib/shared-sessions";
+import {
+  listRecentSessions,
+  promptSessionSelection,
+  listSessionsForProject,
+  formatRelativeTime,
+  extractTitleFromContent,
+  type LocalSessionInfo,
+} from "../lib/shared-sessions";
 import { getAccessTokenIfAuthenticated } from "../lib/oauth";
+import { isGitRepo } from "../lib/git";
 import * as readline from "readline";
+
+interface SessionExistsResult {
+  exists: boolean;
+  url?: string;
+}
 
 async function promptConfirmation(message: string): Promise<boolean> {
   // Skip prompt in non-interactive environments
@@ -62,6 +75,11 @@ interface ParsedOptions {
   yes: boolean;
   help: boolean;
   list: boolean;
+  all: boolean;
+  project?: string;
+  since?: string;
+  skipExisting: boolean;
+  dryRun: boolean;
 }
 
 function parseArgs(args: string[]): ParsedOptions {
@@ -73,6 +91,9 @@ function parseArgs(args: string[]): ParsedOptions {
     yes: false,
     help: false,
     list: false,
+    all: false,
+    skipExisting: true,
+    dryRun: false,
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -121,6 +142,26 @@ function parseArgs(args: string[]): ParsedOptions {
       case "--list":
       case "-l":
         options.list = true;
+        break;
+      case "--all":
+      case "-a":
+        options.all = true;
+        break;
+      case "--project":
+      case "-p":
+        options.project = args[++i];
+        break;
+      case "--since":
+        options.since = args[++i];
+        break;
+      case "--skip-existing":
+        options.skipExisting = true;
+        break;
+      case "--no-skip-existing":
+        options.skipExisting = false;
+        break;
+      case "--dry-run":
+        options.dryRun = true;
         break;
     }
   }
@@ -400,6 +441,12 @@ async function getGitDiff(projectDir?: string, branch?: string, touchedFiles?: s
 
 async function getRepoUrl(projectDir?: string): Promise<string | null> {
   const cwd = projectDir || process.cwd();
+
+  // First verify this is actually a git repository
+  if (!(await isGitRepo(cwd))) {
+    return null;
+  }
+
   try {
     const remote = await $`git -C ${cwd} remote get-url origin 2>/dev/null`.text();
     const url = remote.trim();
@@ -609,41 +656,7 @@ function countMessages(sessionContent: string): number {
 }
 
 function extractTitle(sessionContent: string): string {
-  // Parse JSONL and find first user message
-  const lines = sessionContent.split("\n").filter(Boolean);
-
-  for (const line of lines) {
-    try {
-      const item = JSON.parse(line);
-      const msg = item.message || item;
-
-      if (msg.role === "human" || msg.role === "user" || item.type === "human") {
-        const content = msg.content;
-        let text = "";
-
-        if (typeof content === "string") {
-          text = content;
-        } else if (Array.isArray(content)) {
-          const textBlock = content.find(
-            (c: { type: string }) => c.type === "text"
-          );
-          if (textBlock) text = textBlock.text;
-        }
-
-        if (text) {
-          // Take first line, truncate to 100 chars
-          const firstLine = (text.split("\n")[0] ?? "").trim();
-          return firstLine.length > 100
-            ? firstLine.slice(0, 97) + "..."
-            : firstLine;
-        }
-      }
-    } catch {
-      continue;
-    }
-  }
-
-  return `Session ${new Date().toISOString().split("T")[0]}`;
+  return extractTitleFromContent(sessionContent) ?? `Session ${new Date().toISOString().split("T")[0]}`;
 }
 
 interface UploadOptions {
@@ -659,7 +672,13 @@ interface UploadOptions {
   authToken: string | null;
 }
 
-async function uploadSession(options: UploadOptions): Promise<void> {
+interface UploadResult {
+  success: boolean;
+  url?: string;
+  error?: string;
+}
+
+async function uploadSession(options: UploadOptions): Promise<UploadResult> {
   const { sessionPath, title, model, harness, repoUrl, diffContent, serverUrl, review, projectPath, authToken } = options;
   const sessionContent = await Bun.file(sessionPath).text();
   const sessionId = basename(sessionPath, ".jsonl");
@@ -719,12 +738,223 @@ async function uploadSession(options: UploadOptions): Promise<void> {
     // Remove trailing slash from serverUrl to avoid double slashes
     const baseUrl = serverUrl.replace(/\/$/, "");
     console.log(`View at: ${baseUrl}${location}`);
+    return { success: true, url: `${baseUrl}${location}` };
   } else if (response.ok) {
     console.log("Session uploaded successfully!");
+    return { success: true };
   } else {
     const error = await response.text();
     console.error(`Upload failed: ${response.status} ${error}`);
-    process.exit(1);
+    return { success: false, error };
+  }
+}
+
+async function checkSessionExists(
+  sessionUuid: string,
+  serverUrl: string,
+  authToken: string | null
+): Promise<SessionExistsResult> {
+  const headers: Record<string, string> = {
+    "X-Openctl-Client-ID": getClientId(),
+  };
+  if (authToken) {
+    headers["Authorization"] = `Bearer ${authToken}`;
+  }
+
+  try {
+    const response = await fetch(
+      `${serverUrl}/api/sessions?claude_session_id=${encodeURIComponent(sessionUuid)}`,
+      { headers }
+    );
+    if (!response.ok) {
+      return { exists: false };
+    }
+    const data = (await response.json()) as { session: unknown; url?: string };
+    return data.session ? { exists: true, url: data.url } : { exists: false };
+  } catch {
+    return { exists: false };
+  }
+}
+
+interface BulkUploadOptions {
+  projectPath: string;
+  serverUrl: string;
+  harness: string;
+  since?: Date;
+  skipExisting: boolean;
+  dryRun: boolean;
+  yes: boolean;
+  authToken: string | null;
+}
+
+interface SessionUploadInfo {
+  session: LocalSessionInfo;
+  exists: boolean;
+  existingUrl?: string;
+}
+
+async function uploadAllSessions(options: BulkUploadOptions): Promise<void> {
+  const { projectPath, serverUrl, harness, since, skipExisting, dryRun, yes, authToken } = options;
+
+  console.log(`Scanning sessions for ${projectPath}...`);
+
+  // Get all sessions for the project
+  const sessions = await listSessionsForProject(projectPath, { since });
+
+  if (sessions.length === 0) {
+    if (since) {
+      console.log(`No sessions found for project modified after ${since.toISOString().split("T")[0]}`);
+    } else {
+      console.log("No sessions found for project.");
+    }
+    return;
+  }
+
+  // Check which sessions already exist on server
+  const sessionInfos: SessionUploadInfo[] = [];
+  let existingCount = 0;
+
+  console.log(`Found ${sessions.length} session(s). Checking server...`);
+
+  for (const session of sessions) {
+    const existsResult = await checkSessionExists(session.uuid, serverUrl, authToken);
+    sessionInfos.push({
+      session,
+      exists: existsResult.exists,
+      existingUrl: existsResult.url,
+    });
+    if (existsResult.exists) {
+      existingCount++;
+    }
+  }
+
+  // Determine which sessions to upload
+  const toUpload = skipExisting
+    ? sessionInfos.filter((info) => !info.exists)
+    : sessionInfos;
+
+  const newCount = sessions.length - existingCount;
+
+  // Display summary
+  console.log();
+  console.log(`Found ${sessions.length} sessions (${newCount} new, ${existingCount} already uploaded)`);
+
+  if (toUpload.length === 0) {
+    console.log("No sessions to upload.");
+    return;
+  }
+
+  console.log();
+  console.log("Sessions to upload:");
+  for (const info of toUpload) {
+    const timeAgo = formatRelativeTime(info.session.modifiedAt);
+    const status = info.exists ? " (re-upload)" : "";
+    console.log(`  - ${info.session.titlePreview} (${info.session.uuid.slice(0, 8)}) - ${timeAgo}${status}`);
+  }
+  console.log();
+
+  // Dry run - just show what would be uploaded
+  if (dryRun) {
+    console.log(`Dry run: Would upload ${toUpload.length} session(s).`);
+    return;
+  }
+
+  // Prompt for confirmation unless --yes
+  if (!yes) {
+    const confirmed = await promptConfirmation(`Upload ${toUpload.length} session(s)? [y/N] `);
+    if (!confirmed) {
+      console.log("Upload cancelled.");
+      return;
+    }
+    console.log();
+  }
+
+  // Upload sessions with progress
+  let uploadedCount = 0;
+  let failedCount = 0;
+  let emptyCount = 0;
+  const failures: Array<{ session: LocalSessionInfo; error: string }> = [];
+
+  console.log("Uploading sessions:");
+
+  for (let i = 0; i < toUpload.length; i++) {
+    const info = toUpload[i];
+    if (!info) continue;
+    const { session } = info;
+    const num = `[${i + 1}/${toUpload.length}]`;
+
+    process.stdout.write(`  ${num} ${session.titlePreview.slice(0, 40)} (${session.uuid.slice(0, 8)}) `);
+
+    try {
+      // Read session content
+      const sessionContent = await Bun.file(session.filePath).text();
+
+      // Check for actual messages
+      const messageCount = countMessages(sessionContent);
+      if (messageCount === 0) {
+        console.log("⚠ skipped (no messages)");
+        emptyCount++;
+        continue;
+      }
+
+      // Extract metadata
+      const title = extractTitle(sessionContent);
+      const model = extractModel(sessionContent);
+
+      // Get repo URL from project path
+      const repoUrl = await getRepoUrl(session.projectPath);
+
+      // Upload the session (skip diff for bulk uploads - historical diffs unreliable)
+      const result = await uploadSession({
+        sessionPath: session.filePath,
+        title,
+        model,
+        harness,
+        repoUrl,
+        diffContent: null, // Skip diff for bulk uploads
+        serverUrl,
+        review: null,
+        projectPath: session.projectPath,
+        authToken,
+      });
+
+      if (result.success) {
+        console.log("✓");
+        uploadedCount++;
+      } else {
+        console.log("✗");
+        failedCount++;
+        failures.push({ session, error: result.error || "Unknown error" });
+      }
+    } catch (err) {
+      console.log("✗");
+      failedCount++;
+      failures.push({ session, error: err instanceof Error ? err.message : String(err) });
+    }
+  }
+
+  // Final summary
+  console.log();
+  const skippedCount = skipExisting ? existingCount : 0;
+  let summary = `Done. Uploaded ${uploadedCount} session(s)`;
+  if (skippedCount > 0) {
+    summary += `, skipped ${skippedCount} (already uploaded)`;
+  }
+  if (emptyCount > 0) {
+    summary += `, ${emptyCount} empty`;
+  }
+  if (failedCount > 0) {
+    summary += `, ${failedCount} failed`;
+  }
+  console.log(summary + ".");
+
+  // Report failures
+  if (failures.length > 0) {
+    console.log();
+    console.log("Failed:");
+    for (const { session, error } of failures) {
+      console.log(`  - ${session.uuid.slice(0, 8)}: ${error}`);
+    }
   }
 }
 
@@ -750,10 +980,22 @@ Options:
   -y, --yes       Skip confirmation prompt when auto-detecting session
   -h, --help      Show this help
 
+Bulk Upload:
+  -a, --all           Upload all sessions for current project
+  -p, --project       Project path (default: current directory)
+  --since <date>      Only upload sessions modified after date (YYYY-MM-DD)
+  --skip-existing     Skip sessions already uploaded (default: true)
+  --no-skip-existing  Re-upload all sessions even if they exist
+  --dry-run           Show what would be uploaded without uploading
+
 Examples:
   openctl upload                   # Upload current/latest session
   openctl upload --list            # Pick from recent sessions
   openctl upload -s abc-123-def    # Upload a specific session
+  openctl upload --all             # Upload all sessions for current project
+  openctl upload --all --project /path/to/project  # Upload for specific project
+  openctl upload --all --since 2025-01-01          # Upload sessions from this year
+  openctl upload --all --dry-run   # Preview what would be uploaded
   `);
 }
 
@@ -762,6 +1004,56 @@ export async function upload(args: string[]): Promise<void> {
 
   if (options.help) {
     showHelp();
+    return;
+  }
+
+  // Check for mutual exclusivity with --all
+  if (options.all) {
+    if (options.session) {
+      console.error("Error: --all cannot be used with a session argument");
+      process.exit(1);
+    }
+    if (options.list) {
+      console.error("Error: --all cannot be used with --list");
+      process.exit(1);
+    }
+    if (options.review) {
+      console.error("Error: --all cannot be used with --review (too slow for bulk uploads)");
+      process.exit(1);
+    }
+
+    // Parse --since date if provided
+    let sinceDate: Date | undefined;
+    if (options.since) {
+      sinceDate = new Date(options.since);
+      if (isNaN(sinceDate.getTime())) {
+        console.error(`Error: Invalid date format for --since: ${options.since}`);
+        console.error("Use YYYY-MM-DD format (e.g., 2025-01-01)");
+        process.exit(1);
+      }
+    }
+
+    // Determine project path
+    const projectPath = options.project || process.cwd();
+    if (options.project && !existsSync(options.project)) {
+      console.error(`Error: Project path does not exist: ${options.project}`);
+      process.exit(1);
+    }
+
+    // Get auth token
+    const authToken = await getAccessTokenIfAuthenticated(options.server);
+
+    // Run bulk upload
+    await uploadAllSessions({
+      projectPath,
+      serverUrl: options.server,
+      harness: options.harness,
+      since: sinceDate,
+      skipExisting: options.skipExisting,
+      dryRun: options.dryRun,
+      yes: options.yes,
+      authToken,
+    });
     return;
   }
 
@@ -894,7 +1186,7 @@ export async function upload(args: string[]): Promise<void> {
 
   // Upload
   console.log(`Uploading to ${options.server}...`);
-  await uploadSession({
+  const result = await uploadSession({
     sessionPath,
     title,
     model,
@@ -906,4 +1198,8 @@ export async function upload(args: string[]): Promise<void> {
     projectPath,
     authToken,
   });
+
+  if (!result.success) {
+    process.exit(1);
+  }
 }

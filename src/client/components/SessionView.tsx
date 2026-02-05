@@ -336,11 +336,14 @@ function SessionViewHeader({
             )}
 
             {/* Repo/path badge */}
-            {session.project_path && (
-              <Badge icon={<ProjectIcon repoUrl={session.repo_url} />}>
-                {extractRepoName(session.project_path)}
-              </Badge>
-            )}
+            {(() => {
+              const repoName = extractRepoName(session.repo_url, session.project_path);
+              return repoName ? (
+                <Badge icon={<ProjectIcon repoUrl={session.repo_url} />}>
+                  {repoName}
+                </Badge>
+              ) : null;
+            })()}
 
             {/* Model badge */}
             {session.model && (
@@ -754,16 +757,38 @@ function extractPrNumber(prUrl: string): string {
 }
 
 /**
- * Extract repo name from project path (e.g., "/Users/me/code/myrepo" -> "myrepo")
+ * Extract repo name, preferring repo_url over project_path
+ * e.g., "https://github.com/org/repo" -> "org/repo"
+ *       "/Users/me/code/myrepo" -> "myrepo"
  */
-function extractRepoName(path: string): string {
-  const parts = path.split('/');
-  // Return last non-empty part
-  for (let i = parts.length - 1; i >= 0; i--) {
-    const part = parts[i];
-    if (part) return part;
+function extractRepoName(repoUrl?: string | null, projectPath?: string | null): string {
+  // Prefer repo URL if available
+  if (repoUrl) {
+    // Extract org/repo from GitHub URL
+    // https://github.com/org/repo -> org/repo
+    const githubMatch = repoUrl.match(/github\.com\/([^/]+\/[^/]+)/);
+    if (githubMatch && githubMatch[1]) {
+      return githubMatch[1];
+    }
+    // Fallback: use last two path segments for other URLs
+    const parts = repoUrl.replace(/\.git$/, '').split('/').filter(Boolean);
+    if (parts.length >= 2) {
+      return `${parts[parts.length - 2]}/${parts[parts.length - 1]}`;
+    }
   }
-  return path;
+
+  // Fall back to project path
+  if (projectPath) {
+    const parts = projectPath.split('/');
+    // Return last non-empty part
+    for (let i = parts.length - 1; i >= 0; i--) {
+      const part = parts[i];
+      if (part) return part;
+    }
+    return projectPath;
+  }
+
+  return '';
 }
 
 /**
