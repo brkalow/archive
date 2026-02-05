@@ -193,6 +193,82 @@ export function getSharedSessionsPath(): string {
 }
 
 /**
+ * List all sessions for a given project path.
+ * Returns sessions sorted by modification time (oldest first for chronological upload).
+ * Skips sessions in subagents/ subdirectory.
+ */
+export async function listSessionsForProject(
+  projectPath: string,
+  options?: { since?: Date }
+): Promise<LocalSessionInfo[]> {
+  const home = Bun.env.HOME;
+  if (!home) {
+    return [];
+  }
+
+  const projectsDir = join(home, ".claude", "projects");
+  if (!existsSync(projectsDir)) {
+    return [];
+  }
+
+  // Encode the project path to match Claude Code's format
+  const encodedPath = encodeProjectPath(projectPath);
+  const sessionDir = join(projectsDir, encodedPath);
+
+  if (!existsSync(sessionDir)) {
+    return [];
+  }
+
+  const sessions: LocalSessionInfo[] = [];
+
+  try {
+    const entries = await readdir(sessionDir, { withFileTypes: true });
+
+    for (const entry of entries) {
+      // Skip directories (including subagents/)
+      if (!entry.isFile() || !entry.name.endsWith(".jsonl")) {
+        continue;
+      }
+
+      const filePath = join(sessionDir, entry.name);
+
+      try {
+        const fileStat = await stat(filePath);
+        const modifiedAt = fileStat.mtime;
+
+        // Filter by --since if provided
+        if (options?.since && modifiedAt < options.since) {
+          continue;
+        }
+
+        const uuid = entry.name.replace(".jsonl", "");
+        const decodedProjectPath = decodeProjectPath(encodedPath);
+        const projectName = decodedProjectPath.split("/").pop() || decodedProjectPath;
+        const titlePreview = await extractTitlePreview(filePath);
+
+        sessions.push({
+          uuid,
+          filePath,
+          projectPath: decodedProjectPath,
+          projectName,
+          modifiedAt,
+          titlePreview,
+        });
+      } catch {
+        // Skip files we can't read
+      }
+    }
+  } catch {
+    // Ignore directory read errors
+  }
+
+  // Sort by modification time (oldest first for chronological upload)
+  sessions.sort((a, b) => a.modifiedAt.getTime() - b.modifiedAt.getTime());
+
+  return sessions;
+}
+
+/**
  * Find the latest session for a given project path.
  * Returns the UUID and file path of the most recently modified session.
  */
@@ -544,7 +620,7 @@ function extractTitleFromBuffer(buffer: string): string | null {
 /**
  * Format a relative time string (e.g., "2 hours ago", "1 day ago").
  */
-function formatRelativeTime(date: Date): string {
+export function formatRelativeTime(date: Date): string {
   const now = new Date();
   const diffMs = now.getTime() - date.getTime();
   const diffSeconds = Math.floor(diffMs / 1000);
