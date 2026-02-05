@@ -242,14 +242,13 @@ export async function listSessionsForProject(
         }
 
         const uuid = entry.name.replace(".jsonl", "");
-        const decodedProjectPath = decodeProjectPath(encodedPath);
-        const projectName = decodedProjectPath.split("/").pop() || decodedProjectPath;
+        const projectName = projectPath.split("/").pop() || projectPath;
         const titlePreview = await extractTitlePreview(filePath);
 
         sessions.push({
           uuid,
           filePath,
-          projectPath: decodedProjectPath,
+          projectPath,
           projectName,
           modifiedAt,
           titlePreview,
@@ -533,7 +532,7 @@ async function extractTitlePreview(filePath: string): Promise<string> {
       bytesRead += value.length;
 
       // Try to extract title from what we have so far
-      const title = extractTitleFromBuffer(buffer);
+      const title = extractTitleFromContent(buffer);
       if (title) {
         reader.releaseLock();
         return title;
@@ -543,7 +542,7 @@ async function extractTitlePreview(filePath: string): Promise<string> {
     reader.releaseLock();
 
     // Final attempt with all buffered content
-    const title = extractTitleFromBuffer(buffer);
+    const title = extractTitleFromContent(buffer);
     if (title) {
       return title;
     }
@@ -556,8 +555,9 @@ async function extractTitlePreview(filePath: string): Promise<string> {
 
 /**
  * Try to extract a title from a buffer of JSONL content.
+ * Exported for reuse in upload command.
  */
-function extractTitleFromBuffer(buffer: string): string | null {
+export function extractTitleFromContent(buffer: string): string | null {
   const lines = buffer.split("\n");
 
   for (const line of lines) {

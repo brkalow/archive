@@ -13,9 +13,11 @@ import {
   promptSessionSelection,
   listSessionsForProject,
   formatRelativeTime,
+  extractTitleFromContent,
   type LocalSessionInfo,
 } from "../lib/shared-sessions";
 import { getAccessTokenIfAuthenticated } from "../lib/oauth";
+import { isGitRepo } from "../lib/git";
 import * as readline from "readline";
 
 interface SessionExistsResult {
@@ -439,6 +441,12 @@ async function getGitDiff(projectDir?: string, branch?: string, touchedFiles?: s
 
 async function getRepoUrl(projectDir?: string): Promise<string | null> {
   const cwd = projectDir || process.cwd();
+
+  // First verify this is actually a git repository
+  if (!(await isGitRepo(cwd))) {
+    return null;
+  }
+
   try {
     const remote = await $`git -C ${cwd} remote get-url origin 2>/dev/null`.text();
     const url = remote.trim();
@@ -648,41 +656,7 @@ function countMessages(sessionContent: string): number {
 }
 
 function extractTitle(sessionContent: string): string {
-  // Parse JSONL and find first user message
-  const lines = sessionContent.split("\n").filter(Boolean);
-
-  for (const line of lines) {
-    try {
-      const item = JSON.parse(line);
-      const msg = item.message || item;
-
-      if (msg.role === "human" || msg.role === "user" || item.type === "human") {
-        const content = msg.content;
-        let text = "";
-
-        if (typeof content === "string") {
-          text = content;
-        } else if (Array.isArray(content)) {
-          const textBlock = content.find(
-            (c: { type: string }) => c.type === "text"
-          );
-          if (textBlock) text = textBlock.text;
-        }
-
-        if (text) {
-          // Take first line, truncate to 100 chars
-          const firstLine = (text.split("\n")[0] ?? "").trim();
-          return firstLine.length > 100
-            ? firstLine.slice(0, 97) + "..."
-            : firstLine;
-        }
-      }
-    } catch {
-      continue;
-    }
-  }
-
-  return `Session ${new Date().toISOString().split("T")[0]}`;
+  return extractTitleFromContent(sessionContent) ?? `Session ${new Date().toISOString().split("T")[0]}`;
 }
 
 interface UploadOptions {
@@ -898,6 +872,7 @@ async function uploadAllSessions(options: BulkUploadOptions): Promise<void> {
   // Upload sessions with progress
   let uploadedCount = 0;
   let failedCount = 0;
+  let emptyCount = 0;
   const failures: Array<{ session: LocalSessionInfo; error: string }> = [];
 
   console.log("Uploading sessions:");
@@ -918,6 +893,7 @@ async function uploadAllSessions(options: BulkUploadOptions): Promise<void> {
       const messageCount = countMessages(sessionContent);
       if (messageCount === 0) {
         console.log("⚠ skipped (no messages)");
+        emptyCount++;
         continue;
       }
 
@@ -963,6 +939,9 @@ async function uploadAllSessions(options: BulkUploadOptions): Promise<void> {
   let summary = `Done. Uploaded ${uploadedCount} session(s)`;
   if (skippedCount > 0) {
     summary += `, skipped ${skippedCount} (already uploaded)`;
+  }
+  if (emptyCount > 0) {
+    summary += `, ${emptyCount} empty`;
   }
   if (failedCount > 0) {
     summary += `, ${failedCount} failed`;
