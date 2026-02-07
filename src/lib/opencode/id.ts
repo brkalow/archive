@@ -10,19 +10,16 @@
 
 const BASE62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 
-/** Monotonic counter to ensure uniqueness within same millisecond */
-let lastTimestamp = 0;
-let counter = 0;
+/**
+ * Monotonic timestamp: ensures each call returns a strictly increasing value.
+ * Within the same millisecond, increments by 1 to maintain sort order.
+ */
+let lastValue = 0;
 
 function getMonotonicTimestamp(): number {
   const now = Date.now();
-  if (now === lastTimestamp) {
-    counter++;
-  } else {
-    lastTimestamp = now;
-    counter = 0;
-  }
-  return now;
+  lastValue = now > lastValue ? now : lastValue + 1;
+  return lastValue;
 }
 
 function encodeTimestampHex(ts: number): string {
