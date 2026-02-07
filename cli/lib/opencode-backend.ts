@@ -291,9 +291,28 @@ export class DaemonBackend implements OpenCodeBackend {
       });
     }
 
-    // Start or resume the Claude session
-    if (state.status === "idle" && state.claudeSessionId) {
-      // Resume existing session
+    // Determine how to send the message to Claude.
+    // Key: check if a spawned process is still alive (the "waiting" status is
+    // overloaded — it means both "never started" and "turn completed, process
+    // still alive"). Check the SpawnedSessionManager to disambiguate.
+    const spawnedSession = this.sessionManager.getSession(sessionId);
+    const hasActiveProcess =
+      spawnedSession != null &&
+      spawnedSession.state !== "ended" &&
+      spawnedSession.state !== "ending";
+
+    if (hasActiveProcess) {
+      // Process is still running — send input directly via stdin
+      debug(`[opencode-backend] sendMessage: using sendInput (process alive, state=${spawnedSession!.state})`);
+      state.status = "running";
+      this.emit({
+        type: "session.status",
+        properties: { sessionID: sessionId, status: { type: "busy" } },
+      });
+      this.sessionManager.sendInput(sessionId, promptText);
+    } else if (state.status === "idle" && state.claudeSessionId) {
+      // Process exited but session can be resumed
+      debug(`[opencode-backend] sendMessage: resuming session (claudeSessionId=${state.claudeSessionId})`);
       state.status = "starting";
       this.emit({
         type: "session.status",
@@ -311,8 +330,9 @@ export class DaemonBackend implements OpenCodeBackend {
         .catch((err) => {
           debug(`[opencode-backend] Failed to resume session: ${err}`);
         });
-    } else if (state.status === "waiting") {
-      // Start new session
+    } else {
+      // No active process — start a new one
+      debug(`[opencode-backend] sendMessage: starting new session (status=${state.status})`);
       state.status = "starting";
       this.emit({
         type: "session.status",
@@ -330,9 +350,6 @@ export class DaemonBackend implements OpenCodeBackend {
         .catch((err) => {
           debug(`[opencode-backend] Failed to start session: ${err}`);
         });
-    } else if (state.status === "running") {
-      // Session already running — send input
-      this.sessionManager.sendInput(sessionId, promptText);
     }
 
     return pending;
