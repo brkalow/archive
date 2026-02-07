@@ -513,8 +513,20 @@ export class OpenCodeTranslator {
   }
 
   /**
+   * Create a step-start part for the pending assistant message.
+   * Called during sendMessage to transition TUI out of "queued" state.
+   * Sets stepNeedsStart = false to prevent duplicate step-start when stream arrives.
+   */
+  createStepStartForPending(): OCStepStartPart | null {
+    if (!this.currentAssistantId || !this.stepNeedsStart) return null;
+    this.stepNeedsStart = false;
+    return this.createStepStartPart(this.currentAssistantId);
+  }
+
+  /**
    * Complete the last assistant message on turn completion.
    * Sets time.completed, finish: "stop", and time.end on text parts.
+   * Clears currentAssistantId to prevent double-completion on session end.
    */
   completeLastAssistant(): {
     message: OCAssistantMessage | null;
@@ -543,9 +555,11 @@ export class OpenCodeTranslator {
       updatedParts.push({ part: textPart });
     }
 
-    // Reset for next turn
+    // Clear tracking for this assistant
     this.currentTextParts.delete(this.currentAssistantId);
     this.currentReasoningParts.delete(this.currentAssistantId);
+    // Prevent double-completion (e.g., both turn completion and session end)
+    this.currentAssistantId = null;
 
     return { message: msg, updatedParts };
   }

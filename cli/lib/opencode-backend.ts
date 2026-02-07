@@ -282,8 +282,14 @@ export class DaemonBackend implements OpenCodeBackend {
       properties: { info: pending.info },
     });
 
-    // Broadcast step-start (will be created when first stream arrives,
-    // but we need to snapshot the response before starting the session)
+    // Broadcast step-start part (required for TUI to transition out of "queued" state)
+    const stepStart = state.translator.createStepStartForPending();
+    if (stepStart) {
+      this.emit({
+        type: "message.part.updated",
+        properties: { part: stepStart },
+      });
+    }
 
     // Start or resume the Claude session
     if (state.status === "idle" && state.claudeSessionId) {
@@ -350,15 +356,20 @@ export class DaemonBackend implements OpenCodeBackend {
         state.pendingPermissions.delete(requestId);
 
         const allow = reply.reply !== "reject";
+        debug(`[opencode-backend] respondToPermission: requestId=${requestId} sessionId=${sessionId} allow=${allow}`);
 
         // Check if it's a control request or legacy permission
         const spawnedSession = this.sessionManager.getSession(sessionId);
         if (spawnedSession?.controlRequests.has(requestId)) {
-          this.sessionManager.respondToControlRequest(sessionId, requestId, {
-            behavior: allow ? "allow" : "deny",
-            ...(reply.message ? { message: reply.message } : {}),
-          } as any);
+          // SDK control_request format — PermissionResult requires message for deny
+          const result = allow
+            ? { behavior: "allow" as const }
+            : { behavior: "deny" as const, message: reply.message || "Denied by user" };
+          debug(`[opencode-backend] Sending control response: ${JSON.stringify(result)}`);
+          this.sessionManager.respondToControlRequest(sessionId, requestId, result as any);
         } else {
+          // Legacy permission_prompt format
+          debug(`[opencode-backend] Sending legacy permission response: allow=${allow}`);
           this.sessionManager.respondToPermission(
             sessionId,
             requestId,
@@ -373,6 +384,7 @@ export class DaemonBackend implements OpenCodeBackend {
         return true;
       }
     }
+    debug(`[opencode-backend] respondToPermission: request ${requestId} not found in any session`);
     return false;
   }
 
