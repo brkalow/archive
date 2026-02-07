@@ -21,6 +21,8 @@ import {
 } from "../lib/shared-sessions";
 import { SpawnedSessionManager } from "../lib/spawned-session-manager";
 import type { ServerToDaemonMessage } from "../types/daemon-ws";
+import { createOpenCodeAPI, type OpenCodeAPI } from "../lib/opencode-api";
+import { DaemonBackend } from "../lib/opencode-backend";
 import { SessionTracker } from "./session-tracker";
 import { SessionWatcher } from "./watcher";
 
@@ -30,6 +32,7 @@ export interface DaemonOptions {
   server: string;
   idleTimeout: number;
   verbose: boolean;
+  opencodePort?: number;
 }
 
 const OPENCTL_DIR = join(Bun.env.HOME || "~", ".openctl");
@@ -42,6 +45,9 @@ let statusInterval: ReturnType<typeof setInterval> | null = null;
 let sharedSessionsWatcher: FSWatcher | null = null;
 let daemonWs: DaemonWebSocket | null = null;
 let sessionManager: SpawnedSessionManager | null = null;
+let opencodeApi: OpenCodeAPI | null = null;
+let opencodeBackend: DaemonBackend | null = null;
+let opencodeServer: ReturnType<typeof Bun.serve> | null = null;
 
 export async function startDaemon(options: DaemonOptions): Promise<void> {
   // Enable debug logging if verbose
@@ -108,6 +114,11 @@ To allow a specific repository:
 
   // Initialize WebSocket connection to server
   initWebSocket(options.server);
+
+  // Start OpenCode-compatible HTTP server if port specified
+  if (options.opencodePort) {
+    startOpenCodeServer(options.opencodePort);
+  }
 
   // Start status file updates
   updateStatusFile();
@@ -193,6 +204,47 @@ async function handleSharedSessionsChange(
 }
 
 /**
+ * Start the OpenCode-compatible HTTP server for TUI connections.
+ */
+function startOpenCodeServer(port: number): void {
+  if (!sessionManager) {
+    console.error("[daemon] Cannot start OpenCode server: session manager not initialized");
+    return;
+  }
+
+  const cwd = process.cwd();
+  opencodeBackend = new DaemonBackend(sessionManager, cwd);
+
+  opencodeApi = createOpenCodeAPI(opencodeBackend, {
+    directory: cwd,
+  });
+
+  // Wire up broadcast: backend → API → SSE clients
+  opencodeBackend.setBroadcast(opencodeApi.broadcast);
+
+  const api = opencodeApi;
+  opencodeServer = Bun.serve({
+    port,
+    idleTimeout: 255, // Max value to prevent SSE timeouts
+    async fetch(req) {
+      const response = await api.handleRequest(req);
+      if (response) return response;
+
+      // No route matched
+      return new Response(JSON.stringify({ error: "Not found" }), {
+        status: 404,
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+        },
+      });
+    },
+  });
+
+  console.log(`[daemon] OpenCode server listening on http://localhost:${opencodeServer.port}`);
+}
+
+/**
  * Initialize WebSocket connection to server for bidirectional communication.
  * This enables browser-initiated sessions where the server can send commands to the daemon.
  */
@@ -200,8 +252,10 @@ function initWebSocket(serverUrl: string): void {
   const clientId = getClientId();
 
   // Create session manager with send function (bound to WebSocket)
+  // Also forward messages to OpenCode backend if connected
   sessionManager = new SpawnedSessionManager((message) => {
     daemonWs?.send(message);
+    opencodeBackend?.handleDaemonMessage(message);
   });
 
   daemonWs = new DaemonWebSocket({
@@ -310,6 +364,17 @@ async function shutdown(): Promise<void> {
     }
     sessionManager = null;
   }
+
+  // Close OpenCode server
+  if (opencodeApi) {
+    opencodeApi.close();
+    opencodeApi = null;
+  }
+  if (opencodeServer) {
+    opencodeServer.stop();
+    opencodeServer = null;
+  }
+  opencodeBackend = null;
 
   // Disconnect WebSocket
   if (daemonWs) {
