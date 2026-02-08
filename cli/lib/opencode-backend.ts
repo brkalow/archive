@@ -273,6 +273,12 @@ export class DaemonBackend implements OpenCodeBackend {
       properties: { sessionID: sessionId, diff: state.diffs },
     });
 
+    // Broadcast session.status: busy before pending assistant + step-start
+    this.emit({
+      type: "session.status",
+      properties: { sessionID: sessionId, status: { type: "busy" } },
+    });
+
     // Create pending assistant message
     const pending = state.translator.createPendingAssistant(userMsg.info.id);
 
@@ -282,7 +288,7 @@ export class DaemonBackend implements OpenCodeBackend {
       properties: { info: pending.info },
     });
 
-    // Broadcast step-start part (required for TUI to transition out of "queued" state)
+    // Broadcast step-start part (TUI shows turn header when this arrives)
     const stepStart = state.translator.createStepStartForPending();
     if (stepStart) {
       this.emit({
@@ -305,19 +311,11 @@ export class DaemonBackend implements OpenCodeBackend {
       // Process is still running — send input directly via stdin
       debug(`[opencode-backend] sendMessage: using sendInput (process alive, state=${spawnedSession!.state})`);
       state.status = "running";
-      this.emit({
-        type: "session.status",
-        properties: { sessionID: sessionId, status: { type: "busy" } },
-      });
       this.sessionManager.sendInput(sessionId, promptText);
     } else if (state.status === "idle" && state.claudeSessionId) {
       // Process exited but session can be resumed
       debug(`[opencode-backend] sendMessage: resuming session (claudeSessionId=${state.claudeSessionId})`);
       state.status = "starting";
-      this.emit({
-        type: "session.status",
-        properties: { sessionID: sessionId, status: { type: "busy" } },
-      });
 
       this.sessionManager
         .startSession({
@@ -334,10 +332,6 @@ export class DaemonBackend implements OpenCodeBackend {
       // No active process — start a new one
       debug(`[opencode-backend] sendMessage: starting new session (status=${state.status})`);
       state.status = "starting";
-      this.emit({
-        type: "session.status",
-        properties: { sessionID: sessionId, status: { type: "busy" } },
-      });
 
       this.sessionManager
         .startSession({
@@ -531,8 +525,14 @@ export class DaemonBackend implements OpenCodeBackend {
 
     const result = state.translator.processStreamMessages(messages);
 
-    // Broadcast updated messages
-    for (const msg of result.updatedMessages) {
+    // Skip assistant from streaming broadcasts when turn is completing —
+    // completeLastAssistant() below will broadcast the final version with
+    // time.completed, which is what clears the TUI's QUEUED state.
+    const messagesToBroadcast = result.turnCompleted
+      ? result.updatedMessages.filter(m => m.role !== "assistant")
+      : result.updatedMessages;
+
+    for (const msg of messagesToBroadcast) {
       this.emit({ type: "message.updated", properties: { info: msg } });
     }
 

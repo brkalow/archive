@@ -4,38 +4,33 @@
  * IDs must sort lexicographically by creation time because the TUI's
  * Binary.search inserts messages/parts into sorted arrays by ID.
  *
- * Format: <prefix>_<12-hex-timestamp><14-base62-random>
- * Example: msg_01932a4b5c6d00AbCdEfGhIjKl
+ * CRITICAL: The encoding must match the opencode server's Identifier.ascending()
+ * which uses `timestamp * 0x1000 + counter` (not raw timestamp). If our IDs
+ * use a different encoding, they sort incorrectly relative to TUI-generated IDs,
+ * causing the TUI to show persistent QUEUED state and duplicate messages.
+ *
+ * Format: <prefix>_<12-hex-encoded-timestamp><14-base62-random>
+ * Encoding: 6 big-endian bytes of (Date.now() * 0x1000 + counter)
  */
 
 const BASE62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 
-/**
- * Monotonic timestamp: ensures each call returns a strictly increasing value.
- * Within the same millisecond, increments by 1 to maintain sort order.
- */
-let lastValue = 0;
+let lastTimestamp = 0;
+let counter = 0;
 
-function getMonotonicTimestamp(): number {
+function getMonotonicValue(): bigint {
   const now = Date.now();
-  lastValue = now > lastValue ? now : lastValue + 1;
-  return lastValue;
+  if (now !== lastTimestamp) {
+    lastTimestamp = now;
+    counter = 0;
+  }
+  counter++;
+  return BigInt(now) * BigInt(0x1000) + BigInt(counter);
 }
 
-function encodeTimestampHex(ts: number): string {
-  // 6 bytes = 12 hex chars, big-endian
-  const buf = new ArrayBuffer(8);
-  const view = new DataView(buf);
-  // Write as 64-bit, but we only use 48 bits (6 bytes)
-  view.setUint32(0, Math.floor(ts / 0x100000000));
-  view.setUint32(4, ts >>> 0);
-  // Take last 6 bytes (12 hex chars)
-  const bytes = new Uint8Array(buf).slice(2);
-  let hex = "";
-  for (const b of bytes) {
-    hex += b.toString(16).padStart(2, "0");
-  }
-  return hex;
+function encodeTimestampHex(value: bigint): string {
+  // Lower 48 bits as 12 hex chars (matching opencode's 6-byte big-endian encoding)
+  return (value & 0xffff_ffff_ffffn).toString(16).padStart(12, "0");
 }
 
 function randomBase62(length: number): string {
@@ -50,8 +45,8 @@ function randomBase62(length: number): string {
 export type IdPrefix = "msg" | "prt" | "ses";
 
 export function generateAscendingId(prefix: IdPrefix): string {
-  const ts = getMonotonicTimestamp();
-  const tsHex = encodeTimestampHex(ts);
+  const value = getMonotonicValue();
+  const tsHex = encodeTimestampHex(value);
   const random = randomBase62(14);
   return `${prefix}_${tsHex}${random}`;
 }
@@ -65,7 +60,8 @@ export function generateDeterministicId(
   timestamp: number,
   index: number
 ): string {
-  const tsHex = encodeTimestampHex(timestamp);
+  const value = BigInt(timestamp) * BigInt(0x1000) + BigInt(index + 1);
+  const tsHex = encodeTimestampHex(value);
   const indexStr = index.toString().padStart(14, "0");
   return `${prefix}_${tsHex}${indexStr}`;
 }
