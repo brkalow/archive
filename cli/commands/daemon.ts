@@ -27,6 +27,7 @@ Options for 'start':
   --watch <paths>        Additional directories to watch
   --server <url>         Server URL (default: from config)
   --idle-timeout <sec>   Seconds before marking session complete (default: 300)
+  --opencode-port <port> Start OpenCode-compatible HTTP server on this port
   --verbose              Enable verbose debug logging
       `);
   }
@@ -40,9 +41,14 @@ async function daemonStart(args: string[]): Promise<void> {
       watch: { type: "string", multiple: true },
       server: { type: "string" },
       "idle-timeout": { type: "string" },
+      "opencode-port": { type: "string" },
       verbose: { type: "boolean" },
     },
   });
+
+  const opencodePort = values["opencode-port"]
+    ? parseInt(values["opencode-port"], 10)
+    : undefined;
 
   const options = {
     harnesses: values.harness || [],
@@ -50,12 +56,16 @@ async function daemonStart(args: string[]): Promise<void> {
     server: getServerUrl(values.server),
     idleTimeout: parseInt(values["idle-timeout"] || "300", 10),
     verbose: values.verbose || false,
+    opencodePort,
   };
 
   console.log("Starting openctl daemon...");
   console.log(`  Server: ${options.server}`);
   console.log(`  Harnesses: ${options.harnesses.length ? options.harnesses.join(", ") : "all"}`);
   console.log(`  Idle timeout: ${options.idleTimeout}s`);
+  if (options.opencodePort) {
+    console.log(`  OpenCode port: ${options.opencodePort}`);
+  }
   console.log();
   console.log("Warning: Session content will be transmitted to the server.");
   console.log("    Ensure no sensitive data (API keys, passwords) is exposed.");
