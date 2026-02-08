@@ -11,7 +11,7 @@
  * - CORS headers on all responses
  */
 
-import type { OCEvent, OCGlobalEvent } from "../../src/lib/opencode/types";
+import type { OCEvent } from "../../src/lib/opencode/types";
 
 interface SSEConnection {
   controller: ReadableStreamDefaultController;
@@ -33,6 +33,7 @@ export class OpenCodeSSEManager {
   private nextEventId = 1;
   private keepaliveTimer: ReturnType<typeof setInterval> | null = null;
   private directory: string;
+  private encoder = new TextEncoder();
 
   constructor(directory: string) {
     this.directory = directory;
@@ -49,10 +50,11 @@ export class OpenCodeSSEManager {
     directory?: string
   ): Response {
     const dir = directory || this.directory;
+    let conn: SSEConnection;
 
     const stream = new ReadableStream({
       start: (controller) => {
-        const conn: SSEConnection = { controller, format, directory: dir };
+        conn = { controller, format, directory: dir };
         this.connections.add(conn);
 
         // Send initial server.connected event
@@ -75,18 +77,7 @@ export class OpenCodeSSEManager {
         }
       },
       cancel: () => {
-        // Find and remove this connection
-        for (const conn of this.connections) {
-          if (conn.controller) {
-            try {
-              // Check if this is the one being cancelled
-              this.connections.delete(conn);
-              break;
-            } catch {
-              // Already closed
-            }
-          }
-        }
+        this.connections.delete(conn);
       },
     });
 
@@ -108,26 +99,14 @@ export class OpenCodeSSEManager {
   broadcast(event: OCEvent): void {
     const eventId = this.nextEventId++;
 
-    // Buffer the event
     this.eventBuffer.push({ id: eventId, event });
     if (this.eventBuffer.length > EVENT_BUFFER_SIZE) {
       this.eventBuffer.shift();
     }
 
-    // Send to all connections
-    const deadConnections: SSEConnection[] = [];
-    for (const conn of this.connections) {
-      try {
-        this.sendToConnection(conn, event, eventId);
-      } catch {
-        deadConnections.push(conn);
-      }
-    }
-
-    // Clean up dead connections
-    for (const conn of deadConnections) {
-      this.connections.delete(conn);
-    }
+    this.forEachConnection((conn) =>
+      this.sendToConnection(conn, event, eventId)
+    );
   }
 
   private sendToConnection(
@@ -135,51 +114,43 @@ export class OpenCodeSSEManager {
     event: OCEvent,
     eventId: number
   ): void {
-    let data: string;
+    const data =
+      conn.format === "bare"
+        ? JSON.stringify(event)
+        : JSON.stringify({
+            ...(event.type !== "server.connected" && {
+              directory: conn.directory,
+            }),
+            payload: event,
+          });
 
-    if (conn.format === "bare") {
-      // /event: bare format { type, properties }
-      data = JSON.stringify(event);
-    } else {
-      // /global/event: envelope format { directory, payload: { type, properties } }
-      // Initial server.connected has no directory field
-      if (event.type === "server.connected") {
-        const envelope: Partial<OCGlobalEvent> = {
-          payload: event,
-        };
-        data = JSON.stringify(envelope);
-      } else {
-        const envelope: OCGlobalEvent = {
-          directory: conn.directory,
-          payload: event,
-        };
-        data = JSON.stringify(envelope);
-      }
-    }
-
-    const encoder = new TextEncoder();
-    const message = `id: ${eventId}\ndata: ${data}\n\n`;
-    conn.controller.enqueue(encoder.encode(message));
+    conn.controller.enqueue(
+      this.encoder.encode(`id: ${eventId}\ndata: ${data}\n\n`)
+    );
   }
 
   private startKeepalive(): void {
+    const comment = this.encoder.encode(":keepalive\n\n");
     this.keepaliveTimer = setInterval(() => {
-      const encoder = new TextEncoder();
-      const comment = encoder.encode(":keepalive\n\n");
-
-      const deadConnections: SSEConnection[] = [];
-      for (const conn of this.connections) {
-        try {
-          conn.controller.enqueue(comment);
-        } catch {
-          deadConnections.push(conn);
-        }
-      }
-
-      for (const conn of deadConnections) {
-        this.connections.delete(conn);
-      }
+      this.forEachConnection((conn) => conn.controller.enqueue(comment));
     }, KEEPALIVE_INTERVAL_MS);
+  }
+
+  /**
+   * Run a callback for each connection, removing any that throw.
+   */
+  private forEachConnection(fn: (conn: SSEConnection) => void): void {
+    const dead: SSEConnection[] = [];
+    for (const conn of this.connections) {
+      try {
+        fn(conn);
+      } catch {
+        dead.push(conn);
+      }
+    }
+    for (const conn of dead) {
+      this.connections.delete(conn);
+    }
   }
 
   get connectionCount(): number {
@@ -192,10 +163,10 @@ export class OpenCodeSSEManager {
       this.keepaliveTimer = null;
     }
 
-    const encoder = new TextEncoder();
+    const closeMsg = this.encoder.encode("event: close\ndata: {}\n\n");
     for (const conn of this.connections) {
       try {
-        conn.controller.enqueue(encoder.encode("event: close\ndata: {}\n\n"));
+        conn.controller.enqueue(closeMsg);
         conn.controller.close();
       } catch {
         // Already closed

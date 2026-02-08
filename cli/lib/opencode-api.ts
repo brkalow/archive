@@ -213,41 +213,34 @@ export function createOpenCodeAPI(
     // Session-specific routes
     let match: RouteMatch | null;
 
-    // GET /session/:id
+    // GET/PATCH/DELETE /session/:id
     match = matchRoute("/session/:id", pathname);
-    if (match && method === "GET") {
-      const session = await backend.getSession(match.params.id);
-      if (!session) return notFound("Session not found");
-      return json(session);
+    if (match) {
+      if (method === "GET") {
+        const session = await backend.getSession(match.params.id);
+        if (!session) return notFound("Session not found");
+        return json(session);
+      }
+      if (method === "PATCH") {
+        const body = await parseBody(req);
+        const session = await backend.updateSession(match.params.id, {
+          title: body?.title,
+        });
+        if (!session) return notFound("Session not found");
+        return json(session);
+      }
+      if (method === "DELETE") {
+        const result = await backend.deleteSession(match.params.id);
+        return json(result);
+      }
     }
 
-    // PATCH /session/:id
-    match = matchRoute("/session/:id", pathname);
-    if (match && method === "PATCH") {
-      const body = await parseBody(req);
-      const session = await backend.updateSession(match.params.id, {
-        title: body?.title,
-      });
-      if (!session) return notFound("Session not found");
-      return json(session);
-    }
-
-    // DELETE /session/:id
-    match = matchRoute("/session/:id", pathname);
-    if (match && method === "DELETE") {
-      const result = await backend.deleteSession(match.params.id);
-      return json(result);
-    }
-
-    // GET /session/:id/message
+    // GET/POST /session/:id/message
     match = matchRoute("/session/:id/message", pathname);
     if (match && method === "GET") {
       const messages = await backend.getMessages(match.params.id);
       return json(messages);
     }
-
-    // POST /session/:id/message (prompt)
-    match = matchRoute("/session/:id/message", pathname);
     if (match && method === "POST") {
       const body = await parseBody(req);
       if (!body) return badRequest("Request body required");
@@ -388,7 +381,7 @@ export function createOpenCodeAPI(
       return json([getDefaultAgent()]);
     }
 
-    if (method === "GET" && pathname === "/project/current") {
+    if (method === "GET" && (pathname === "/project/current" || pathname === "/project")) {
       const cwd = backend.getCwd();
       const now = Date.now();
       const project: OCProject = {
@@ -398,21 +391,7 @@ export function createOpenCodeAPI(
         sandboxes: [],
         time: { created: now, updated: now },
       };
-      return json(project);
-    }
-
-    if (method === "GET" && pathname === "/project") {
-      const cwd = backend.getCwd();
-      const now = Date.now();
-      return json([
-        {
-          id: cwd.replace(/\//g, "-").replace(/^-/, ""),
-          worktree: cwd,
-          vcs: "git",
-          sandboxes: [],
-          time: { created: now, updated: now },
-        },
-      ]);
+      return json(pathname === "/project" ? [project] : project);
     }
 
     if (method === "GET" && pathname === "/command") {

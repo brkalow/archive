@@ -223,6 +223,7 @@ export interface StreamJsonMessage {
 export interface ContentBlock {
   type: "text" | "tool_use" | "tool_result" | "thinking";
   text?: string;
+  thinking?: string;
   id?: string;
   name?: string;
   input?: Record<string, unknown>;

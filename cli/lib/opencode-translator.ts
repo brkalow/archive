@@ -371,15 +371,10 @@ export class OpenCodeTranslator {
       case "text": {
         const existing = this.currentTextParts.get(messageId);
         if (existing) {
-          // Append text and compute delta
-          const oldText = existing.text;
+          const oldLength = existing.text.length;
           existing.text = block.text || "";
-          const delta = existing.text.slice(oldText.length);
-          if (delta) {
-            updates.push({ part: existing, delta });
-          } else {
-            updates.push({ part: existing });
-          }
+          const delta = existing.text.slice(oldLength);
+          updates.push({ part: existing, delta: delta || undefined });
         } else {
           // New text part
           const partId = generateAscendingId("prt");
@@ -401,7 +396,7 @@ export class OpenCodeTranslator {
       }
 
       case "thinking": {
-        const thinkingText = (block as Record<string, unknown>).thinking as string || block.text || "";
+        const thinkingText = block.thinking || block.text || "";
         const existing = this.currentReasoningParts.get(messageId);
         if (existing) {
           const delta = thinkingText.slice(existing.text.length);
@@ -585,16 +580,21 @@ export class OpenCodeTranslator {
     const msg = this.messages.get(messageId) as OCAssistantMessage | undefined;
     if (!msg || msg.role !== "assistant") return;
 
+    const prevInput = msg.tokens.input;
+    const prevOutput = msg.tokens.output;
+    const prevCacheRead = msg.tokens.cache.read;
+    const prevCacheWrite = msg.tokens.cache.write;
+
     msg.tokens.input = usage.input_tokens || 0;
     msg.tokens.output = usage.output_tokens || 0;
     msg.tokens.cache.read = usage.cache_read_input_tokens || 0;
     msg.tokens.cache.write = usage.cache_creation_input_tokens || 0;
 
-    // Update totals
-    this.totalTokens.input += usage.input_tokens || 0;
-    this.totalTokens.output += usage.output_tokens || 0;
-    this.totalTokens.cache.read += usage.cache_read_input_tokens || 0;
-    this.totalTokens.cache.write += usage.cache_creation_input_tokens || 0;
+    // Update totals using deltas (usage values are cumulative, not incremental)
+    this.totalTokens.input += msg.tokens.input - prevInput;
+    this.totalTokens.output += msg.tokens.output - prevOutput;
+    this.totalTokens.cache.read += msg.tokens.cache.read - prevCacheRead;
+    this.totalTokens.cache.write += msg.tokens.cache.write - prevCacheWrite;
   }
 
   private addPartToMessage(messageId: string, partId: string): void {

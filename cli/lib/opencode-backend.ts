@@ -691,68 +691,50 @@ export class DaemonBackend implements OpenCodeBackend {
   }
 
   private handlePermissionPrompt(message: DaemonToServerMessage & { type: "permission_prompt" }): void {
-    const state = this.sessions.get(message.session_id);
-    if (!state) return;
-
-    const permission: OCPermissionRequest = {
-      id: message.request_id,
-      sessionID: message.session_id,
-      permission: message.tool,
-      patterns: [],
-      metadata: message.details || {},
-      always: false,
-    };
-
-    state.pendingPermissions.set(message.request_id, permission);
-
-    this.emit({
-      type: "permission.asked",
-      properties: {
-        id: message.request_id,
-        sessionID: message.session_id,
-        permission: message.tool,
-        patterns: [],
-        metadata: message.details || {},
-        always: false,
-      },
-    });
+    this.addPermissionRequest(
+      message.session_id,
+      message.request_id,
+      message.tool,
+      message.details || {}
+    );
   }
 
   private handleControlRequest(message: DaemonToServerMessage & { type: "control_request" }): void {
-    const state = this.sessions.get(message.session_id);
-    if (!state) return;
-
-    const permission: OCPermissionRequest = {
-      id: message.request_id,
-      sessionID: message.session_id,
-      permission: message.request.tool_name,
-      patterns: [],
-      metadata: {
+    this.addPermissionRequest(
+      message.session_id,
+      message.request_id,
+      message.request.tool_name,
+      {
         input: message.request.input,
         tool_use_id: message.request.tool_use_id,
         blocked_path: message.request.blocked_path,
         decision_reason: message.request.decision_reason,
-      },
+      }
+    );
+  }
+
+  private addPermissionRequest(
+    sessionId: string,
+    requestId: string,
+    permission: string,
+    metadata: Record<string, unknown>
+  ): void {
+    const state = this.sessions.get(sessionId);
+    if (!state) return;
+
+    const request: OCPermissionRequest = {
+      id: requestId,
+      sessionID: sessionId,
+      permission,
+      patterns: [],
+      metadata,
       always: false,
     };
 
-    state.pendingPermissions.set(message.request_id, permission);
-
+    state.pendingPermissions.set(requestId, request);
     this.emit({
       type: "permission.asked",
-      properties: {
-        id: message.request_id,
-        sessionID: message.session_id,
-        permission: message.request.tool_name,
-        patterns: [],
-        metadata: {
-          input: message.request.input,
-          tool_use_id: message.request.tool_use_id,
-          blocked_path: message.request.blocked_path,
-          decision_reason: message.request.decision_reason,
-        },
-        always: false,
-      },
+      properties: { ...request },
     });
   }
 
@@ -820,10 +802,12 @@ export class DaemonBackend implements OpenCodeBackend {
         if (line.startsWith("-") && !line.startsWith("---")) deletions++;
       }
 
-      let status: "added" | "deleted" | "modified" | undefined;
-      if (deletions === 0 && additions > 0) status = "added";
-      else if (additions === 0 && deletions > 0) status = "deleted";
-      else status = "modified";
+      const status =
+        deletions === 0 && additions > 0
+          ? "added"
+          : additions === 0 && deletions > 0
+            ? "deleted"
+            : "modified";
 
       diffs.push({
         file,
