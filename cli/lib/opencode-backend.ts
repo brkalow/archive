@@ -372,9 +372,10 @@ export class DaemonBackend implements OpenCodeBackend {
         // Check if it's a control request or legacy permission
         const spawnedSession = this.sessionManager.getSession(sessionId);
         if (spawnedSession?.controlRequests.has(requestId)) {
-          // SDK control_request format — PermissionResult requires message for deny
+          // SDK control_request format — updatedInput is required for allow responses
+          const controlRequest = spawnedSession.controlRequests.get(requestId)!;
           const result = allow
-            ? { behavior: "allow" as const }
+            ? { behavior: "allow" as const, updatedInput: controlRequest.input ?? {} }
             : { behavior: "deny" as const, message: reply.message || "Denied by user" };
           debug(`[opencode-backend] Sending control response: ${JSON.stringify(result)}`);
           this.sessionManager.respondToControlRequest(sessionId, requestId, result as any);
